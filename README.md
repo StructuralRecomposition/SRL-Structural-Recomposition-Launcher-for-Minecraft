@@ -146,15 +146,21 @@
 
 ## 下载与安装
 
-正式安装包发布在 **GitHub Releases**。仓库中的 `release/` 目录仅保留历史构建用于回归对照，不保证与当前源码版本一致。
+### v0.1.0 下载
 
-| 平台 | 产物 | 说明 |
+已构建好的安装包直接放在 GitHub Release，点开即可下载：
+
+**https://github.com/sry8n5rjz5-debug/SRL/releases/tag/v0.1.0**
+
+| 平台 | 文件 | 说明 |
 |---|---|---|
-| macOS 10.15+ | `SRL_<version>_universal.dmg` | Universal（Intel + Apple Silicon），ad-hoc 签名，未公证 |
-| Windows 10/11 x64 | `SRL_<version>_x64-setup.exe` / `.msi` / portable `.zip` | 需要 WebView2 Runtime；portable 包内含安装引导 |
-| Linux x64 | `SRL_<version>_amd64.deb` / `.AppImage` | 需要 WebKitGTK 4.1 等运行库 |
+| macOS 10.15+ | `SRL_0.1.0_universal.dmg` | Universal（Intel + Apple Silicon），ad-hoc 签名，未公证 |
+| Windows 10/11 x64 | `SRL_0.1.0_windows-x64-portable.zip` | 需要 WebView2 Runtime；解压后运行 `Install.cmd` |
+| Linux x64 | `SRL_0.1.0_amd64.deb` | 需要 WebKitGTK 4.1 等运行库 |
+| 源码 | `SRL-0.1.0-source.tar.gz` | 干净源码快照，不含构建产物 |
+| 校验 | `SHA256SUMS` | 所有附件的 SHA-256 |
 
-安装包由 [`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) 在推送 `v*` 标签或手动触发时，于原生 macOS / Windows / Ubuntu runner 上构建。
+> `release-assets/` 保存本次发布的构建产物，供维护者复核；普通用户直接下载 Release 附件即可。后续版本可以用 [`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) 手动构建，再上传到对应 Release。
 
 ### 首次运行
 
@@ -177,9 +183,7 @@ xattr -dr com.apple.quarantine /Applications/SRL.app
 **Linux**
 
 ```bash
-sudo apt install ./SRL_<version>_amd64.deb
-# 或
-chmod +x SRL_<version>_amd64.AppImage && ./SRL_<version>_amd64.AppImage
+sudo apt install ./SRL_0.1.0_amd64.deb
 ```
 
 ### 第一次使用

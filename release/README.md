@@ -2,6 +2,8 @@
 
 当前公开发布：**v0.1.0**
 
+下载地址：**https://github.com/sry8n5rjz5-debug/SRL/releases/tag/v0.1.0**
+
 | 平台 | 文件 |
 |---|---|
 | macOS（Intel + Apple Silicon） | `SRL_0.1.0_universal.dmg` |
