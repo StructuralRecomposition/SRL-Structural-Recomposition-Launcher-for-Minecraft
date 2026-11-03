@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SRL",
+  "version": "0.1.2",
+  "identifier": "app.srlauncher.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "SRL",
+        "width": 1200,
+        "height": 780,
+        "minWidth": 920,
+        "minHeight": 620,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --proxy-bypass-list=tauri.localhost;localhost;127.0.0.1"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: https://cdn.modrinth.com https://cdn-raw.modrinth.com https://media.forgecdn.net https://mediafilez.forgecdn.net; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost ws://localhost:1420 http://localhost:1420"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Game",
+    "shortDescription": "SRL - a modern, local-first Minecraft launcher",
+    "longDescription": "SRL (Structural Recomposition Launcher) is an independent, cross-platform Minecraft Java Edition launcher focused on reliable installs, clear diagnostics and local-first operation.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "resources/THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    }
+  }
+}

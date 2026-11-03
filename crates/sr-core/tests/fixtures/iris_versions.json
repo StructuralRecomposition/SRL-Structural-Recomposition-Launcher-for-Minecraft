@@ -1,0 +1,67 @@
+[
+  {
+    "id": "iris-180",
+    "version_number": "1.8.0",
+    "name": "Iris 1.8.0 for 1.20.4",
+    "game_versions": ["1.20.4", "1.20.3"],
+    "loaders": ["fabric"],
+    "date_published": "2026-10-20T10:00:00Z",
+    "files": [
+      {
+        "hashes": {
+          "sha1": "1111111111111111111111111111111111111111",
+          "sha512": "aaaa"
+        },
+        "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/iris-180/iris-1.8.0.jar",
+        "filename": "iris-1.8.0.jar",
+        "size": 1234567,
+        "primary": true
+      },
+      {
+        "hashes": {},
+        "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/iris-180/iris-1.8.0-sources.jar",
+        "filename": "iris-1.8.0-sources.jar",
+        "size": 765432,
+        "primary": false
+      }
+    ]
+  },
+  {
+    "id": "iris-179",
+    "version_number": "1.7.9",
+    "name": "Iris 1.7.9 for 1.20.4",
+    "game_versions": ["1.20.4"],
+    "loaders": ["quilt"],
+    "date_published": "2026-09-01T10:00:00Z",
+    "files": [
+      {
+        "hashes": {
+          "sha1": "2222222222222222222222222222222222222222"
+        },
+        "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/iris-179/iris-1.7.9.jar",
+        "filename": "iris-1.7.9.jar",
+        "size": 1200000,
+        "primary": true
+      }
+    ]
+  },
+  {
+    "id": "iris-160",
+    "version_number": "1.6.0",
+    "name": "Iris 1.6.0 for 1.19.2",
+    "game_versions": ["1.19.2"],
+    "loaders": ["fabric"],
+    "date_published": "2026-01-01T10:00:00Z",
+    "files": [
+      {
+        "hashes": {
+          "sha1": "3333333333333333333333333333333333333333"
+        },
+        "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/iris-160/iris-1.6.0.jar",
+        "filename": "iris-1.6.0.jar",
+        "size": 1000000,
+        "primary": true
+      }
+    ]
+  }
+]

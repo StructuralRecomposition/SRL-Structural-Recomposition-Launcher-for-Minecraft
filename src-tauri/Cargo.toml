@@ -1,0 +1,33 @@
+[package]
+name = "sr-launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SR Launcher - a cross-platform Minecraft Java Edition launcher"
+
+[lib]
+name = "sr_launcher_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# Tauri CLI enables this for production bundles. Plain `cargo build` does not,
+# so cross-compiled/portable builds must pass `--features custom-protocol` or
+# the window tries to load the dev server at localhost:1420.
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", default-features = false, features = ["wry", "compression", "dynamic-acl", "x11", "dbus"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "sync", "time", "process"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+chrono = { version = "0.4", features = ["serde"] }
+sr-core = { path = "../crates/sr-core" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+uuid = { version = "1", features = ["v4"] }
+percent-encoding = "2"

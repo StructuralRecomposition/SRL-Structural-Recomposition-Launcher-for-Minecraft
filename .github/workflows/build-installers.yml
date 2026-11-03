@@ -1,0 +1,57 @@
+name: Build installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            args: --target universal-apple-darwin --bundles app,dmg
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            artifact: macos-universal
+            bundle_path: src-tauri/target/universal-apple-darwin/release/bundle
+          - os: ubuntu-22.04
+            args: --bundles deb,appimage
+            rust_targets: ""
+            artifact: linux-x64
+            bundle_path: src-tauri/target/release/bundle
+          - os: windows-latest
+            args: --bundles nsis,msi
+            rust_targets: ""
+            artifact: windows-x64
+            bundle_path: src-tauri/target/release/bundle
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+      - name: Linux dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Verify no AI key in source
+        run: node scripts/verify-no-secrets.mjs
+      - run: npm ci
+      - name: Build
+        run: npm run tauri build -- ${{ matrix.args }}
+      - name: Verify clean bundle
+        if: matrix.os == 'macos-14'
+        run: bash scripts/verify-clean-bundle.sh "${{ matrix.bundle_path }}/macos/SRL.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.bundle_path }}/**/*
+          if-no-files-found: error

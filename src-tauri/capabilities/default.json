@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for the SR Launcher main window. No shell, fs or http plugins are enabled.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

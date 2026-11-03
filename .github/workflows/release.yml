@@ -1,0 +1,41 @@
+name: Publish release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            gh release create "$TAG" \
+              release-assets/SRL_0.1.0_universal.dmg \
+              release-assets/SRL_0.1.0_windows-x64-portable.zip \
+              release-assets/SRL_0.1.0_amd64.deb \
+              release-assets/SRL-0.1.0-source.tar.gz \
+              release-assets/SHA256SUMS \
+              --title "SRL $TAG — 首个公开发布" \
+              --notes-file release/RELEASE_NOTES_v0.1.0.md \
+              --latest
+          fi

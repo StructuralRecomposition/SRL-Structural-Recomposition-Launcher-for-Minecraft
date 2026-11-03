@@ -1,0 +1,32 @@
+# Dependencies / build output
+node_modules/
+dist/
+target/
+src-tauri/target/
+src-tauri/gen/
+
+# Tauri bundles
+src-tauri/target/release/bundle/
+
+# Release build artifacts (kept in release-assets/ for GitHub Actions only)
+release/archive-0.1.0/*
+release/linux-0.1.0/*
+tsconfig.tsbuildinfo
+
+# Local test artifacts
+*.log
+.DS_Store
+
+# Local GitHub publish token (never commit)
+.gh_token
+*.srpart*
+icon-1024.png
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Bundled third-party runtime (fetched by scripts/fetch-easytier.sh)
+src-tauri/resources/easytier/*
+!src-tauri/resources/easytier/README.md
