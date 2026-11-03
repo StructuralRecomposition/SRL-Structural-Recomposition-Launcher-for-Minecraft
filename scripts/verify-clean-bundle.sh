@@ -6,6 +6,11 @@ FAIL=0
 
 echo "Checking bundle: $TARGET"
 
+if [ ! -e "$TARGET" ]; then
+  echo "Bundle path not found: $TARGET" >&2
+  exit 1
+fi
+
 while IFS= read -r -d '' path; do
   echo "  forbidden user file: $path"
   FAIL=1
