@@ -66,6 +66,20 @@
 | 任务持久化 | ✅ | 历史写入 `cache/tasks.json`；重启后未完成任务标记为“中断”，不自动重放 |
 | 国内镜像 | ✅ | BMCLAPI / USTC / 清华 TUNA；失败自动回退官方源 |
 
+### Java 运行时
+
+| 能力 | 状态 | 说明 |
+|---|---|---|
+| Java 自动发现 | ✅ | `JAVA_HOME`、`PATH`、macOS `java_home -V` 与平台默认目录；只读探测，不修改系统 Java |
+| 版本兼容性 | ✅ | 基于版本元数据 `javaVersion.majorVersion`；不兼容时明确拒绝启动 |
+| 按版本自动选择 | ✅ | 1.12.2 → Java 8，1.21.1 → Java 21，26.x → Java 25；优先精确匹配，其次安全范围内的默认 Java |
+| 每实例覆盖 | ✅ | 实例可单独指定 Java，优先级高于全局默认 |
+| 一键安装 Temurin | ✅ | Eclipse Temurin 8–27 可选；下载 → SHA-256 校验 → 解压到启动器数据目录 → 自动识别 |
+| 国内镜像加速 | ✅ | 开启“国内镜像”后优先使用清华 TUNA 的 Adoptium 镜像；镜像缺失或不可用时自动回退 Adoptium 官方 |
+| 校验不降级 | ✅ | 版本元数据仍来自 Adoptium API；镜像只改变下载地址，SHA-256 校验不变 |
+
+> Java 一键安装不依赖系统预装 Java。安装后会出现在 Java 列表中，但不会顶掉已有默认；启动器会按实例版本自动选择。开启国内镜像后，下载优先走清华 TUNA，失败回退官方，校验值不变。
+
 ### 加载器与光影
 
 | 能力 | 状态 | 说明 |
@@ -129,6 +143,19 @@
 
 ## 界面
 
+### 界面预览
+
+<p align="center">
+  <img src="docs/screenshots/home.png" width="49%" alt="SRL 首页" />
+  <img src="docs/screenshots/resources.png" width="49%" alt="SRL 资源页" />
+</p>
+<p align="center"><sub>首页 · 资源页（Modrinth / CurseForge 搜索与安装）</sub></p>
+
+<p align="center">
+  <img src="docs/screenshots/java.png" width="80%" alt="SRL Java 环境" />
+</p>
+<p align="center"><sub>Java 环境：自动发现、版本兼容性检查与 Temurin 一键安装（支持国内镜像）</sub></p>
+
 侧栏包含 10 个页面，均为真实功能入口：
 
 | 页面 | 用途 |
@@ -191,7 +218,7 @@ sudo apt install ./SRL_0.1.0_amd64.deb
 1. 打开「设置」确认游戏目录与下载并发数。
 2. 打开「版本管理」，选择一个 Minecraft 版本安装；可在弹窗中同时勾选 Fabric / Quilt / Forge / NeoForge 与 Iris / OptiFine。
 3. 安装完成后创建实例，选择账号（离线或 Microsoft）。
-4. 打开「Java 环境」检查兼容性；没有合适 Java 时可一键安装 Eclipse Temurin。
+4. 打开「Java 环境」检查兼容性；没有合适 Java 时可一键安装 Eclipse Temurin。开启「设置 → 国内镜像」后，下载会优先走清华 TUNA，失败自动回退 Adoptium 官方。
 5. 回到首页启动实例。
 
 > 安装启动器本身不需要预装 Java；启动游戏需要。SRL 会按版本元数据选择 Java，并在缺失时给出明确提示。
