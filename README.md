@@ -15,9 +15,11 @@
 >
 > 本项目与 Mojang、Microsoft、PCL2、HMCL 均无隶属关系。“Minecraft”是 Mojang Studios 的商标。
 
+> **关于 Microsoft 正版登录：** 很抱歉，受当前开发条件限制，SRL 还不能做到开箱即用的 Microsoft 正版登录。目前需要玩家自行注册 Azure 应用、获取 `client id` 并在设置中填写；未配置时登录入口会明确禁用。我们会在后续版本继续修复，感谢理解。
+
 **English:** SRL (Structural Recomposition Launcher) is an independent, local-first Minecraft: Java Edition launcher built with Rust, Tauri 2, React and TypeScript. It focuses on verifiable downloads, real process launching, clear diagnostics, and honest capability boundaries. No telemetry, no proprietary game files, MIT licensed.
 
-> **当前源码：`v0.2.0`（Minecraft 联机中心）** · 使用 52FRP 开放 API；安装包与校验值仍以 [GitHub Releases](#下载与安装) 中的 `v0.1.0` 为准，待测试通过后再发布。
+> **当前版本：`v0.2.0`（Minecraft 联机中心）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/sry8n5rjz5-debug/SRL/releases/tag/v0.2.0)。
 
 ---
 
@@ -111,7 +113,7 @@
 | 能力 | 状态 | 说明 |
 |---|---|---|
 | 离线账号 | ✅ | 明确标识为离线档案，不冒充正版 |
-| Microsoft 登录 | 🟡 | 设备码 + Xbox / Minecraft 交换，支持令牌刷新；需在设置中填写自己的 Azure client id，未配置时明确禁用 |
+| Microsoft 登录 | 🟡 | 设备码 + Xbox / Minecraft 交换，支持令牌刷新；需自行注册 Azure 应用并填写 client id，未配置时明确禁用。受开发条件限制，暂时无法开箱即用，敬请谅解 |
 | 皮肤库 | ✅ | 内置默认皮肤、本地导入 64×64 / 128×128 / 旧版 64×32、按正版玩家名获取 |
 | 皮肤模型 | ✅ | 标准 / 纤细模型；正版账号走官方上传，离线档案使用本机资源包（仅自己可见） |
 | 皮肤格式适配 | ✅ | 从客户端 JAR 读取资源包格式，兼容 1.x 与 26.x |
@@ -140,7 +142,11 @@
 | 停止与清理 | ✅ | 停止 FRPC 与删除云端隧道分离；只删除 `SRL_` 前缀的临时隧道 |
 | 真实联调 | 🟡 | 需要真实 52FRP 账户与 API 令牌；代码按官方 v1 OpenAPI 实现 |
 
-> 联机中心不要求用户理解 FRP、公网 IP 或端口映射。用户只需要启动游戏、创建房间、复制地址。API 令牌在 52FRP 个人中心创建，只保存在系统凭据库。
+> 联机中心不要求用户理解 FRP、公网 IP 或端口映射。房主启动游戏、创建房间并复制地址；朋友不需要开穿透，直接在 Minecraft 里直连即可。API 令牌在 52FRP 个人中心创建，只保存在系统凭据库。
+>
+> 联机页「当前状态」旁的「帮助」包含完整教程：52FRP 注册与实名、套餐/节点、API 令牌权限（创建和修改隧道与客户端）、房主开世界、朋友加入、离线联机模组和常见错误。
+>
+> 简要流程：房主在 Minecraft 中「对局域网开放」→ SRL 选择实例和本地端口 → 创建房间 → 复制公网地址；朋友打开同版本 Minecraft → 多人游戏 → 直接连接 → 粘贴地址。
 
 ### 诊断与 AI 助手
 
@@ -162,16 +168,23 @@
 
 <p align="center">
   <img src="docs/screenshots/home.png" width="49%" alt="SRL 首页" />
-  <img src="docs/screenshots/resources.png" width="49%" alt="SRL 资源页" />
+  <img src="docs/screenshots/multiplayer.png" width="49%" alt="SRL Minecraft 联机" />
 </p>
-<p align="center"><sub>首页 · 资源页（Modrinth / CurseForge 搜索与安装）</sub></p>
+<p align="center"><sub>首页 · Minecraft 联机（52FRP 创建房间与帮助教程）</sub></p>
 
 <p align="center">
-  <img src="docs/screenshots/java.png" width="80%" alt="SRL Java 环境" />
+  <img src="docs/screenshots/resources.png" width="49%" alt="SRL 资源页" />
+  <img src="docs/screenshots/versions.png" width="49%" alt="SRL 版本管理" />
 </p>
-<p align="center"><sub>Java 环境：自动发现、版本兼容性检查与 Temurin 一键安装（支持国内镜像）</sub></p>
+<p align="center"><sub>资源（Modrinth / CurseForge） · 版本管理（安装、检查与实例）</sub></p>
 
-侧栏包含 10 个页面，均为真实功能入口：
+<p align="center">
+  <img src="docs/screenshots/java.png" width="49%" alt="SRL Java 环境" />
+  <img src="docs/screenshots/assistant.png" width="49%" alt="SRL 鸦鸭" />
+</p>
+<p align="center"><sub>Java 环境（自动发现与 Temurin 安装） · 鸦鸭（测试中）</sub></p>
+
+侧栏包含 11 个页面，均为真实功能入口：
 
 | 页面 | 用途 |
 |---|---|
@@ -189,18 +202,18 @@
 
 ## 下载与安装
 
-### v0.1.0 下载
+### v0.2.0 下载
 
 已构建好的安装包直接放在 GitHub Release，点开即可下载：
 
-**https://github.com/sry8n5rjz5-debug/SRL/releases/tag/v0.1.0**
+**https://github.com/sry8n5rjz5-debug/SRL/releases/tag/v0.2.0**
 
 | 平台 | 文件 | 说明 |
 |---|---|---|
-| macOS 10.15+ | `SRL_0.1.0_universal.dmg` | Universal（Intel + Apple Silicon），ad-hoc 签名，未公证 |
-| Windows 10/11 x64 | `SRL_0.1.0_windows-x64-portable.zip` | 需要 WebView2 Runtime；解压后运行 `Install.cmd` |
-| Linux x64 | `SRL_0.1.0_amd64.deb` | 需要 WebKitGTK 4.1 等运行库 |
-| 源码 | `SRL-0.1.0-source.tar.gz` | 干净源码快照，不含构建产物 |
+| macOS 10.15+ | `SRL_0.2.0_x64.dmg` | Intel x64，ad-hoc 签名，未公证 |
+| Windows 10/11 x64 | `SRL_0.2.0_windows-x64-portable.zip` | 需要 WebView2 Runtime；解压后运行 `Install.cmd` |
+| Linux x64 | `SRL_0.2.0_amd64.deb` | 需要 WebKitGTK 4.1 等运行库 |
+| Linux x64 | `SRL_0.2.0_amd64.AppImage` | 免安装；需要 FUSE 或 `--appimage-extract-and-run` |
 | 校验 | `SHA256SUMS` | 所有附件的 SHA-256 |
 
 > `release-assets/` 保存本次发布的构建产物，供维护者复核；普通用户直接下载 Release 附件即可。后续版本可以用 [`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) 手动构建，再上传到对应 Release。
@@ -226,7 +239,7 @@ xattr -dr com.apple.quarantine /Applications/SRL.app
 **Linux**
 
 ```bash
-sudo apt install ./SRL_0.1.0_amd64.deb
+sudo apt install ./SRL_0.2.0_amd64.deb
 ```
 
 ### 第一次使用
@@ -291,7 +304,7 @@ npm run tauri build -- --bundles nsis,msi
 
 ```bash
 cargo test -p sr-core          # 180 项单元测试 + 2 项集成测试通过；13 项真实网络测试默认忽略
-npx vitest run                 # 39 项前端测试
+npx vitest run                 # 41 项前端测试
 cargo check -p sr-launcher     # Tauri 命令层编译检查
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
@@ -308,7 +321,7 @@ cargo test -p sr-core --test fabric_mirror_install -- --ignored --nocapture
 当前质量基线：
 
 - Rust：182 项通过，13 项需真实网络 / 下载的测试默认忽略。
-- 前端：39 项通过（Vitest + Testing Library）。
+- 前端：41 项通过（Vitest + Testing Library）。
 - `cargo fmt`、`cargo clippy -D warnings`、`npm run build` 通过。
 - 发布前运行 `node scripts/verify-no-secrets.mjs` 与 `bash scripts/verify-clean-bundle.sh <SRL.app>`。
 
@@ -400,7 +413,7 @@ crates/sr-core
 
 ## 已知限制
 
-1. **Microsoft 登录需要自备 Azure client id。** 微软要求每个启动器独立注册应用；未配置时登录入口明确禁用，不伪造授权。
+1. **Microsoft 登录需要自备 Azure client id。** 微软要求每个启动器独立注册应用；未配置时登录入口明确禁用，不伪造授权。很抱歉，受当前开发条件限制，暂时无法让正版登录开箱即用；后续会继续修复。
 2. **Forge / NeoForge 使用官方安装流程。** 安装在后端完成，不显示官方安装器窗口；少数自定义安装步骤可能不适用。
 3. **中断任务不自动续传。** 应用重启后，未完成任务会标记为“中断”并保留历史；需要重新发起安装。
 4. **断点续传依赖服务器头。** 仅在提供 `ETag` / `Last-Modified` 且可用 `If-Range` 校验时续传；否则安全回退整包下载。

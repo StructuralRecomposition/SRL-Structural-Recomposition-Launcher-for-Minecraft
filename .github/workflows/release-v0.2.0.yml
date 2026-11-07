@@ -1,0 +1,118 @@
+name: Build and publish release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish (e.g. v0.2.0)"
+        required: true
+        default: "v0.2.0"
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macos-universal
+            args: --target universal-apple-darwin --bundles dmg
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - os: ubuntu-22.04
+            name: linux-x64
+            args: --bundles deb,appimage
+            targets: ""
+          - os: windows-latest
+            name: windows-x64
+            args: --no-bundle
+            targets: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+      - name: Linux dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Verify no AI key in source
+        run: node scripts/verify-no-secrets.mjs
+      - run: npm ci
+      - name: Frontend tests
+        run: npm test -- --run
+      - name: Build application
+        run: npm run tauri build -- ${{ matrix.args }}
+      - name: Package Windows portable
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = "${{ env.TAG }}".TrimStart("v")
+          New-Item -ItemType Directory -Force -Path portable | Out-Null
+          Copy-Item target/release/sr-launcher.exe portable/
+          Copy-Item packaging/windows/* portable/
+          Compress-Archive -Path portable/* -DestinationPath "SRL_${version}_windows-x64-portable.zip"
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+            SRL_*_windows-x64-portable.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Assemble release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          mkdir -p release-assets
+          cp "$(find artifacts -type f -name '*.dmg' | head -1)" "release-assets/SRL_${version}_universal.dmg"
+          cp "$(find artifacts -type f -name '*.deb' | head -1)" "release-assets/SRL_${version}_amd64.deb"
+          cp "$(find artifacts -type f -name '*.AppImage' | head -1)" "release-assets/SRL_${version}_amd64.AppImage"
+          cp "$(find artifacts -type f -name 'SRL_*_windows-x64-portable.zip' | head -1)" "release-assets/SRL_${version}_windows-x64-portable.zip"
+          git archive --format=tar.gz --prefix="SRL-${version}/" HEAD > "release-assets/SRL-${version}-source.tar.gz"
+          cd release-assets
+          sha256sum SRL_* > SHA256SUMS
+          ls -lh
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: SRL ${{ env.TAG }} — Minecraft 联机中心
+          body_path: release/RELEASE_NOTES_v0.2.0.md
+          files: release-assets/*
+          make_latest: true
+          draft: false
+          prerelease: false

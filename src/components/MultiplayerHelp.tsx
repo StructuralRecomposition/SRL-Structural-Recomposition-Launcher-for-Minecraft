@@ -3,8 +3,6 @@ import { Modal } from "./Modal";
 
 const FRP52 = "https://www.52frp.com/user/#/user-center";
 const TOKEN_PAGE = "https://www.52frp.com/user/#/user-center";
-const LAN_MOD =
-  "https://www.mcmod.cn/class/2754.html";
 
 export function MultiplayerHelp({
   open,
@@ -31,7 +29,7 @@ export function MultiplayerHelp({
       <div className="mp-help">
         <p className="mp-help__lead">
           一句话：你开一个 Minecraft 世界，SRL 用 52FRP 把它搬到公网，朋友输入一个地址就能进来。
-          朋友不需要装 SRL，也不需要开穿透。
+          朋友不需要开穿透，直连即可。
         </p>
 
         <section className="mp-help__section">
@@ -96,10 +94,10 @@ export function MultiplayerHelp({
           <h3>3. 朋友：只做这一步</h3>
           <p className="mp-help__plain">
             朋友打开同版本的 Minecraft，进入 <b>多人游戏</b> → <b>直接连接</b>，把房主复制的地址粘进去。
-            地址长这样：<code>47.98.42.43:44688</code>。
+            地址长这样：<code>203.0.113.10:44688</code>（这是示例，请填你自己的地址）。
           </p>
           <ul className="mp-help__list">
-            <li>朋友不需要装 SRL，不需要装 FRPC，也不需要开路由器端口。</li>
+            <li>朋友不需要开穿透，也不需要装 FRPC，直连即可。</li>
             <li>Java 版用 TCP；基岩版在“服务器 → 添加服务器”里填同一个地址和端口，走 UDP。</li>
             <li>版本、Forge 和模组要跟房主一致，否则会进不去或被踢。</li>
             <li>地址里冒号后面的端口是公网端口，不是房主的本地端口。</li>
@@ -109,23 +107,15 @@ export function MultiplayerHelp({
         <section className="mp-help__section">
           <h3>4. 没有正版账号，怎么离线联机</h3>
           <p className="mp-help__plain">
-            两个人用离线账号也能联机，但要让 Minecraft 关闭正版验证。最简单是房主装一个
-            <b>“自定义局域网联机”</b>模组：
+            两个人用离线账号也能联机，但要让 Minecraft 关闭正版验证。双方都要安装
+            <b>“自定义局域网联机”</b>模组（版本和游戏/Forge 版本要一致）：
           </p>
           <ol className="mp-help__steps">
             <li>
-              打开
-              <button
-                type="button"
-                className="mp-help__link"
-                onClick={() => onOpenUrl(LAN_MOD, "自定义局域网联机模组")}
-              >
-                自定义局域网联机（Lan Server Properties）
-              </button>
-              <span className="mp-help__url">https://www.mcmod.cn/class/2754.html</span>
-              ，下载和游戏版本、Forge 版本匹配的文件。
+              复制下面的网址到浏览器打开，下载和游戏版本、Forge 版本匹配的文件：
+              <code className="mp-help__url">https://www.mcmod.cn/class/2754.html</code>
             </li>
-            <li>只装在房主的客户端里，朋友不用装。</li>
+            <li>房主和朋友都要装，版本必须一致。</li>
             <li>进入世界，打开“对局域网开放”，把端口固定成 <code>25565</code> 或 <code>59888</code>，关闭“在线模式”。</li>
             <li>回到 SRL，用这个固定端口创建房间，把公网地址发给朋友。</li>
           </ol>

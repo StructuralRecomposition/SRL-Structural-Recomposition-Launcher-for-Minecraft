@@ -664,7 +664,8 @@ describe("SR Launcher UI", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("节点是 52FRP");
     fireEvent.click(screen.getByRole("button", { name: "帮助" }));
     expect(await screen.findByText(/先准备 52FRP/)).toBeInTheDocument();
-    expect(screen.getByText("自定义局域网联机（Lan Server Properties）")).toBeInTheDocument();
+    expect(screen.getByText(/自定义局域网联机/)).toBeInTheDocument();
+    expect(screen.getByText("https://www.mcmod.cn/class/2754.html")).toBeInTheDocument();
   });
 
   it("offers loader downloads inside the resources page", async () => {
