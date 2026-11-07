@@ -187,7 +187,10 @@ export function AssistantPage() {
         <div className="assistant-head">
           <img className="assistant-avatar" src={logo} alt="鸦鸭" />
           <div>
-            <h2>鸦鸭</h2>
+            <div className="assistant-title-row">
+              <h2>鸦鸭</h2>
+              <Badge tone="warning">测试</Badge>
+            </div>
             <p className="muted">
               {current ? `${current.name} · ${current.versionId}` : "不绑定实例"}
             </p>

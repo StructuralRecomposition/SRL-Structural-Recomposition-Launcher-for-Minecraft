@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Account, type DeviceCodeView, type Skin } from "../lib/api";
 import { formatDate } from "../lib/format";
 import { useApp } from "../state/AppContext";
-import { Badge, Button, Card, EmptyState, Field, IconButton } from "../components/ui";
+import { Badge, Button, Card, EmptyState, Field, IconButton, Notice } from "../components/ui";
 import { Modal } from "../components/Modal";
 import { Icon } from "../components/Icon";
 import { SkinHead } from "../components/SkinPreview";
@@ -271,26 +271,14 @@ export function AccountsPage() {
   }
 
   return (
-    <div className="page">
+    <div className="page accounts-page">
       <div className="toolbar">
         <div>
           <h2>账号管理</h2>
-          <p className="muted">令牌不会写入配置文件或日志；离线档案有明确标识。</p>
         </div>
         <Button variant="primary" icon="plus" onClick={openAdd}>
           添加离线档案
         </Button>
-      </div>
-
-      <div className="notice">
-        <Icon name="shield" size={17} />
-        <div>
-          <strong>账号与皮肤说明</strong>
-          <p>
-            离线档案只生成本地 UUID，<b>不是</b>已验证的 Minecraft 正版账号。离线皮肤通过本机资源包显示，
-            仅自己可见；正版账号登录后可将皮肤上传到 Minecraft 皮肤服务，对所有玩家生效。
-          </p>
-        </div>
       </div>
 
       {accounts.length === 0 ? (
@@ -298,7 +286,7 @@ export function AccountsPage() {
           <EmptyState
             icon="user"
             title="还没有账号档案"
-            description="添加一个离线档案即可在本地启动游戏。正版登录需要先完成 Microsoft OAuth 配置。"
+            description="添加一个离线档案即可开始。"
             action={
               <Button variant="primary" icon="plus" onClick={openAdd}>
                 添加离线档案
@@ -429,22 +417,19 @@ export function AccountsPage() {
         )}
       </Card>
 
+      <Notice tone="warning" title="Microsoft 正版登录暂时需要自行配置">
+        因条件有限，目前需要自行注册 Azure 应用并获取 client ID 才能登录；后续会修复为开箱即用，敬请期待。
+      </Notice>
+
       <Card className="microsoft-card">
         <div className="card-head">
           <div>
             <h3>Microsoft 正版登录</h3>
-            <p>使用 Microsoft 身份平台 OAuth 流程获取 Minecraft 授权。</p>
           </div>
           <Badge tone={microsoft?.available ? "success" : "warning"}>
             {microsoft?.available ? "已配置" : "未配置"}
           </Badge>
         </div>
-        <p className="muted">
-          {microsoft?.available
-            ? "使用设备码流程：在浏览器打开验证地址并输入代码，启动器不会接触你的 Microsoft 密码。"
-            : "Microsoft 要求每个启动器使用自己的 Azure 应用 client id。填写后即可使用设备码登录。"}
-        </p>
-
         {!microsoft?.available || editingClient ? (
           <div className="microsoft-setup">
             <Field

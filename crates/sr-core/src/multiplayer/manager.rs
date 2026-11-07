@@ -4,10 +4,11 @@ use crate::paths::AppPaths;
 use futures_util::future::join_all;
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 
 use super::frp52::{parse_port_ranges, port_in_ranges, Frp52Provider};
-use super::frpc::FrpcManager;
+use super::frpc::{DownloadProgress, FrpcManager};
 use super::minecraft;
 use super::nodes::{rank_nodes, tcp_latency};
 use super::provider::{supports_edition, ProviderNode, TunnelCreate, TunnelProvider};
@@ -141,6 +142,10 @@ impl MultiplayerManager {
         let account = provider.account_with_token(token).await?;
         self.tokens.set(token).await?;
         *self.last_error.write().await = None;
+        let frpc = FrpcManager::new(self.paths.frpc_dir(), self.http.clone());
+        tokio::spawn(async move {
+            frpc.warm_update().await;
+        });
         Ok(account)
     }
 
@@ -284,6 +289,44 @@ impl MultiplayerManager {
                 Err(error)
             }
         }
+    }
+
+    fn frpc_progress(&self) -> DownloadProgress {
+        let sink = self.progress.clone();
+        let started = Instant::now();
+        let last = Arc::new(std::sync::Mutex::new(
+            Instant::now() - Duration::from_secs(1),
+        ));
+        Arc::new(move |done, total| {
+            let Ok(mut last_emit) = last.lock() else {
+                return;
+            };
+            if last_emit.elapsed() < Duration::from_millis(300) {
+                return;
+            }
+            *last_emit = Instant::now();
+            let mb = done as f64 / 1024.0 / 1024.0;
+            let speed = if started.elapsed().as_secs_f64() > 0.1 {
+                done as f64 / started.elapsed().as_secs_f64() / 1024.0 / 1024.0
+            } else {
+                0.0
+            };
+            let detail = match total {
+                Some(total) => format!(
+                    "已下载 {:.1} / {:.1} MB · {:.1} MB/s",
+                    mb,
+                    total as f64 / 1024.0 / 1024.0,
+                    speed
+                ),
+                None => format!("已下载 {:.1} MB · {:.1} MB/s", mb, speed),
+            };
+            (sink)(ProgressEvent {
+                step: "frpc".into(),
+                label: "下载并启动 FRPC".into(),
+                status: "running".into(),
+                detail: Some(detail),
+            });
+        })
     }
 
     async fn create_inner(
@@ -497,7 +540,7 @@ impl MultiplayerManager {
         self.emit("config", "获取 FRPC 配置", "ok", None);
 
         self.emit("frpc", "下载并启动 FRPC", "running", None);
-        let prepared = self.frpc.prepare().await?;
+        let prepared = self.frpc.prepare(Some(self.frpc_progress())).await?;
         self.frpc.set_prepared(&prepared).await;
         let frpc_pid = self.frpc.start(&prepared.path, &config_text).await?;
         self.emit(
@@ -507,7 +550,12 @@ impl MultiplayerManager {
             Some(format!("PID {frpc_pid}")),
         );
 
-        self.emit("verify", "验证公网连接", "running", None);
+        self.emit(
+            "verify",
+            "等待 52FRP 云端确认",
+            "running",
+            Some("FRPC 已启动，正在等待隧道在线".into()),
+        );
         let mut online = false;
         for _ in 0..23 {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -522,7 +570,7 @@ impl MultiplayerManager {
                 "FRPC 已启动，但 52FRP 在 45 秒内没有报告隧道在线",
             ));
         }
-        self.emit("verify", "验证公网连接", "ok", None);
+        self.emit("verify", "等待 52FRP 云端确认", "ok", None);
 
         Ok(StoredRoom {
             tunnel_id,
@@ -626,7 +674,7 @@ impl MultiplayerManager {
         }
         let provider = self.provider();
         let config_text = provider.tunnel_config(room.node_id, room.tunnel_id).await?;
-        let prepared = self.frpc.prepare().await?;
+        let prepared = self.frpc.prepare(None).await?;
         self.frpc.set_prepared(&prepared).await;
         self.frpc.start(&prepared.path, &config_text).await?;
         Ok(self.frpc.status().await)

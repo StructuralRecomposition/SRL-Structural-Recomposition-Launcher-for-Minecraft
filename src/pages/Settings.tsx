@@ -221,11 +221,10 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="page">
+    <div className="page settings-page">
       <div className="toolbar">
         <div>
           <h2>设置</h2>
-          <p className="muted">修改会立即写入本地配置文件，不经过任何服务器。</p>
         </div>
         <div className="toolbar__actions">
           <Button variant="ghost" onClick={() => setForm(bootstrap.settings)} disabled={!dirty || saving}>

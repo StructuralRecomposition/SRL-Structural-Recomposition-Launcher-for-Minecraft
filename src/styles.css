@@ -6896,3 +6896,317 @@ textarea:focus {
   flex: 1;
   min-width: 0;
 }
+
+.mp-orphan > .btn {
+  flex: none;
+}
+
+/* ------------------------------------------------------- compact UI hints */
+
+.info-hint {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font: 600 10px/1 var(--font-ui, system-ui, sans-serif);
+  cursor: help;
+}
+
+.info-hint:hover,
+.info-hint:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.info-hint::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  width: max-content;
+  max-width: min(250px, 72vw);
+  padding: 7px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text-soft);
+  box-shadow: var(--shadow);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 3px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+  pointer-events: none;
+  z-index: 60;
+}
+
+.info-hint:hover::after,
+.info-hint:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+.field__label-row,
+.mp-toolbar__title,
+.mp-card-title,
+.mp-room__title,
+.mp-account__name,
+.mp-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.mp-toolbar__title h2,
+.mp-card-title h3,
+.mp-room__title h3 {
+  margin: 0;
+}
+
+.mp-login-block {
+  gap: 9px;
+}
+
+.mp-login-links {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mp-room__hint {
+  margin: 6px 0 12px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.mp-room__advanced {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 8px;
+}
+
+.mp-room__advanced > summary,
+.mp-log {
+  cursor: pointer;
+}
+
+.mp-room__advanced > summary {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.mp-room__advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.mp-room__advanced-grid > div {
+  min-width: 0;
+}
+
+.mp-room__advanced-grid dt {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.mp-room__advanced-grid dd {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------- multiplayer guide */
+
+.mp-help {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.mp-help__lead {
+  margin: 0;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text-soft);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.mp-help__section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.mp-help__section h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.mp-help__steps,
+.mp-help__list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--text-soft);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+.mp-help__steps li::marker {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.mp-help__plain {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+.mp-help__tip {
+  margin: 2px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+.mp-help__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mp-help code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  font-size: 11.5px;
+}
+
+.mp-help__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.mp-help__faq {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mp-help__faq > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mp-help__faq dt {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.mp-help__faq dd {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+.mp-help__url {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  word-break: break-all;
+}
+
+.info-hint::after {
+  display: none;
+}
+
+.info-hint__bubble {
+  position: fixed;
+  z-index: 2147483647;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 24px));
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text-soft);
+  box-shadow: var(--shadow);
+  font-size: 11.5px;
+  line-height: 1.55;
+  text-align: left;
+  white-space: normal;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+}
+
+.info-hint__bubble--below {
+  transform: translate(-50%, 0);
+}
+
+/* Settings and accounts: keep only the controls, move prose out of sight. */
+.settings-page .toolbar p,
+.settings-page .card-head p,
+.settings-page .toggle-row__desc,
+.accounts-page .toolbar p,
+.accounts-page .card-head p,
+.accounts-page .account-info > code,
+.accounts-page .account-info > p,
+.accounts-page .account-info > span {
+  display: none;
+}
+
+.nav__tag {
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 9px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.assistant-title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}

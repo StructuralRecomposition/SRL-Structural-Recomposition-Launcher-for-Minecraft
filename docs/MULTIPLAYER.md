@@ -56,7 +56,9 @@ Java 使用 `tcp`，Bedrock 使用 `udp`。远程端口必须落在节点 `proxi
 
 - 通过 GitHub Release API 读取 `digest`（SHA-256）或 `frp_sha256_checksums.txt`。
 - 下载对应平台的 `frpc` / `frpc.exe`，校验 SHA-256 后才运行。
-- 下载失败时按顺序尝试 `ghproxy.com` / `gh-proxy.com` / `mirror.ghproxy.com` 镜像，校验值不变。
+- 下载失败时优先尝试 `ghproxy.com` / `gh-proxy.com` / `mirror.ghproxy.com` 镜像，单个源 15 秒超时，总上限 50 秒；校验值不变。
+- 已下载的客户端优先复用，创建房间不再每次请求 GitHub；连接账户后会在后台预下载，24 小时检查一次更新。
+- 下载过程通过联机步骤显示已下载大小和速度。
 - 配置来自 52FRP 的完整 TOML（含 `serverAddr`、`user`、`auth.token`），写入 `0600` 临时文件，停止时删除。
 
 ## 安全边界
@@ -82,3 +84,10 @@ npm test -- --run
 ```
 
 覆盖：52FRP 响应解析、端口范围、节点评分、Minecraft LAN 日志、`lsof`/`ss`/`netstat`、FRPC SHA-256/平台映射、日志脱敏、FRPC 启停、房间持久化。
+
+## 界面与帮助（0.2.0 更新）
+
+- 主页面只保留账户、创建房间、当前状态三块。字段解释集中到旁边的 `?`，悬停或键盘聚焦时显示；提示浮层挂在 `document.body` 的固定层，不依赖卡片裁切。
+- 当前状态卡片右上角有「帮助」按钮，包含 52FRP 注册/实名/套餐、API 令牌权限、房主与朋友操作、离线联机模组和常见错误。
+- 账号管理只保留账号名、类型、当前状态与操作；设置页隐藏重复说明，减少视觉噪音。
+- 安装包不包含用户账号、实例、皮肤或缓存；每次发布前使用 `scripts/verify-clean-bundle.sh` 检查。

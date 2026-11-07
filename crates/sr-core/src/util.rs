@@ -130,6 +130,34 @@ pub async fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(
 /// Write a small file that may contain credentials. The permissions are
 /// tightened after the atomic rename so a crash cannot leave a world-readable
 /// temporary copy behind on Unix.
+pub fn ensure_dir_sync(path: &Path) -> Result<()> {
+    std::fs::create_dir_all(path)?;
+    Ok(())
+}
+
+pub fn write_private_file_sync(path: &Path, bytes: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    use std::io::Write as _;
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.flush()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
 pub async fn write_private_file(path: &Path, bytes: &[u8]) -> Result<()> {
     atomic_write(path, bytes).await?;
     #[cfg(unix)]

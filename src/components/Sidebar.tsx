@@ -49,11 +49,13 @@ export function Sidebar() {
                     key={item.id}
                     type="button"
                     className={`nav__item ${page === item.id ? "nav__item--active" : ""}`}
+                    aria-label={item.label}
                     onClick={() => setPage(item.id)}
                     aria-current={page === item.id ? "page" : undefined}
                   >
                     <Icon name={item.icon} size={17} />
                     <span>{item.label}</span>
+                    {item.tag ? <em className="nav__tag">{item.tag}</em> : null}
                     {badge !== null ? <em className="nav__badge">{badge}</em> : null}
                   </button>
                 );

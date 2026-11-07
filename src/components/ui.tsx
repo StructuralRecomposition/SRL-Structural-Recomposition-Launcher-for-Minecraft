@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Icon, type IconName } from "./Icon";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
@@ -127,14 +128,67 @@ export function ProgressBar({
   );
 }
 
+export function InfoHint({ text }: { text: string }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [tip, setTip] = useState<{ left: number; top: number; below: boolean } | null>(null);
+
+  function show() {
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect) return;
+    const below = rect.top < 96;
+    const center = rect.left + rect.width / 2;
+    const left = Math.min(Math.max(center, 140), window.innerWidth - 140);
+    setTip({
+      left,
+      top: below ? rect.bottom + 8 : rect.top - 8,
+      below,
+    });
+  }
+
+  function hide() {
+    setTip(null);
+  }
+
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className="info-hint"
+        aria-label={`说明：${text}`}
+        title={text}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >
+        ?
+      </button>
+      {tip
+        ? createPortal(
+            <div
+              className={`info-hint__bubble ${tip.below ? "info-hint__bubble--below" : ""}`}
+              style={{ left: tip.left, top: tip.top }}
+              role="tooltip"
+            >
+              {text}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
 export function Field({
   label,
-  hint,
+  info,
   error,
   children,
   htmlFor,
 }: {
   label: string;
+  info?: string;
   hint?: string;
   error?: string | null;
   children: ReactNode;
@@ -142,11 +196,14 @@ export function Field({
 }) {
   return (
     <div className={`field ${error ? "field--error" : ""}`}>
-      <label className="field__label" htmlFor={htmlFor}>
-        {label}
-      </label>
+      <div className="field__label-row">
+        <label className="field__label" htmlFor={htmlFor}>
+          {label}
+        </label>
+        {info ? <InfoHint text={info} /> : null}
+      </div>
       {children}
-      {error ? <p className="field__error">{error}</p> : hint ? <p className="field__hint">{hint}</p> : null}
+      {error ? <p className="field__error">{error}</p> : null}
     </div>
   );
 }

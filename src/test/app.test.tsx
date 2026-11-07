@@ -657,9 +657,14 @@ describe("SR Launcher UI", () => {
     render(<App />);
     await screen.findByRole("button", { name: "Minecraft 联机" });
     fireEvent.click(screen.getByRole("button", { name: "Minecraft 联机" }));
-    expect(await screen.findByRole("button", { name: "创建联机房间" })).toBeInTheDocument();
-    expect(screen.getByText("Java Edition · TCP")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "创建房间" })).toBeInTheDocument();
+    expect(screen.getByText("Java 版")).toBeInTheDocument();
     expect(screen.getAllByText("max").length).toBeGreaterThan(0);
+    fireEvent.mouseEnter(screen.getByLabelText(/说明：节点是/));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("节点是 52FRP");
+    fireEvent.click(screen.getByRole("button", { name: "帮助" }));
+    expect(await screen.findByText(/先准备 52FRP/)).toBeInTheDocument();
+    expect(screen.getByText("自定义局域网联机（Lan Server Properties）")).toBeInTheDocument();
   });
 
   it("offers loader downloads inside the resources page", async () => {
@@ -839,13 +844,13 @@ describe("SR Launcher UI", () => {
 
     const loaderSelect = screen
       .getByText("模组加载器")
-      .parentElement?.querySelector("select") as HTMLSelectElement;
+      .closest(".field")?.querySelector("select") as HTMLSelectElement;
     fireEvent.change(loaderSelect, { target: { value: "fabric" } });
     await screen.findByText("0.16.10");
 
     const shaderSelect = screen
       .getByText("光影插件")
-      .parentElement?.querySelector("select") as HTMLSelectElement;
+      .closest(".field")?.querySelector("select") as HTMLSelectElement;
     fireEvent.change(shaderSelect, { target: { value: "iris" } });
     expect(await screen.findByText("Iris 版本")).toBeInTheDocument();
     expect(await screen.findByText("1.8.0 (fabric)")).toBeInTheDocument();
@@ -868,13 +873,13 @@ describe("SR Launcher UI", () => {
 
     const loaderSelect = screen
       .getByText("模组加载器")
-      .parentElement?.querySelector("select") as HTMLSelectElement;
+      .closest(".field")?.querySelector("select") as HTMLSelectElement;
     fireEvent.change(loaderSelect, { target: { value: "forge" } });
     await screen.findByText("52.0.16");
 
     const shaderSelect = screen
       .getByText("光影插件")
-      .parentElement?.querySelector("select") as HTMLSelectElement;
+      .closest(".field")?.querySelector("select") as HTMLSelectElement;
     fireEvent.change(shaderSelect, { target: { value: "optifine" } });
     expect(await screen.findByText("OptiFine 版本")).toBeInTheDocument();
     expect(await screen.findByText("HD_U J1")).toBeInTheDocument();

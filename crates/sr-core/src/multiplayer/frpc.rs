@@ -1,12 +1,13 @@
 use crate::error::{AppError, ErrorCode, Result};
 use futures_util::StreamExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
 use tokio::sync::Mutex;
@@ -14,6 +15,12 @@ use tokio::sync::Mutex;
 use super::types::FrpcView;
 
 const MAX_FRPC_BYTES: u64 = 100 * 1024 * 1024;
+const RELEASE_API: &str = "https://api.github.com/repos/fatedier/frp/releases/latest";
+const CHECK_INTERVAL_SECS: i64 = 24 * 60 * 60;
+
+pub type DownloadProgress = Arc<dyn Fn(u64, Option<u64>) + Send + Sync>;
+
+static PREPARE_LOCK: Mutex<()> = Mutex::const_new(());
 
 #[derive(Debug, Clone, Deserialize)]
 struct GitHubRelease {
@@ -30,6 +37,17 @@ struct GitHubAsset {
     size: u64,
     #[serde(default)]
     digest: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CacheMeta {
+    version: String,
+    platform: String,
+    arch: String,
+    asset_name: String,
+    archive_sha256: String,
+    exe_sha256: String,
+    checked_at: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -49,12 +67,21 @@ struct FrpcState {
 
 pub struct FrpcManager {
     dir: PathBuf,
+    bundled_dir: Option<PathBuf>,
     http: reqwest::Client,
     state: Mutex<FrpcState>,
 }
 
 impl FrpcManager {
     pub fn new(dir: PathBuf, http: reqwest::Client) -> Self {
+        Self::new_with_bundle(dir, http, None)
+    }
+
+    pub fn new_with_bundle(
+        dir: PathBuf,
+        http: reqwest::Client,
+        bundled_dir: Option<PathBuf>,
+    ) -> Self {
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name();
@@ -66,6 +93,7 @@ impl FrpcManager {
         }
         Self {
             dir,
+            bundled_dir,
             http,
             state: Mutex::new(FrpcState {
                 child: None,
@@ -77,10 +105,41 @@ impl FrpcManager {
         }
     }
 
-    /// Download the upstream fatedier/frp client. 52FRP's tutorial explicitly
-    /// uses the official frp releases, and those releases publish SHA-256
-    /// checksums.
-    pub async fn prepare(&self) -> Result<PreparedFrpc> {
+    /// Fast path: use the already downloaded/bundled executable without any
+    /// network call. This is what makes the second and later room creations
+    /// immediate.
+    pub async fn prepare(&self, progress: Option<DownloadProgress>) -> Result<PreparedFrpc> {
+        if let Some(cached) = self.cached() {
+            return Ok(cached);
+        }
+        if let Some(bundled) = self.bundled() {
+            return Ok(bundled);
+        }
+        self.update_cache(progress).await
+    }
+
+    /// Called after connecting the account and at app startup. It does not
+    /// block room creation and respects a 24-hour check interval.
+    pub async fn warm_update(&self) {
+        if let Some(meta) = self.read_meta() {
+            if chrono::Utc::now().timestamp() - meta.checked_at < CHECK_INTERVAL_SECS {
+                return;
+            }
+        }
+        let _ = self.update_cache(None).await;
+    }
+
+    pub async fn update_cache(&self, progress: Option<DownloadProgress>) -> Result<PreparedFrpc> {
+        let _guard = PREPARE_LOCK.lock().await;
+        if let Some(cached) = self.cached() {
+            // The binary exists; refresh metadata at most once per day.
+            if let Some(meta) = self.read_meta() {
+                if chrono::Utc::now().timestamp() - meta.checked_at < CHECK_INTERVAL_SECS {
+                    return Ok(cached);
+                }
+            }
+        }
+
         let release = self.release().await?;
         let version = release.tag_name.trim_start_matches('v').to_string();
         let platform = platform_name(std::env::consts::OS)?;
@@ -111,9 +170,7 @@ impl FrpcManager {
         }
         verify_download_url(&asset.browser_download_url)?;
 
-        // GitHub's release API exposes the asset digest. Prefer it; fall back
-        // to the checksum text asset only when the digest is absent.
-        let expected = if let Some(digest) = asset
+        let expected_archive = if let Some(digest) = asset
             .digest
             .as_deref()
             .and_then(|v| v.strip_prefix("sha256:"))
@@ -131,8 +188,8 @@ impl FrpcManager {
                         "frp Release 没有 SHA-256 校验信息，已拒绝下载",
                     )
                 })?;
-            let checksum_text = self.download_text(&checksums.browser_download_url).await?;
-            checksum_for(&checksum_text, &asset.name).ok_or_else(|| {
+            let text = self.download_text(&checksums.browser_download_url).await?;
+            checksum_for(&text, &asset.name).ok_or_else(|| {
                 AppError::new(
                     ErrorCode::ChecksumMismatch,
                     "frp Release 的校验文件中没有当前客户端",
@@ -140,68 +197,125 @@ impl FrpcManager {
             })?
         };
 
+        if let Some(meta) = self.read_meta() {
+            if meta.archive_sha256.eq_ignore_ascii_case(&expected_archive) {
+                if let Some(cached) = self.cached() {
+                    let mut updated = meta;
+                    updated.checked_at = chrono::Utc::now().timestamp();
+                    let _ = self.write_meta(&updated);
+                    return Ok(cached);
+                }
+            }
+        }
+
         let target_dir = self.dir.join(format!("{version}-{platform}-{arch}"));
         let target = target_dir.join(if platform == "windows" {
             "frpc.exe"
         } else {
             "frpc"
         });
-        let hash_sidecar = target_dir.join("frpc.sha256");
-        if target.is_file() {
-            if let Ok(bytes) = std::fs::read(&target) {
-                if executable_magic_ok(&bytes) {
-                    let actual = sha256_hex(&bytes);
-                    let cached = std::fs::read_to_string(&hash_sidecar)
-                        .ok()
-                        .map(|v| v.trim().to_string());
-                    if actual.eq_ignore_ascii_case(&expected)
-                        && cached.as_deref().is_none_or(|v| v == actual)
-                    {
-                        return Ok(PreparedFrpc {
-                            path: target,
-                            version,
-                            sha256: actual,
-                        });
-                    }
-                }
-            }
-        }
-
         crate::util::ensure_dir(&target_dir).await?;
-        let bytes = self
-            .download_with_fallback(&asset.browser_download_url)
+
+        let archive = self
+            .download_with_fallback(&asset.browser_download_url, &expected_archive, progress)
             .await?;
-        let extracted = extract_executable(&bytes, platform)?;
+        let archive_sha = sha256_hex(&archive);
+        if !archive_sha.eq_ignore_ascii_case(&expected_archive) {
+            return Err(AppError::checksum(&expected_archive, &archive_sha));
+        }
+        let extracted = extract_executable(&archive, platform)?;
         if !executable_magic_ok(&extracted) {
             return Err(AppError::new(
                 ErrorCode::ChecksumMismatch,
                 "下载的 FRPC 不是有效的可执行文件，已拒绝运行",
             ));
         }
-        let sha256 = sha256_hex(&extracted);
-        if !sha256.eq_ignore_ascii_case(&expected) {
-            return Err(AppError::checksum(&expected, &sha256));
-        }
         std::fs::write(&target, &extracted)?;
-        let _ = std::fs::write(&hash_sidecar, &sha256);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755));
         }
+        let exe_sha = sha256_hex(&extracted);
+        let meta = CacheMeta {
+            version: version.clone(),
+            platform: platform.to_string(),
+            arch: arch.to_string(),
+            asset_name: asset.name.clone(),
+            archive_sha256: archive_sha,
+            exe_sha256: exe_sha.clone(),
+            checked_at: chrono::Utc::now().timestamp(),
+        };
+        self.write_meta(&meta)?;
         Ok(PreparedFrpc {
             path: target,
             version,
-            sha256,
+            sha256: exe_sha,
+        })
+    }
+
+    fn meta_path(&self) -> PathBuf {
+        self.dir.join("current.json")
+    }
+
+    fn read_meta(&self) -> Option<CacheMeta> {
+        let text = std::fs::read_to_string(self.meta_path()).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+
+    fn write_meta(&self, meta: &CacheMeta) -> Result<()> {
+        crate::util::ensure_dir_sync(&self.dir)?;
+        let json = serde_json::to_vec_pretty(meta)?;
+        crate::util::write_private_file_sync(&self.meta_path(), &json)
+    }
+
+    fn cached(&self) -> Option<PreparedFrpc> {
+        let meta = self.read_meta()?;
+        let platform = platform_name(std::env::consts::OS).ok()?;
+        let arch = arch_name(std::env::consts::ARCH).ok()?;
+        if meta.platform != platform || meta.arch != arch {
+            return None;
+        }
+        let target = self
+            .dir
+            .join(format!("{}-{}-{}", meta.version, meta.platform, meta.arch));
+        let target = target.join(if cfg!(windows) { "frpc.exe" } else { "frpc" });
+        let bytes = std::fs::read(&target).ok()?;
+        if !executable_magic_ok(&bytes)
+            || !sha256_hex(&bytes).eq_ignore_ascii_case(&meta.exe_sha256)
+        {
+            return None;
+        }
+        Some(PreparedFrpc {
+            path: target,
+            version: meta.version,
+            sha256: meta.exe_sha256,
+        })
+    }
+
+    fn bundled(&self) -> Option<PreparedFrpc> {
+        let dir = self.bundled_dir.as_ref()?;
+        let exe = if cfg!(windows) { "frpc.exe" } else { "frpc" };
+        let path = dir
+            .join(platform_name(std::env::consts::OS).ok()?)
+            .join(exe);
+        let bytes = std::fs::read(&path).ok()?;
+        if !executable_magic_ok(&bytes) {
+            return None;
+        }
+        Some(PreparedFrpc {
+            path,
+            version: "bundled".into(),
+            sha256: sha256_hex(&bytes),
         })
     }
 
     async fn release(&self) -> Result<GitHubRelease> {
         let response = self
             .http
-            .get("https://api.github.com/repos/fatedier/frp/releases/latest")
+            .get(RELEASE_API)
             .header("Accept", "application/vnd.github+json")
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(Duration::from_secs(8))
             .send()
             .await
             .map_err(|e| AppError::network("无法获取 frp 最新版本").with_detail(e.to_string()))?;
@@ -221,7 +335,7 @@ impl FrpcManager {
         let response = self
             .http
             .get(url)
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(Duration::from_secs(10))
             .send()
             .await
             .map_err(|e| AppError::network("下载 frp 校验文件失败").with_detail(e.to_string()))?;
@@ -237,26 +351,47 @@ impl FrpcManager {
             .map_err(|e| AppError::network("读取校验文件失败").with_detail(e.to_string()))
     }
 
-    async fn download_with_fallback(&self, url: &str) -> Result<Vec<u8>> {
-        let mut last = None;
-        for candidate in [
-            url.to_string(),
+    async fn download_with_fallback(
+        &self,
+        url: &str,
+        expected_sha: &str,
+        progress: Option<DownloadProgress>,
+    ) -> Result<Vec<u8>> {
+        // China-first mirror order. The archive SHA-256 from GitHub is the
+        // source of truth, so a mirror cannot substitute a different binary.
+        let candidates = [
             format!("https://ghproxy.com/{url}"),
             format!("https://gh-proxy.com/{url}"),
             format!("https://mirror.ghproxy.com/{url}"),
-        ] {
-            match self.download(&candidate).await {
-                Ok(bytes) => return Ok(bytes),
-                Err(error) => last = Some(error),
+            url.to_string(),
+        ];
+        let mut last = None;
+        let result = tokio::time::timeout(Duration::from_secs(50), async {
+            for candidate in candidates {
+                match self.download(&candidate, progress.clone()).await {
+                    Ok(bytes) => {
+                        if sha256_hex(&bytes).eq_ignore_ascii_case(expected_sha) {
+                            return Ok(bytes);
+                        }
+                        last = Some(AppError::checksum(expected_sha, &sha256_hex(&bytes)));
+                    }
+                    Err(error) => last = Some(error),
+                }
             }
+            Err(last.unwrap_or_else(|| AppError::network("下载 FRPC 失败")))
+        })
+        .await;
+        match result {
+            Ok(value) => value,
+            Err(_) => Err(AppError::timeout("下载 FRPC 超时，请检查网络后重试")),
         }
-        Err(last.unwrap_or_else(|| AppError::network("下载 FRPC 失败")))
     }
 
-    async fn download(&self, url: &str) -> Result<Vec<u8>> {
+    async fn download(&self, url: &str, progress: Option<DownloadProgress>) -> Result<Vec<u8>> {
         let response = self
             .http
             .get(url)
+            .timeout(Duration::from_secs(15))
             .send()
             .await
             .map_err(|e| AppError::network("下载 FRPC 失败").with_detail(e.to_string()))?;
@@ -266,7 +401,8 @@ impl FrpcManager {
                 format!("下载 FRPC 返回 HTTP {}", response.status().as_u16()),
             ));
         }
-        if let Some(length) = response.content_length() {
+        let total = response.content_length();
+        if let Some(length) = total {
             if length > MAX_FRPC_BYTES {
                 return Err(AppError::new(
                     ErrorCode::Http,
@@ -274,6 +410,8 @@ impl FrpcManager {
                 ));
             }
         }
+        let started = Instant::now();
+        let mut last_emit = Instant::now() - Duration::from_secs(1);
         let mut stream = response.bytes_stream();
         let mut bytes = Vec::new();
         while let Some(chunk) = stream.next().await {
@@ -286,7 +424,17 @@ impl FrpcManager {
                 ));
             }
             bytes.extend_from_slice(&chunk);
+            if let Some(callback) = &progress {
+                if last_emit.elapsed() >= Duration::from_millis(300) {
+                    callback(bytes.len() as u64, total);
+                    last_emit = Instant::now();
+                }
+            }
         }
+        if let Some(callback) = &progress {
+            callback(bytes.len() as u64, total);
+        }
+        let _ = started;
         Ok(bytes)
     }
 
@@ -340,7 +488,7 @@ impl FrpcManager {
             });
         }
 
-        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        tokio::time::sleep(Duration::from_millis(1200)).await;
         if let Ok(Some(status)) = child.try_wait() {
             let tail = log
                 .lock()
@@ -367,7 +515,7 @@ impl FrpcManager {
         let mut state = self.state.lock().await;
         if let Some(mut child) = state.child.take() {
             let _ = child.start_kill();
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await;
+            let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
         }
         if let Some(path) = state.config_path.take() {
             let _ = std::fs::remove_file(path);
@@ -534,11 +682,7 @@ fn extract_executable(bytes: &[u8], os: &str) -> Result<Vec<u8>> {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_ascii_lowercase();
-            if path.ends_with("/frpc")
-                || path.ends_with("/frpc.exe")
-                || path == "frpc"
-                || path == "frpc.exe"
-            {
+            if path.ends_with("/frpc") || path.ends_with("/frpc.exe") || path == "frpc" {
                 let mut output = Vec::new();
                 entry.read_to_end(&mut output)?;
                 return Ok(output);
@@ -562,6 +706,7 @@ fn executable_magic_ok(bytes: &[u8]) -> bool {
         [0xcf, 0xfa, 0xed, 0xfe]
             | [0xce, 0xfa, 0xed, 0xfe]
             | [0xca, 0xfe, 0xba, 0xbe]
+            | [0xbe, 0xba, 0xfe, 0xca]
             | [0xfe, 0xed, 0xfa, 0xcf]
             | [0xfe, 0xed, 0xfa, 0xce]
     )

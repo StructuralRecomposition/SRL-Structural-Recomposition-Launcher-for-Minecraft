@@ -10,7 +10,9 @@ import type {
   MultiplayerStatus,
 } from "../lib/api";
 import { useApp } from "../state/AppContext";
-import { Badge, Button, Card, Field, Notice } from "../components/ui";
+import { Badge, Button, Card, Field, InfoHint, Notice } from "../components/ui";
+import { Modal } from "../components/Modal";
+import { MultiplayerHelp } from "../components/MultiplayerHelp";
 import { Icon } from "../components/Icon";
 
 const CREATE_STEPS: { step: string; label: string }[] = [
@@ -23,7 +25,7 @@ const CREATE_STEPS: { step: string; label: string }[] = [
   { step: "tunnel", label: "创建隧道" },
   { step: "config", label: "获取隧道配置" },
   { step: "frpc", label: "下载并启动 FRPC" },
-  { step: "verify", label: "验证公网连接" },
+  { step: "verify", label: "等待 52FRP 云端确认" },
 ];
 
 function editionLabel(edition: MultiplayerEdition) {
@@ -51,6 +53,14 @@ function roomStateLabel(room: MultiplayerRoom) {
   return "FRPC 离线";
 }
 
+type ConfirmAction = {
+  title: string;
+  message: string;
+  action: string;
+  danger?: boolean;
+  run: () => Promise<void>;
+};
+
 export function MultiplayerPage() {
   const { bootstrap, setPage, pushToast } = useApp();
   const instances = bootstrap?.instances ?? [];
@@ -72,6 +82,8 @@ export function MultiplayerPage() {
   const [orphans, setOrphans] = useState<MultiplayerOrphan[]>([]);
   const [copied, setCopied] = useState(false);
   const [token, setToken] = useState("");
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const instance = useMemo(
     () => instances.find((item) => item.id === instanceId) ?? instances[0],
@@ -206,7 +218,6 @@ export function MultiplayerPage() {
   }
 
   async function logout() {
-    if (!window.confirm("退出 52FRP 账户会清除本机保存的 API 访问令牌。继续？")) return;
     setBusy("logout");
     try {
       await api.multiplayerLogout();
@@ -273,10 +284,6 @@ export function MultiplayerPage() {
   }
 
   async function stopRoom(deleteTunnel: boolean) {
-    const message = deleteTunnel
-      ? "停止 FRPC 并删除这次创建的临时隧道？不会删除账户中的其他隧道。"
-      : "停止 FRPC？云端隧道会保留，下次进入联机中心时可以删除。";
-    if (!window.confirm(message)) return;
     setBusy(deleteTunnel ? "stop-delete" : "stop");
     try {
       const result = await api.multiplayerStopRoom(deleteTunnel);
@@ -320,7 +327,6 @@ export function MultiplayerPage() {
   }
 
   async function deleteOrphan(tunnelId: number) {
-    if (!window.confirm("只删除这条由 SRL 创建的临时隧道？其他隧道不会受影响。")) return;
     try {
       await api.multiplayerDeleteOrphan(tunnelId);
       pushToast("临时隧道已删除", "success");
@@ -329,6 +335,46 @@ export function MultiplayerPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  function askLogout() {
+    setConfirmAction({
+      title: "退出 52FRP 账户",
+      message: "会清除本机保存的 API 访问令牌。当前房间需要先清理。",
+      action: "退出账户",
+      danger: true,
+      run: logout,
+    });
+  }
+
+  function askStop(deleteTunnel: boolean) {
+    setConfirmAction({
+      title: deleteTunnel ? "停止并删除临时隧道" : "停止联机",
+      message: deleteTunnel
+        ? "停止 FRPC 并删除这次创建的 SRL 临时隧道。不会删除账户中的其他隧道。"
+        : "停止 FRPC？云端隧道会保留，下次进入联机中心时可以删除。",
+      action: deleteTunnel ? "停止并删除" : "停止联机",
+      danger: deleteTunnel,
+      run: () => stopRoom(deleteTunnel),
+    });
+  }
+
+  function askDeleteOrphan(tunnelId: number) {
+    setConfirmAction({
+      title: "删除 SRL 临时隧道",
+      message: "只删除这条由 SRL 创建的临时隧道，其他隧道不会受影响。",
+      action: "删除",
+      danger: true,
+      run: () => deleteOrphan(tunnelId),
+    });
+  }
+
+  function openFrp() {
+    void api
+      .openTrustedUrl("https://www.52frp.com/user/#/user-center")
+      .catch((e) =>
+        pushToast("无法打开 52FRP 个人中心", "warning", e instanceof Error ? e.message : undefined),
+      );
   }
 
   if (loading) {
@@ -363,41 +409,26 @@ export function MultiplayerPage() {
   return (
     <div className="page multiplayer-page">
       <div className="mp-toolbar">
-        <div>
-          <span className="eyebrow">SRL Multiplayer</span>
+        <div className="mp-toolbar__title">
           <h2>Minecraft 联机</h2>
-          <p>创建房间、建立隧道、复制地址。公网 IP、端口映射和 FRP 都由 SRL 处理。</p>
         </div>
         <div className="mp-toolbar__status">
-          <Badge tone={status?.loggedIn ? "success" : "neutral"}>
-            {status?.providerName ?? "52FRP"}
+          <Badge tone={status.loggedIn ? "success" : "neutral"}>
+            {status.providerName ?? "52FRP"}
           </Badge>
-          <Badge tone={online ? "success" : "neutral"}>{online ? "联机在线" : "未联机"}</Badge>
+          <Badge tone={online ? "success" : "neutral"}>
+            {online ? "联机在线" : status.loggedIn ? "未建房" : "未连接"}
+          </Badge>
         </div>
       </div>
 
       {error ? <Notice tone="danger" title="操作失败">{error}</Notice> : null}
-      {status?.lastError && status.lastError !== error ? (
+      {status.lastError && status.lastError !== error ? (
         <Notice tone="warning" title="最近一次连接状态">{status.lastError}</Notice>
       ) : null}
-
-      {!status?.tokenConfigured ? (
+      {!status.tokenConfigured ? (
         <Notice tone="warning" title="先连接 52FRP">
-          在 52FRP 个人中心创建 API 访问令牌，然后粘贴到下方。令牌只保存在系统凭据库，不会写入日志或配置文件。
-          <Button
-            size="sm"
-            variant="primary"
-            className="mp-notice-action"
-            onClick={() =>
-              void api
-                .openTrustedUrl("https://www.52frp.com/user/#/user-center")
-                .catch((e) =>
-                  pushToast("无法打开 52FRP 个人中心", "warning", e instanceof Error ? e.message : undefined),
-                )
-            }
-          >
-            打开令牌页面
-          </Button>
+          还没有连接 52FRP，先在下方粘贴 API 令牌。
         </Notice>
       ) : null}
 
@@ -410,26 +441,25 @@ export function MultiplayerPage() {
                   <Icon name="user" size={18} />
                 </span>
                 <div>
-                  <strong>{status.account?.displayName ?? "52FRP 账户"}</strong>
+                  <div className="mp-account__name">
+                    <strong>{status.account?.displayName ?? "52FRP 账户"}</strong>
+                  </div>
                   <span className="muted small">
-                    {status.account
-                      ? `用户 ID ${status.account.userId}${status.account.group ? ` · ${status.account.group}` : ""}`
-                      : "已连接，账户信息读取失败"}
                     {status.account?.tunnelLimit != null
-                      ? ` · 隧道 ${status.account.tunnelCount ?? 0}/${status.account.tunnelLimit}`
-                      : ""}
+                      ? `隧道 ${status.account.tunnelCount ?? 0}/${status.account.tunnelLimit}`
+                      : "已连接"}
                   </span>
                 </div>
               </div>
               <div className="mp-account__actions">
-                <Badge tone="success">账户已授权</Badge>
+                <Badge tone="success">已连接</Badge>
                 <Button
                   size="sm"
                   variant="ghost"
                   loading={busy === "logout"}
-                  onClick={() => void logout()}
+                  onClick={askLogout}
                 >
-                  退出账户
+                  退出
                 </Button>
               </div>
             </Card>
@@ -442,28 +472,28 @@ export function MultiplayerPage() {
               copied={copied}
               busy={busy}
               onCopy={() => void copyAddress()}
-              onStop={() => void stopRoom(false)}
-              onStopDelete={() => void stopRoom(true)}
+              onStop={() => askStop(false)}
+              onStopDelete={() => askStop(true)}
               onRestart={() => void restartFrpc()}
               frpcLog={status.frpc.logTail}
             />
           ) : (
             <Card className="mp-create">
               <div className="card-head">
-                <div>
-                  <h3>创建联机房间</h3>
-                  <p>先确认游戏已经在运行，并在游戏内开放局域网。</p>
+                <div className="mp-card-title">
+                  <h3>创建房间</h3>
                 </div>
-                <Badge tone={status?.loggedIn ? "success" : "warning"}>
-                  {status?.loggedIn ? "账户已连接" : "需要连接账户"}
+                <Badge tone={status.loggedIn ? "success" : "warning"}>
+                  {status.loggedIn ? "可以开始" : "需要令牌"}
                 </Badge>
               </div>
 
-              {!status?.loggedIn ? (
+              {!status.loggedIn ? (
                 <div className="mp-login-block">
-                  <p className="muted">
-                    在 52FRP 个人中心创建 API 访问令牌（以 hz_ 开头），粘贴到这里。SRL 只会把令牌保存到系统凭据库。
-                  </p>
+                  <div className="mp-label-row">
+                    <span className="field__label">52FRP API 令牌</span>
+                    <InfoHint text="在 52FRP 头像 → API 访问里创建，权限要勾选“创建和修改隧道与客户端”。令牌只存系统凭据库。" />
+                  </div>
                   <div className="mp-token-row">
                     <input
                       type="password"
@@ -482,22 +512,17 @@ export function MultiplayerPage() {
                       disabled={!token.trim()}
                       onClick={() => void connect()}
                     >
-                      连接 52FRP
+                      连接
                     </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      void api
-                        .openTrustedUrl("https://www.52frp.com/user/#/user-center")
-                        .catch((e) =>
-                          pushToast("无法打开 52FRP 个人中心", "warning", e instanceof Error ? e.message : undefined),
-                        )
-                    }
-                  >
-                    没有令牌？打开 52FRP 个人中心
-                  </Button>
+                  <div className="mp-login-links">
+                    <Button size="sm" variant="ghost" onClick={openFrp}>
+                      打开 52FRP
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setHelpOpen(true)}>
+                      怎么获取令牌？
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -507,19 +532,20 @@ export function MultiplayerPage() {
                       className={`segmented__item ${edition === "java" ? "segmented__item--active" : ""}`}
                       onClick={() => setEdition("java")}
                     >
-                      Java Edition · TCP
+                      Java 版
                     </button>
                     <button
                       type="button"
                       className={`segmented__item ${edition === "bedrock" ? "segmented__item--active" : ""}`}
                       onClick={() => setEdition("bedrock")}
                     >
-                      Bedrock Edition · UDP
+                      基岩版
                     </button>
+
                   </div>
 
                   <div className="form-grid">
-                    <Field label="游戏实例" hint="使用该实例的版本与日志检测本地服务。">
+                    <Field label="游戏实例">
                       <select
                         value={instance?.id ?? ""}
                         onChange={(event) => setInstanceId(event.target.value)}
@@ -533,7 +559,10 @@ export function MultiplayerPage() {
                         ))}
                       </select>
                     </Field>
-                    <Field label="节点" hint={nodesLoading ? "正在测速与读取负载…" : "自动选择会综合延迟、客户端数量与节点负载。"}>
+                    <Field
+                      label="节点"
+                      info="节点是 52FRP 的中转服务器。自动选择会挑延迟低、负载低的可用节点。"
+                    >
                       <select
                         value={nodeId}
                         onChange={(event) =>
@@ -541,12 +570,11 @@ export function MultiplayerPage() {
                         }
                         disabled={nodesLoading || creating}
                       >
-                        <option value="auto">自动选择（推荐）</option>
+                        <option value="auto">自动选择</option>
                         {nodes.map((node) => (
                           <option key={node.id} value={node.id} disabled={!node.available}>
                             {node.name}
                             {node.latencyMs != null ? ` · ${node.latencyMs} ms` : ""}
-                            {node.clients != null ? ` · ${node.clients} 客户端` : ""}
                             {!node.available ? ` · ${node.reason ?? "不可用"}` : ""}
                           </option>
                         ))}
@@ -555,7 +583,7 @@ export function MultiplayerPage() {
                   </div>
 
                   <div className="mp-local-row">
-                    <Field label="本地 IP" hint="通常保持 127.0.0.1。">
+                    <Field label="本地 IP">
                       <input
                         className="mono"
                         value={localIp}
@@ -563,7 +591,10 @@ export function MultiplayerPage() {
                         disabled={creating}
                       />
                     </Field>
-                    <Field label={`本地 ${edition === "java" ? "TCP" : "UDP"} 端口`} hint={localService?.message ?? "手动填写游戏实际监听端口。"}>
+                    <Field
+                      label={`本地 ${edition === "java" ? "TCP" : "UDP"} 端口`}
+                      info={localService?.message ?? "Minecraft 实际监听的端口；开放局域网后一般能自动检测。"}
+                    >
                       <div className="mp-port-row">
                         <input
                           className="mono"
@@ -579,19 +610,10 @@ export function MultiplayerPage() {
                           loading={detecting}
                           onClick={() => void detect()}
                         >
-                          自动检测
+                          检测
                         </Button>
                       </div>
                     </Field>
-                  </div>
-
-                  <div className="mp-local-note">
-                    <Icon name="info" size={15} />
-                    <span>
-                      {localService
-                        ? localService.message
-                        : "还没有检测本地端口。Java 版开放局域网后端口通常是动态的。"}
-                    </span>
                   </div>
 
                   <div className="mp-create-actions">
@@ -599,10 +621,10 @@ export function MultiplayerPage() {
                       variant="primary"
                       icon="play"
                       loading={creating}
-                      disabled={!status?.loggedIn || !instance || creating || !localPort.trim()}
+                      disabled={!status.loggedIn || !instance || creating || !localPort.trim()}
                       onClick={() => void createRoom()}
                     >
-                      创建联机房间
+                      创建房间
                     </Button>
                     <span className="muted small">
                       {instance ? `${instance.name} · ${instance.versionId}` : "请先创建游戏实例"}
@@ -613,14 +635,15 @@ export function MultiplayerPage() {
             </Card>
           )}
 
-          {steps.length > 0 ? <StepList steps={steps} /> : null}
+          {steps.length > 0 && (creating || steps.some((step) => step.status === "error")) ? (
+            <StepList steps={steps} />
+          ) : null}
 
           {visibleOrphans.length > 0 ? (
             <Card>
               <div className="card-head">
-                <div>
-                  <h3>未清理的 SRL 临时隧道</h3>
-                  <p>这些隧道名称以 SRL-MP- 开头，可能是上次异常退出留下的。</p>
+                <div className="mp-card-title">
+                  <h3>待清理隧道</h3>
                 </div>
                 <Badge tone="warning">{visibleOrphans.length} 条</Badge>
               </div>
@@ -634,7 +657,7 @@ export function MultiplayerPage() {
                         {orphan.nodeName ? ` · ${orphan.nodeName}` : ""}
                       </span>
                     </div>
-                    <Button size="sm" variant="ghost" onClick={() => void deleteOrphan(orphan.tunnelId)}>
+                    <Button size="sm" variant="ghost" onClick={() => askDeleteOrphan(orphan.tunnelId)}>
                       删除
                     </Button>
                   </div>
@@ -647,69 +670,111 @@ export function MultiplayerPage() {
         <div className="mp-side">
           <Card>
             <div className="card-head">
-              <div>
+              <div className="mp-card-title">
                 <h3>当前状态</h3>
-                <p>所有状态都来自本机进程与 52FRP API。</p>
               </div>
+              <Button size="sm" variant="ghost" icon="info" onClick={() => setHelpOpen(true)}>
+                帮助
+              </Button>
             </div>
             <dl className="mp-facts">
               <div>
-                <dt>隧道服务</dt>
-                <dd>{status?.providerName ?? "52FRP"}</dd>
-              </div>
-              <div>
-                <dt>账户</dt>
+                <dt>
+                  账户
+                  
+                </dt>
                 <dd>
-                  {status?.account?.displayName ??
-                    (status?.loggedIn ? "已连接，信息读取失败" : "未连接")}
+                  {status.account?.displayName ??
+                    (status.loggedIn ? "已连接" : "未连接")}
                 </dd>
               </div>
               <div>
-                <dt>Minecraft</dt>
-                <dd>{instance ? `${instance.versionId}` : "未选择实例"}</dd>
+                <dt>
+                  游戏
+                  
+                </dt>
+                <dd>{instance ? instance.versionId : "未选择"}</dd>
               </div>
               <div>
-                <dt>本地服务</dt>
+                <dt>
+                  本机端口
+                  
+                </dt>
                 <dd>
                   {detecting
                     ? "检测中…"
                     : localService?.found
-                      ? `${localService.source === "log" ? "日志" : "进程"} · 端口 ${localService.detectedPort ?? "—"}`
+                      ? `${localService.detectedPort ?? "—"}`
                       : "未检测到"}
                 </dd>
               </div>
               <div>
-                <dt>FRPC</dt>
-                <dd>{status?.frpc.running ? `运行中${status.frpc.version ? ` · ${status.frpc.version}` : ""}` : "未运行"}</dd>
+                <dt>
+                  FRPC
+                  
+                </dt>
+                <dd>{status.frpc.running ? "运行中" : "未运行"}</dd>
               </div>
               <div>
-                <dt>联机状态</dt>
+                <dt>
+                  联机
+                  
+                </dt>
                 <dd>{online ? "在线" : room?.state === "retained" ? "隧道保留" : "未联机"}</dd>
               </div>
             </dl>
-            {status?.loggedIn ? (
+            {status.loggedIn ? (
               <div className="mp-side-actions">
                 <Button size="sm" variant="ghost" onClick={() => void loadStatus()}>
-                  刷新状态
+                  刷新
                 </Button>
-                <Button size="sm" variant="ghost" loading={busy === "logout"} onClick={() => void logout()}>
+                <Button size="sm" variant="ghost" loading={busy === "logout"} onClick={askLogout}>
                   退出账户
                 </Button>
               </div>
             ) : null}
           </Card>
-
-          <Card>
-            <h3>联机说明</h3>
-            <ul className="plain-list">
-              <li>Java 版使用 TCP；Bedrock 版使用 UDP。</li>
-              <li>实际公网地址以 52FRP 返回的 host 与 port 为准。</li>
-              <li>停止联机与删除云端隧道是两个操作，删除只针对本次 SRL 创建的临时隧道。</li>
-              <li>FRPC 配置包含临时凭据，停止后会删除本地临时文件。</li>
-            </ul>
-          </Card>
         </div>
       </div>
+
+      <Modal
+        open={confirmAction !== null}
+        onClose={() => setConfirmAction(null)}
+        title={confirmAction?.title ?? ""}
+        footer={
+          confirmAction ? (
+            <>
+              <Button variant="ghost" onClick={() => setConfirmAction(null)}>
+                取消
+              </Button>
+              <Button
+                variant={confirmAction.danger ? "danger" : "primary"}
+                onClick={() => {
+                  const action = confirmAction;
+                  setConfirmAction(null);
+                  if (action) void action.run();
+                }}
+              >
+                {confirmAction.action}
+              </Button>
+            </>
+          ) : null
+        }
+      >
+        <p className="muted">{confirmAction?.message}</p>
+      </Modal>
+
+      <MultiplayerHelp
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        onOpenUrl={(url, label) =>
+          void api
+            .openTrustedUrl(url)
+            .catch((e) =>
+              pushToast(`无法打开${label}`, "warning", e instanceof Error ? e.message : undefined),
+            )
+        }
+      />
     </div>
   );
 }
@@ -739,76 +804,98 @@ function RoomCard({
     <Card className="mp-room">
       <div className="mp-room__head">
         <div>
-          <span className="eyebrow">{editionLabel(room.edition)}</span>
-          <h3>{room.instanceName}</h3>
+          <div className="mp-room__title">
+            <h3>{room.instanceName}</h3>
+            <Badge tone={stateTone(room)}>{roomStateLabel(room)}</Badge>
+          </div>
           <p className="muted small">
-            Minecraft {room.versionId} · {room.nodeName}
+            {editionLabel(room.edition)} · {room.versionId} · {room.nodeName}
           </p>
         </div>
-        <Badge tone={stateTone(room)}>
-          {roomStateLabel(room)}
-        </Badge>
       </div>
 
       <div className={`mp-address ${online ? "mp-address--online" : ""}`}>
         <div>
-          <span>公网连接地址</span>
+          <span>
+            公网地址
+            
+          </span>
           <strong className="mono">{address(room)}</strong>
         </div>
-        <Button size="sm" variant={copied ? "primary" : "secondary"} icon={copied ? "check" : "copy"} onClick={onCopy}>
-          {copied ? "已复制" : "复制地址"}
+        <Button
+          size="sm"
+          variant={copied ? "primary" : "secondary"}
+          icon={copied ? "check" : "copy"}
+          onClick={onCopy}
+        >
+          {copied ? "已复制" : "复制"}
         </Button>
       </div>
+      <p className="mp-room__hint">朋友在“多人游戏 → 直接连接”里填这个地址。</p>
 
       <dl className="mp-room__stats">
         <div>
-          <dt>节点</dt>
+          <dt>
+            节点
+
+          </dt>
           <dd>{room.nodeName}</dd>
         </div>
         <div>
-          <dt>公网端口</dt>
-          <dd className="mono">{room.publicPort}</dd>
-        </div>
-        <div>
-          <dt>本地端口</dt>
+          <dt>
+            本地端口
+            
+          </dt>
           <dd className="mono">{room.localPort}</dd>
         </div>
         <div>
-          <dt>节点延迟</dt>
+          <dt>
+            延迟
+            
+          </dt>
           <dd>{room.latencyMs != null ? `${room.latencyMs} ms` : "未测速"}</dd>
-        </div>
-        <div>
-          <dt>FRPC</dt>
-          <dd>{room.frpcRunning ? `运行中${room.frpcPid ? ` · PID ${room.frpcPid}` : ""}` : "已停止"}</dd>
-        </div>
-        <div>
-          <dt>本地进程</dt>
-          <dd>{room.localPid ? `PID ${room.localPid}` : "未记录"}</dd>
         </div>
       </dl>
 
       {room.message ? <p className="mp-room__message">{room.message}</p> : null}
 
-      {frpcLog.length > 0 ? (
-        <details className="mp-log">
-          <summary>FRPC 运行日志</summary>
-          <pre>{frpcLog.join("\n")}</pre>
-        </details>
-      ) : null}
+      <details className="mp-room__advanced">
+        <summary>技术信息</summary>
+        <dl className="mp-room__advanced-grid">
+          <div>
+            <dt>公网端口</dt>
+            <dd className="mono">{room.publicPort}</dd>
+          </div>
+          <div>
+            <dt>FRPC</dt>
+            <dd>{room.frpcRunning ? "运行中" : "已停止"}</dd>
+          </div>
+          <div>
+            <dt>本地进程</dt>
+            <dd>{room.localPid ? `PID ${room.localPid}` : "未记录"}</dd>
+          </div>
+        </dl>
+        {frpcLog.length > 0 ? (
+          <details className="mp-log">
+            <summary>FRPC 日志</summary>
+            <pre>{frpcLog.join("\n")}</pre>
+          </details>
+        ) : null}
+      </details>
 
       <div className="mp-room__actions">
         {room.state !== "retained" ? (
           <Button variant="secondary" icon="refresh" loading={busy === "restart"} onClick={onRestart}>
-            重启 FRPC
+            重启
           </Button>
         ) : null}
         {room.state !== "retained" ? (
           <Button variant="ghost" loading={busy === "stop"} onClick={onStop}>
-            停止联机
+            停止
           </Button>
         ) : null}
         <Button variant="danger" icon="trash" loading={busy === "stop-delete"} onClick={onStopDelete}>
-          停止并删除临时隧道
+          停止并删除隧道
         </Button>
       </div>
     </Card>

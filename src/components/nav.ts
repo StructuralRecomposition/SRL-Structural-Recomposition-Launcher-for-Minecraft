@@ -6,6 +6,7 @@ export interface NavItem {
   label: string;
   icon: IconName;
   subtitle: string;
+  tag?: string;
 }
 
 export const NAV: NavItem[] = [
@@ -16,7 +17,7 @@ export const NAV: NavItem[] = [
   { id: "multiplayer", label: "Minecraft 联机", icon: "globe", subtitle: "创建房间、邀请好友、管理隧道" },
   { id: "java", label: "Java 环境", icon: "coffee", subtitle: "发现、检测与兼容性" },
   { id: "tasks", label: "下载任务", icon: "download", subtitle: "真实进度、速度与取消" },
-  { id: "assistant", label: "鸦鸭", icon: "cpu", subtitle: "崩溃诊断与模组助手" },
+  { id: "assistant", label: "鸦鸭", icon: "cpu", subtitle: "崩溃诊断与模组助手", tag: "测试" },
   { id: "accounts", label: "账号管理", icon: "user", subtitle: "离线档案与授权状态" },
   { id: "diagnostics", label: "诊断中心", icon: "activity", subtitle: "环境检查与日志" },
   { id: "settings", label: "设置", icon: "settings", subtitle: "目录、网络与外观" },
