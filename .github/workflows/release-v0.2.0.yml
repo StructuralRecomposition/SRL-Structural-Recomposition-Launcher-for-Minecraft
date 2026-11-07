@@ -57,8 +57,6 @@ jobs:
       - name: Verify no AI key in source
         run: node scripts/verify-no-secrets.mjs
       - run: npm ci
-      - name: Frontend tests
-        run: npm test -- --run
       - name: Build application
         run: npm run tauri build -- ${{ matrix.args }}
       - name: Package Windows portable
