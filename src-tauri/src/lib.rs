@@ -276,7 +276,7 @@ pub fn run() {
             commands::analyze_crash,
             commands::delete_crash_report,
             commands::multiplayer_status,
-            commands::multiplayer_login,
+            commands::multiplayer_connect,
             commands::multiplayer_logout,
             commands::multiplayer_nodes,
             commands::multiplayer_detect,

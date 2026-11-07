@@ -1,19 +1,17 @@
 # SRL 发布包
 
-当前公开发布：**v0.1.0**
+当前源码版本：**v0.2.0**（Minecraft 联机中心 · 52FRP）
 
-下载地址：**https://github.com/sry8n5rjz5-debug/SRL/releases/tag/v0.1.0**
+正式发布以 GitHub Releases 为准；本目录仅保留本地验证产物与说明。
 
 | 平台 | 文件 |
 |---|---|
-| macOS（Intel + Apple Silicon） | `SRL_0.1.0_universal.dmg` |
-| Windows 10/11 x64 | `SRL_0.1.0_windows-x64-portable.zip` |
-| Linux x64（Debian / Ubuntu） | `SRL_0.1.0_amd64.deb` |
-| 源码快照 | `SRL-0.1.0-source.tar.gz` |
+| macOS（Intel + Apple Silicon） | `SRL_0.2.0_universal.dmg` |
+| Windows 10/11 x64 | `SRL_0.2.0_windows-x64-portable.zip` |
+| Linux x64（Debian / Ubuntu） | `SRL_0.2.0_amd64.deb` |
+| Linux x64（通用） | `SRL_0.2.0_amd64.AppImage` |
 
-校验值见 [`RELEASE_NOTES_v0.1.0.md`](RELEASE_NOTES_v0.1.0.md) 或 `SHA256SUMS`。
-
-正式发布以 GitHub Releases 为准；本目录仅保留发布产物与说明。
+校验值见 `release/v0.2.0/SHA256SUMS`。
 
 ## 首次运行
 
@@ -32,16 +30,21 @@ xattr -dr com.apple.quarantine /Applications/SRL.app
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.1.0_amd64.deb
+sudo apt install ./SRL_0.2.0_amd64.deb
 ```
 
 需要 WebKitGTK 4.1、GTK 3 等运行库。
 
+## Minecraft 联机
+
+1. 登录 <https://www.52frp.com/user/#/user-center>。
+2. 在「API 访问令牌」创建 `hz_` 开头的令牌。
+3. 打开 SRL →「Minecraft 联机」，粘贴令牌并连接。
+
+令牌只保存在系统凭据库，不写入日志或普通配置文件。
+
 ## 说明
 
-- 发布包为 0.1.0 构建；仓库源码快照包含发布前完成的内部修复。
 - macOS 未公证，Windows 未签名；首次运行需手动放行。
 - 主要在 macOS x86_64 上验证；Windows / Linux 验证有限。
 - 本目录不包含任何 Minecraft 游戏文件或 Mojang 素材。
-
-详细功能与限制见仓库根目录 [`README.md`](../README.md)。

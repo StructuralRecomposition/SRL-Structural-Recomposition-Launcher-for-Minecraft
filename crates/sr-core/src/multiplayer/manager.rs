@@ -6,21 +6,22 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
-use super::auth::LoCyanAuth;
+use super::frp52::{parse_port_ranges, port_in_ranges, Frp52Provider};
 use super::frpc::FrpcManager;
-use super::locyan::LoCyanFrpProvider;
 use super::minecraft;
-use super::nodes::{port_allowed, rank_nodes, tcp_latency};
-use super::provider::{ProviderNode, TunnelCreate, TunnelProvider};
+use super::nodes::{rank_nodes, tcp_latency};
+use super::provider::{supports_edition, ProviderNode, TunnelCreate, TunnelProvider};
+use super::token::Frp52TokenStore;
 use super::types::{
-    AccountView, CreateRoomRequest, Edition, FrpcView, LocalServiceView, MultiplayerConfig,
-    MultiplayerStatus, NodeView, OrphanTunnel, ProgressEvent, ProgressSink, RoomView,
-    StopRoomResult, StoredRoom, DEFAULT_TUNNEL_PREFIX, PROVIDER_ID, PROVIDER_NAME,
+    AccountView, CreateRoomRequest, Edition, FrpcView, LocalServiceView, MultiplayerStatus,
+    NodeView, OrphanTunnel, ProgressEvent, ProgressSink, RoomView, StopRoomResult, StoredRoom,
+    DEFAULT_TUNNEL_PREFIX, PROVIDER_ID, PROVIDER_NAME,
 };
 
 pub struct MultiplayerManager {
     paths: AppPaths,
     http: reqwest::Client,
+    tokens: Arc<Frp52TokenStore>,
     frpc: FrpcManager,
     room: RwLock<Option<StoredRoom>>,
     creating: Mutex<()>,
@@ -35,6 +36,7 @@ impl MultiplayerManager {
         Self {
             paths,
             http,
+            tokens: Arc::new(Frp52TokenStore::keyring()),
             frpc,
             room: RwLock::new(room),
             creating: Mutex::new(()),
@@ -43,16 +45,8 @@ impl MultiplayerManager {
         }
     }
 
-    fn auth(&self, config: &MultiplayerConfig) -> Arc<LoCyanAuth> {
-        Arc::new(LoCyanAuth::new(
-            self.http.clone(),
-            config.clone(),
-            LoCyanAuth::keyring(),
-        ))
-    }
-
-    fn provider(&self, config: &MultiplayerConfig) -> LoCyanFrpProvider {
-        LoCyanFrpProvider::new(self.http.clone(), self.auth(config))
+    fn provider(&self) -> Frp52Provider {
+        Frp52Provider::new(self.http.clone(), self.tokens.clone())
     }
 
     fn emit(&self, step: &str, label: &str, status: &str, detail: Option<String>) {
@@ -64,14 +58,13 @@ impl MultiplayerManager {
         });
     }
 
-    pub async fn status(&self, config: &MultiplayerConfig) -> MultiplayerStatus {
-        let auth = self.auth(config);
-        let mut logged_in = config.configured() && auth.has_session();
+    pub async fn status(&self) -> MultiplayerStatus {
+        let token_configured = self.tokens.get().await.ok().flatten().is_some();
+        let mut logged_in = token_configured;
         let mut account = None;
         let mut last_error = self.last_error.read().await.clone();
-        if logged_in && config.configured() {
-            let provider = self.provider(config);
-            match provider.account().await {
+        if token_configured {
+            match self.provider().account().await {
                 Ok(value) => account = Some(value),
                 Err(error) => {
                     if error.code == ErrorCode::AuthenticationRequired {
@@ -134,7 +127,7 @@ impl MultiplayerManager {
         MultiplayerStatus {
             provider: PROVIDER_ID.into(),
             provider_name: PROVIDER_NAME.into(),
-            client_configured: config.configured(),
+            token_configured,
             logged_in,
             account,
             room,
@@ -143,47 +136,44 @@ impl MultiplayerManager {
         }
     }
 
-    pub async fn login(&self, config: &MultiplayerConfig) -> Result<AccountView> {
-        let auth = self.auth(config);
-        let account = auth.login().await?;
+    pub async fn connect(&self, token: &str) -> Result<AccountView> {
+        let provider = self.provider();
+        let account = provider.account_with_token(token).await?;
+        self.tokens.set(token).await?;
         *self.last_error.write().await = None;
         Ok(account)
     }
 
-    pub async fn logout(&self, config: &MultiplayerConfig) -> Result<()> {
+    pub async fn logout(&self) -> Result<()> {
         if self.room.read().await.is_some() {
             return Err(AppError::new(
                 ErrorCode::AlreadyExists,
-                "请先停止并清理当前联机房间，再退出 LoCyanFrp 账户",
+                "请先停止并清理当前联机房间，再退出 52FRP 账户",
             ));
         }
-        let auth = self.auth(config);
-        auth.logout().await
+        self.tokens.clear().await
     }
 
-    pub async fn nodes(
-        &self,
-        config: &MultiplayerConfig,
-        edition: Edition,
-    ) -> Result<Vec<NodeView>> {
-        let provider = self.provider(config);
+    pub async fn nodes(&self, edition: Edition) -> Result<Vec<NodeView>> {
+        let provider = self.provider();
         let nodes = provider.nodes().await?;
+        let load = provider.node_load().await.unwrap_or_default();
         let candidates: Vec<&ProviderNode> = nodes
             .iter()
-            .filter(|node| match edition {
-                Edition::Java => true,
-                Edition::Bedrock => node.allow_udp,
+            .filter(|node| {
+                node.available
+                    && node.is_online
+                    && supports_edition(node, edition)
+                    && (node.max_proxies < 0 || (node.proxy_count as i64) < node.max_proxies)
             })
             .take(40)
             .collect();
-        let ids: Vec<u64> = candidates.iter().map(|n| n.id).collect();
-        let stats = provider.node_stats(&ids).await.unwrap_or_default();
         let latencies =
             join_all(candidates.iter().map(|node| async move {
-                (node.id, tcp_latency(&node.host, node.server_port).await)
+                (node.id, tcp_latency(&node.host, node.tcp_port).await)
             }))
             .await;
-        let ranked = rank_nodes(&nodes, &stats, &latencies, edition);
+        let ranked = rank_nodes(&nodes, &load, &latencies, edition);
         *self.last_error.write().await = None;
         Ok(ranked)
     }
@@ -197,8 +187,8 @@ impl MultiplayerManager {
         minecraft::detect_local(instance, pid, edition, &self.paths.logs_dir()).await
     }
 
-    pub async fn orphans(&self, config: &MultiplayerConfig) -> Result<Vec<OrphanTunnel>> {
-        let provider = self.provider(config);
+    pub async fn orphans(&self) -> Result<Vec<OrphanTunnel>> {
+        let provider = self.provider();
         let tunnels = provider.list_tunnels().await?;
         Ok(tunnels
             .into_iter()
@@ -213,8 +203,8 @@ impl MultiplayerManager {
             .collect())
     }
 
-    pub async fn delete_orphan(&self, config: &MultiplayerConfig, tunnel_id: u64) -> Result<()> {
-        let provider = self.provider(config);
+    pub async fn delete_orphan(&self, tunnel_id: u64) -> Result<()> {
+        let provider = self.provider();
         let tunnels = provider.list_tunnels().await?;
         let tunnel = tunnels
             .into_iter()
@@ -230,7 +220,6 @@ impl MultiplayerManager {
 
     pub async fn create_room(
         &self,
-        config: &MultiplayerConfig,
         request: &CreateRoomRequest,
         instance: &Instance,
         pid: Option<u32>,
@@ -246,21 +235,14 @@ impl MultiplayerManager {
         }
         *self.last_error.write().await = None;
 
-        let provider = self.provider(config);
+        let provider = self.provider();
         let mut created_tunnel = None;
         let result = self
-            .create_inner(
-                config,
-                request,
-                instance,
-                pid,
-                &provider,
-                &mut created_tunnel,
-            )
+            .create_inner(request, instance, pid, &provider, &mut created_tunnel)
             .await;
 
         match result {
-            Ok((stored, latency)) => {
+            Ok(stored) => {
                 if let Err(error) = save_room(&self.paths, &stored).await {
                     let _ = self.frpc.stop().await;
                     let _ = provider.delete_tunnel(stored.tunnel_id).await;
@@ -284,7 +266,7 @@ impl MultiplayerManager {
                     local_ip: stored.local_ip,
                     local_port: stored.local_port,
                     local_pid: stored.local_pid,
-                    latency_ms: latency,
+                    latency_ms: stored.latency_ms,
                     created_at: stored.created_at,
                     state: "online".into(),
                     frpc_running: frpc.running,
@@ -306,22 +288,21 @@ impl MultiplayerManager {
 
     async fn create_inner(
         &self,
-        config: &MultiplayerConfig,
         request: &CreateRoomRequest,
         instance: &Instance,
         pid: Option<u32>,
-        provider: &LoCyanFrpProvider,
+        provider: &Frp52Provider,
         created_tunnel: &mut Option<u64>,
-    ) -> Result<(StoredRoom, Option<u64>)> {
-        if !config.configured() {
-            return Err(AppError::not_configured(
-                "尚未配置 LoCyanFrp 应用 ID，请先在设置中完成 OAuth 应用配置",
+    ) -> Result<StoredRoom> {
+        self.emit("auth", "检查 52FRP 账户", "running", None);
+        let account = provider.account().await?;
+        if account.verified == Some(false) {
+            return Err(AppError::new(
+                ErrorCode::Http,
+                "52FRP 账户尚未实名认证，无法创建隧道",
             ));
         }
-
-        self.emit("auth", "检查 LoCyanFrp 账户", "running", None);
-        let account = provider.account().await?;
-        self.emit("auth", "检查 LoCyanFrp 账户", "ok", None);
+        self.emit("auth", "检查 52FRP 账户", "ok", None);
 
         self.emit("local", "检查本地 Minecraft 服务", "running", None);
         let local = self.detect_local(instance, pid, request.edition).await;
@@ -343,7 +324,6 @@ impl MultiplayerManager {
         if local_port == 0 {
             return Err(AppError::invalid_input("本地端口必须大于 0"));
         }
-        let local_detail = local.message.clone();
         if request.edition == Edition::Java {
             if !minecraft::tcp_reachable(&local_ip, local_port).await {
                 return Err(AppError::new(
@@ -357,29 +337,45 @@ impl MultiplayerManager {
                 format!("本地 UDP 端口 {local_port} 未在监听"),
             ));
         }
-        self.emit("local", "检查本地 Minecraft 服务", "ok", Some(local_detail));
+        self.emit(
+            "local",
+            "检查本地 Minecraft 服务",
+            "ok",
+            Some(local.message.clone()),
+        );
 
         self.emit("nodes", "获取可用节点", "running", None);
         let nodes = provider.nodes().await?;
-        if nodes.is_empty() {
-            return Err(AppError::not_found("当前账户没有可用节点"));
+        let usable: Vec<&ProviderNode> = nodes
+            .iter()
+            .filter(|node| {
+                node.available
+                    && node.is_online
+                    && supports_edition(node, request.edition)
+                    && (node.max_proxies < 0 || (node.proxy_count as i64) < node.max_proxies)
+                    && !node.host.trim().is_empty()
+            })
+            .collect();
+        if usable.is_empty() {
+            return Err(AppError::not_found(
+                "52FRP 没有当前账户可用、在线且支持该协议的节点；请检查套餐覆盖、实名状态和节点状态",
+            ));
         }
         self.emit(
             "nodes",
             "获取可用节点",
             "ok",
-            Some(format!("{} 个节点", nodes.len())),
+            Some(format!("{} 个可用节点", usable.len())),
         );
 
         self.emit("node", "选择合适节点", "running", None);
-        let ids: Vec<u64> = nodes.iter().take(40).map(|n| n.id).collect();
-        let stats = provider.node_stats(&ids).await.unwrap_or_default();
+        let load = provider.node_load().await.unwrap_or_default();
         let latencies =
-            join_all(nodes.iter().take(40).map(|node| async move {
-                (node.id, tcp_latency(&node.host, node.server_port).await)
+            join_all(usable.iter().take(40).map(|node| async move {
+                (node.id, tcp_latency(&node.host, node.tcp_port).await)
             }))
             .await;
-        let ranked = rank_nodes(&nodes, &stats, &latencies, request.edition);
+        let ranked = rank_nodes(&nodes, &load, &latencies, request.edition);
         let selected: NodeView = if request.auto_node || request.node_id.is_none() {
             ranked
                 .iter()
@@ -401,6 +397,10 @@ impl MultiplayerManager {
                     .unwrap_or_else(|| "选择的节点不可用".into()),
             ));
         }
+        let node = nodes
+            .iter()
+            .find(|n| n.id == selected.id)
+            .ok_or_else(|| AppError::not_found("节点信息丢失"))?;
         self.emit(
             "node",
             "选择合适节点",
@@ -426,55 +426,78 @@ impl MultiplayerManager {
             if count >= limit {
                 return Err(AppError::new(
                     ErrorCode::Http,
-                    format!("LoCyanFrp 隧道额度已用完（{count}/{limit}）"),
+                    format!("52FRP 隧道额度已用完（{count}/{limit}）"),
                 ));
             }
         }
         self.emit("quota", "检查隧道额度", "ok", None);
 
-        self.emit("port", "获取远程端口", "running", None);
-        let remote_port = provider.random_port(selected.id).await?;
-        let node = nodes.iter().find(|n| n.id == selected.id).unwrap();
-        if !port_allowed(&node.port_range, remote_port) {
-            return Err(AppError::new(
-                ErrorCode::Http,
-                "LoCyanFrp 返回的远程端口不在节点允许范围内",
-            ));
+        self.emit("port", "分配远程端口", "running", None);
+        let occupied = provider
+            .occupied_ports(node.id, request.edition.tunnel_type())
+            .await
+            .unwrap_or_default();
+        let allowed = parse_port_ranges(&node.proxies_allowed);
+        let denied = parse_port_ranges(&node.proxies_denied);
+        let ranges = if allowed.is_empty() {
+            vec![(10000, 65535)]
+        } else {
+            allowed.clone()
+        };
+        let mut remote_port = None;
+        let salt = uuid::Uuid::new_v4().as_u128() as u64;
+        for attempt in 0..40u64 {
+            let Some(candidate) =
+                choose_port(&ranges, &denied, &occupied, salt.wrapping_add(attempt))
+            else {
+                continue;
+            };
+            if provider
+                .check_port(node.id, request.edition.tunnel_type(), candidate)
+                .await
+                .unwrap_or(false)
+            {
+                remote_port = Some(candidate);
+                break;
+            }
         }
-        self.emit("port", "获取远程端口", "ok", Some(remote_port.to_string()));
+        let remote_port = remote_port.ok_or_else(|| {
+            AppError::new(
+                ErrorCode::Http,
+                "52FRP 节点上没有找到可用的远程端口，请更换节点",
+            )
+        })?;
+        self.emit("port", "分配远程端口", "ok", Some(remote_port.to_string()));
 
         self.emit("tunnel", "创建隧道", "running", None);
-        let name = request.name.clone().unwrap_or_else(|| {
-            format!(
-                "{DEFAULT_TUNNEL_PREFIX}{}-{}",
-                request.edition.tunnel_type(),
-                &uuid::Uuid::new_v4().to_string()[..8]
-            )
-        });
+        let name = request
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("SRL_{}", &uuid::Uuid::new_v4().to_string()[..8]));
+        let name = if provider.check_name(&name).await.unwrap_or(false) {
+            name
+        } else {
+            format!("SRL_{}", &uuid::Uuid::new_v4().to_string()[..8])
+        };
         let tunnel_id = provider
             .create_tunnel(&TunnelCreate {
-                node_id: selected.id,
-                name: name.clone(),
-                tunnel_type: request.edition.tunnel_type().into(),
+                node_id: node.id,
+                proxy_name: name.clone(),
+                proxy_type: request.edition.tunnel_type().into(),
                 local_ip: local_ip.clone(),
                 local_port,
                 remote_port,
-                use_encryption: true,
-                use_compression: true,
             })
             .await?;
         *created_tunnel = Some(tunnel_id);
         self.emit("tunnel", "创建隧道", "ok", Some(format!("#{tunnel_id}")));
 
-        self.emit("config", "获取隧道配置", "running", None);
-        let config_text = provider.tunnel_config(tunnel_id).await?;
-        self.emit("config", "获取隧道配置", "ok", None);
+        self.emit("config", "获取 FRPC 配置", "running", None);
+        let config_text = provider.tunnel_config(node.id, tunnel_id).await?;
+        self.emit("config", "获取 FRPC 配置", "ok", None);
 
         self.emit("frpc", "下载并启动 FRPC", "running", None);
-        let prepared = self
-            .frpc
-            .prepare(std::env::consts::OS, std::env::consts::ARCH)
-            .await?;
+        let prepared = self.frpc.prepare().await?;
         self.frpc.set_prepared(&prepared).await;
         let frpc_pid = self.frpc.start(&prepared.path, &config_text).await?;
         self.emit(
@@ -488,35 +511,29 @@ impl MultiplayerManager {
         let mut online = false;
         for _ in 0..23 {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            match provider.tunnel_status(tunnel_id).await {
-                Ok(true) => {
-                    online = true;
-                    break;
-                }
-                Ok(false) => {}
-                Err(error) => {
-                    tracing::warn!(%error, "tunnel status check failed");
-                }
+            if provider.tunnel_online(tunnel_id).await.unwrap_or(false) {
+                online = true;
+                break;
             }
         }
         if !online {
             return Err(AppError::new(
                 ErrorCode::ConnectFailed,
-                "FRPC 已启动，但 LoCyanFrp 在 45 秒内没有报告隧道在线",
+                "FRPC 已启动，但 52FRP 在 45 秒内没有报告隧道在线",
             ));
         }
         self.emit("verify", "验证公网连接", "ok", None);
 
-        let stored = StoredRoom {
+        Ok(StoredRoom {
             tunnel_id,
             tunnel_name: name,
             edition: request.edition,
             instance_id: instance.id.clone(),
             instance_name: instance.name.clone(),
             version_id: instance.version_id.clone(),
-            node_id: selected.id,
+            node_id: node.id,
             node_name: selected.name.clone(),
-            public_host: selected.host.clone(),
+            public_host: node.host.clone(),
             public_port: remote_port,
             local_ip,
             local_port,
@@ -524,15 +541,10 @@ impl MultiplayerManager {
             latency_ms: selected.latency_ms,
             created_at: chrono::Utc::now().to_rfc3339(),
             retained: false,
-        };
-        Ok((stored, selected.latency_ms))
+        })
     }
 
-    pub async fn stop_room(
-        &self,
-        config: &MultiplayerConfig,
-        delete_tunnel: bool,
-    ) -> Result<StopRoomResult> {
+    pub async fn stop_room(&self, delete_tunnel: bool) -> Result<StopRoomResult> {
         let room = self.room.read().await.clone();
         let Some(room) = room else {
             return Ok(StopRoomResult {
@@ -554,7 +566,7 @@ impl MultiplayerManager {
             });
         }
 
-        let provider = self.provider(config);
+        let provider = self.provider();
         let tunnels = provider.list_tunnels().await?;
         let found = tunnels.into_iter().find(|t| t.id == room.tunnel_id);
         match found {
@@ -564,7 +576,6 @@ impl MultiplayerManager {
                 ));
             }
             None => {
-                // The cloud tunnel is already gone. Clear the stale local room.
                 let _ = std::fs::remove_file(self.paths.multiplayer_room_file());
                 *self.room.write().await = None;
                 return Ok(StopRoomResult {
@@ -601,7 +612,7 @@ impl MultiplayerManager {
         }
     }
 
-    pub async fn restart_frpc(&self, config: &MultiplayerConfig) -> Result<FrpcView> {
+    pub async fn restart_frpc(&self) -> Result<FrpcView> {
         let room = self
             .room
             .read()
@@ -613,12 +624,9 @@ impl MultiplayerManager {
                 "该房间的云端隧道已停止或已删除，请重新创建",
             ));
         }
-        let provider = self.provider(config);
-        let config_text = provider.tunnel_config(room.tunnel_id).await?;
-        let prepared = self
-            .frpc
-            .prepare(std::env::consts::OS, std::env::consts::ARCH)
-            .await?;
+        let provider = self.provider();
+        let config_text = provider.tunnel_config(room.node_id, room.tunnel_id).await?;
+        let prepared = self.frpc.prepare().await?;
         self.frpc.set_prepared(&prepared).await;
         self.frpc.start(&prepared.path, &config_text).await?;
         Ok(self.frpc.status().await)
@@ -636,10 +644,38 @@ impl MultiplayerManager {
         }
     }
 
-    /// Expose the stored room for diagnostics/tests without leaking config.
     pub async fn stored_room(&self) -> Option<StoredRoom> {
         self.room.read().await.clone()
     }
+}
+
+/// Pick a candidate from the node's allowed ranges while avoiding denied and
+/// already-occupied ports. The caller still asks 52FRP's check-port endpoint
+/// before creating the tunnel.
+pub fn choose_port(
+    allowed: &[(u16, u16)],
+    denied: &[(u16, u16)],
+    occupied: &[u16],
+    salt: u64,
+) -> Option<u16> {
+    if allowed.is_empty() {
+        return None;
+    }
+    let mut state = salt.max(1);
+    for _ in 0..200 {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let (start, end) = allowed[(state as usize) % allowed.len()];
+        let span = (end as u32).saturating_sub(start as u32) + 1;
+        let port = start as u32 + (state as u32 % span);
+        let port = port as u16;
+        if port_in_ranges(denied, port) || occupied.contains(&port) {
+            continue;
+        }
+        return Some(port);
+    }
+    None
 }
 
 async fn process_alive(pid: u32) -> bool {
@@ -653,9 +689,9 @@ async fn process_alive(pid: u32) -> bool {
             .args(["/FI", &format!("PID eq {pid}"), "/NH"])
             .output()
             .await;
-        return output
+        output
             .ok()
-            .is_some_and(|out| String::from_utf8_lossy(&out.stdout).contains(&pid.to_string()));
+            .is_some_and(|out| String::from_utf8_lossy(&out.stdout).contains(&pid.to_string()))
     }
     #[cfg(not(any(unix, windows)))]
     {
@@ -680,20 +716,38 @@ async fn save_room(paths: &AppPaths, room: &StoredRoom) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chooses_port_inside_ranges_and_skips_occupied() {
+        let allowed = vec![(20000, 20005)];
+        let occupied = vec![20000, 20001, 20002];
+        for salt in 1..20 {
+            let port = choose_port(&allowed, &[], &occupied, salt).unwrap();
+            assert!((20003..=20005).contains(&port));
+        }
+    }
+
+    #[test]
+    fn avoids_denied_ranges() {
+        let allowed = vec![(20000, 20002)];
+        let denied = vec![(20000, 20001)];
+        assert_eq!(choose_port(&allowed, &denied, &[], 7), Some(20002));
+    }
+
     #[tokio::test]
     async fn loads_and_saves_room() {
         let dir = tempfile::tempdir().unwrap();
         let paths = AppPaths::new(dir.path());
         let room = StoredRoom {
             tunnel_id: 7,
-            tunnel_name: "SRL-MP-TCP-test".into(),
+            tunnel_name: "SRL_test".into(),
             edition: Edition::Java,
             instance_id: "abc".into(),
             instance_name: "Test".into(),
             version_id: "1.21.1".into(),
             node_id: 1,
             node_name: "node".into(),
-            public_host: "example.locyanfrp.cn".into(),
+            public_host: "example.52frp.com".into(),
             public_port: 25565,
             local_ip: "127.0.0.1".into(),
             local_port: 25565,

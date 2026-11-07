@@ -7,6 +7,6 @@ SR Launcher 当前版本不再内置或调用 EasyTier。此前 Structural Conne
 
 ## Minecraft 联机
 
-SRL 不内置 FRPC 二进制。联机中心通过 LoCyanFrp 官方 API `/v3/software/frp` 获取当前平台的官方
-FRPC 客户端，下载到本地用户数据目录并在停止联机时保留或清理；FRPC 的许可与使用条款以
-LoCyanFrp 官方发布物为准。SRL 仅调用官方隧道接口，不修改 FRPC。
+SRL 不内置 FRPC 二进制。联机中心使用 52FRP 开放 API，并从 fatedier/frp 官方 GitHub Release
+下载当前平台的 FRPC 客户端（含官方 SHA-256 校验文件）。FRPC 的许可以上游 fatedier/frp 发布物为准；
+SRL 仅调用 52FRP 隧道接口，不修改 FRPC。

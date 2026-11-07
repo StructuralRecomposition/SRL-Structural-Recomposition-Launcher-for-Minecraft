@@ -210,13 +210,13 @@ beforeEach(() => {
         return "builtin";
       case "multiplayer_status":
         return {
-          provider: "locyanfrp",
-          providerName: "LoCyanFrp",
-          clientConfigured: multiplayerConfigured,
+          provider: "frp52",
+          providerName: "52FRP",
+          tokenConfigured: multiplayerConfigured,
           loggedIn: multiplayerLoggedIn,
           account: multiplayerLoggedIn
             ? {
-                provider: "locyanfrp",
+                provider: "frp52",
                 userId: 42,
                 displayName: "max",
                 email: null,
@@ -224,6 +224,8 @@ beforeEach(() => {
                 verified: true,
                 tunnelCount: 0,
                 tunnelLimit: 5,
+                balance: 12.5,
+                trafficRemaining: 1048576,
               }
             : null,
           room: null,
@@ -642,11 +644,11 @@ describe("SR Launcher UI", () => {
     expect(screen.getByText(/所有进度均为真实数据/)).toBeInTheDocument();
   });
 
-  it("shows the LoCyanFrp setup guidance when no OAuth app id is configured", async () => {
+  it("shows the 52FRP connection guidance when no token is configured", async () => {
     render(<App />);
     await screen.findByRole("button", { name: "Minecraft 联机" });
     fireEvent.click(screen.getByRole("button", { name: "Minecraft 联机" }));
-    expect(await screen.findByText("还需要一个 LoCyanFrp OAuth 应用 ID")).toBeInTheDocument();
+    expect(await screen.findByText("先连接 52FRP")).toBeInTheDocument();
   });
 
   it("shows the multiplayer create form after the account is connected", async () => {

@@ -42,13 +42,6 @@ pub struct Settings {
     /// DeepSeek-compatible API base URL (no key; the key lives in keyring).
     #[serde(default = "default_assistant_base_url")]
     pub assistant_base_url: String,
-    /// Public LoCyanFrp OAuth application id used by Minecraft Multiplayer.
-    /// This is not a secret; empty keeps the multiplayer login disabled.
-    #[serde(default)]
-    pub locyan_client_id: Option<String>,
-    /// Comma-separated OAuth scopes requested by the LoCyanFrp application.
-    #[serde(default = "default_locyan_scopes")]
-    pub locyan_scopes: String,
 }
 
 fn default_concurrency() -> u32 {
@@ -66,9 +59,6 @@ fn default_assistant_model() -> String {
 fn default_assistant_base_url() -> String {
     "https://api.deepseek.com".into()
 }
-fn default_locyan_scopes() -> String {
-    "Node.Read,Node.Read.Stat,Node.RandomPort,Tunnel.Read,Tunnel.Read.Config,Tunnel.Read.Status,Tunnel.Write.Create,Tunnel.Write.Delete".into()
-}
 
 impl Settings {
     pub fn defaults(base: &AppPaths) -> Self {
@@ -85,8 +75,6 @@ impl Settings {
             apply_offline_skin: true,
             assistant_model: default_assistant_model(),
             assistant_base_url: default_assistant_base_url(),
-            locyan_client_id: None,
-            locyan_scopes: default_locyan_scopes(),
         }
     }
 
@@ -124,29 +112,6 @@ impl Settings {
             return Err(AppError::invalid_input(
                 "AI API 地址必须是 https 且不包含凭据",
             ));
-        }
-        if let Some(id) = &self.locyan_client_id {
-            let id = id.trim();
-            if id.is_empty() || id.len() > 64 {
-                return Err(AppError::invalid_input("LoCyanFrp 应用 ID 不能为空或过长"));
-            }
-            if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
-                return Err(AppError::invalid_input("LoCyanFrp 应用 ID 格式非法"));
-            }
-        }
-        let scopes = self.locyan_scopes.trim();
-        if scopes.is_empty() || scopes.len() > 512 {
-            return Err(AppError::invalid_input(
-                "LoCyanFrp OAuth 权限不能为空或过长",
-            ));
-        }
-        if !scopes.split(',').all(|s| {
-            let s = s.trim();
-            !s.is_empty()
-                && s.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
-        }) {
-            return Err(AppError::invalid_input("LoCyanFrp OAuth 权限格式非法"));
         }
         if let Some(id) = &self.microsoft_client_id {
             let id = id.trim();

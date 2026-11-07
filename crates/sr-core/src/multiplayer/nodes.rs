@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 
-use super::provider::{NodeStat, ProviderNode};
+use super::provider::ProviderNode;
 use super::types::{Edition, NodeView};
 
 pub async fn tcp_latency(host: &str, port: u16) -> Option<u64> {
@@ -19,48 +20,67 @@ pub async fn tcp_latency(host: &str, port: u16) -> Option<u64> {
 
 pub fn rank_nodes(
     nodes: &[ProviderNode],
-    stats: &[NodeStat],
+    load: &HashMap<u64, f64>,
     latencies: &[(u64, Option<u64>)],
     edition: Edition,
 ) -> Vec<NodeView> {
     let mut ranked: Vec<NodeView> = nodes
         .iter()
         .map(|node| {
-            let stat = stats.iter().find(|s| s.node_id == node.id);
             let latency = latencies
                 .iter()
                 .find(|(id, _)| *id == node.id)
                 .and_then(|(_, value)| *value);
-            let allowed = match edition {
-                Edition::Java => true,
-                Edition::Bedrock => node.allow_udp,
-            };
-            let reason = if node.host.trim().is_empty() {
-                Some("节点未返回可连接主机名".to_string())
-            } else if !allowed {
-                Some("节点不支持 UDP".to_string())
+            let load_value = load.get(&node.id).copied();
+            let supports = node
+                .tunnel_protocols
+                .iter()
+                .any(|p| p.eq_ignore_ascii_case(edition.tunnel_type()));
+            let quota_ok = node.max_proxies < 0 || (node.proxy_count as i64) < node.max_proxies;
+            let reason = if !node.available {
+                Some("当前套餐未覆盖该节点".to_string())
+            } else if !node.is_online {
+                Some("节点当前离线".to_string())
+            } else if !supports {
+                Some(format!(
+                    "节点不支持 {}",
+                    edition.tunnel_type().to_uppercase()
+                ))
+            } else if !quota_ok {
+                Some("节点隧道数量已达上限".to_string())
+            } else if node.host.trim().is_empty() {
+                Some("节点未返回主机名".to_string())
             } else {
                 None
             };
-            let score = if allowed && reason.is_none() {
-                score_node(node, stat, latency)
-            } else {
-                0.0
-            };
+            let available = reason.is_none();
             NodeView {
                 id: node.id,
                 name: node.name.clone(),
                 host: node.host.clone(),
-                server_port: node.server_port,
+                region: [node.province.clone(), node.city.clone()]
+                    .into_iter()
+                    .flatten()
+                    .filter(|v| !v.trim().is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" · ")
+                    .into(),
                 description: node.description.clone(),
-                allow_udp: node.allow_udp,
-                allow_big_traffic: node.allow_big_traffic,
-                need_icp: node.need_icp,
+                allow_udp: node
+                    .tunnel_protocols
+                    .iter()
+                    .any(|p| p.eq_ignore_ascii_case("udp")),
+                allow_big_traffic: false,
+                need_icp: false,
                 latency_ms: latency,
-                clients: stat.and_then(|s| s.clients),
-                outbound: stat.and_then(|s| s.outbound),
-                score,
-                available: allowed && reason.is_none(),
+                clients: Some(node.proxy_count),
+                load: load_value,
+                score: if available {
+                    score_node(node, latency, load_value)
+                } else {
+                    0.0
+                },
+                available,
                 reason,
             }
         })
@@ -73,55 +93,23 @@ pub fn rank_nodes(
     ranked
 }
 
-fn score_node(node: &ProviderNode, stat: Option<&NodeStat>, latency: Option<u64>) -> f64 {
+fn score_node(node: &ProviderNode, latency: Option<u64>, load: Option<f64>) -> f64 {
     let latency_score = match latency {
         Some(ms) => 1.0 / (1.0 + ms as f64 / 120.0),
         None => 0.05,
     };
-    let clients = stat.and_then(|s| s.clients).unwrap_or(0) as f64;
-    let outbound_gb = stat
-        .and_then(|s| s.outbound)
-        .map(|v| {
-            if v > 1024.0 * 1024.0 {
-                v / 1024.0 / 1024.0 / 1024.0
-            } else {
-                v
-            }
-        })
-        .unwrap_or(0.0);
-    let load_score = 1.0 / (1.0 + clients / 24.0) / (1.0 + outbound_gb.min(500.0) / 80.0);
-    let mut score = 0.58 * latency_score + 0.32 * load_score + 0.10;
-    if node.allow_big_traffic {
-        score += 0.06;
-    }
-    if node.need_icp {
-        score -= 0.12;
-    }
-    score.max(0.0)
-}
-
-/// Validate that a provider-assigned port falls inside one of the node's
-/// published ranges. Accepts both `20000-30000` and single ports.
-pub fn port_allowed(ranges: &[String], port: u16) -> bool {
-    if ranges.is_empty() {
-        return true;
-    }
-    ranges.iter().any(|range| {
-        let range = range.trim();
-        if let Some((start, end)) = range.split_once('-') {
-            let start = start.trim().parse::<u32>().ok();
-            let end = end.trim().parse::<u32>().ok();
-            matches!((start, end), (Some(a), Some(b)) if (a..=b).contains(&(port as u32)))
-        } else {
-            range.parse::<u16>().ok() == Some(port)
-        }
-    })
+    let load_score = 1.0 / (1.0 + load.unwrap_or(30.0).clamp(0.0, 100.0) / 35.0);
+    let quota_score = if node.max_proxies < 0 {
+        1.0
+    } else {
+        1.0 - (node.proxy_count as f64 / node.max_proxies.max(1) as f64).clamp(0.0, 1.0)
+    };
+    0.52 * latency_score + 0.33 * load_score + 0.15 * quota_score
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::multiplayer::provider::ProviderNode;
 
     fn node(id: u64, udp: bool) -> ProviderNode {
         ProviderNode {
@@ -129,20 +117,33 @@ mod tests {
             name: format!("node-{id}"),
             host: "127.0.0.1".into(),
             ip: None,
+            city: Some("上海".into()),
+            province: Some("上海".into()),
             description: None,
-            server_port: 7000,
-            port_range: vec!["20000-30000".into()],
-            allow_udp: udp,
-            allow_http: true,
-            allow_big_traffic: false,
-            need_icp: false,
-            verification_level: None,
+            available: true,
+            is_online: true,
+            proxy_count: 1,
+            max_proxies: 10,
+            tunnel_protocols: if udp {
+                vec!["tcp".into(), "udp".into()]
+            } else {
+                vec!["tcp".into()]
+            },
+            proxies_allowed: "20000-30000".into(),
+            proxies_denied: String::new(),
+            tcp_port: 7000,
+            load: None,
         }
     }
 
     #[test]
     fn udp_filter_excludes_tcp_only_nodes() {
-        let ranked = rank_nodes(&[node(1, false), node(2, true)], &[], &[], Edition::Bedrock);
+        let ranked = rank_nodes(
+            &[node(1, false), node(2, true)],
+            &HashMap::new(),
+            &[],
+            Edition::Bedrock,
+        );
         assert_eq!(ranked[0].id, 2);
         assert!(ranked[0].available);
         assert!(!ranked[1].available);
@@ -151,23 +152,12 @@ mod tests {
     #[test]
     fn lower_latency_and_load_wins() {
         let nodes = [node(1, true), node(2, true)];
-        let stats = [
-            NodeStat {
-                node_id: 1,
-                clients: Some(80),
-                outbound: Some(100.0),
-                ..Default::default()
-            },
-            NodeStat {
-                node_id: 2,
-                clients: Some(2),
-                outbound: Some(5.0),
-                ..Default::default()
-            },
-        ];
+        let mut load = HashMap::new();
+        load.insert(1, 85.0);
+        load.insert(2, 10.0);
         let ranked = rank_nodes(
             &nodes,
-            &stats,
+            &load,
             &[(1, Some(180)), (2, Some(40))],
             Edition::Java,
         );
@@ -175,11 +165,12 @@ mod tests {
     }
 
     #[test]
-    fn validates_port_ranges() {
-        let ranges = vec!["20000-30000".to_string(), "40000".to_string()];
-        assert!(port_allowed(&ranges, 25565));
-        assert!(port_allowed(&ranges, 40000));
-        assert!(!port_allowed(&ranges, 65500));
-        assert!(port_allowed(&[], 1));
+    fn offlines_and_full_nodes_are_unavailable() {
+        let mut offline = node(1, true);
+        offline.is_online = false;
+        let mut full = node(2, true);
+        full.proxy_count = 10;
+        let ranked = rank_nodes(&[offline, full], &HashMap::new(), &[], Edition::Java);
+        assert!(ranked.iter().all(|n| !n.available));
     }
 }

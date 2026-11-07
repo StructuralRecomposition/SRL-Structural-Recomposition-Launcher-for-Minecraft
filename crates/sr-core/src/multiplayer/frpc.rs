@@ -1,7 +1,6 @@
 use crate::error::{AppError, ErrorCode, Result};
 use futures_util::StreamExt;
 use serde::Deserialize;
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
 use std::io::{Cursor, Read, Write};
@@ -17,26 +16,20 @@ use super::types::FrpcView;
 const MAX_FRPC_BYTES: u64 = 100 * 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FrpcAsset {
+struct GitHubRelease {
+    tag_name: String,
     #[serde(default)]
-    pub os: String,
+    assets: Vec<GitHubAsset>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct GitHubAsset {
+    name: String,
+    browser_download_url: String,
     #[serde(default)]
-    pub arch: String,
+    size: u64,
     #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub version: String,
-    #[serde(default)]
-    pub download_link: String,
-    #[serde(default)]
-    pub tag: String,
-    #[serde(default)]
-    pub kind: String,
-    /// Optional official checksum. The v3 documentation does not currently
-    /// list one, but if the API starts returning it we verify it.
-    #[serde(default)]
-    pub sha256: Option<String>,
+    digest: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -62,8 +55,6 @@ pub struct FrpcManager {
 
 impl FrpcManager {
     pub fn new(dir: PathBuf, http: reqwest::Client) -> Self {
-        // A previous crash may have left a private config file behind. Remove
-        // only our own `frpc-*.toml` files; never touch unrelated files.
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name();
@@ -86,101 +77,90 @@ impl FrpcManager {
         }
     }
 
-    pub async fn assets(&self, os: &str, arch: &str) -> Result<Vec<FrpcAsset>> {
-        let bases = [super::types::API_BASE, super::types::API_BACKUP_BASE];
-        let mut last_error = None;
-        for base in bases {
-            let response = self
-                .http
-                .get(format!("{base}/software/frp"))
-                .query(&[("os", os), ("arch", arch)])
-                .timeout(std::time::Duration::from_secs(30))
-                .send()
-                .await;
-            match response {
-                Ok(response) => {
-                    let value: Value = response.json().await.map_err(|e| {
-                        AppError::new(ErrorCode::Http, "无法解析 LoCyanFrp 软件列表")
-                            .with_detail(e.to_string())
-                    })?;
-                    let list = value
-                        .get("data")
-                        .and_then(|d| d.get("list"))
-                        .and_then(Value::as_array)
-                        .cloned()
-                        .unwrap_or_default();
-                    let mut assets = Vec::new();
-                    for item in list {
-                        let mut asset: FrpcAsset =
-                            serde_json::from_value(item.clone()).unwrap_or(FrpcAsset {
-                                os: String::new(),
-                                arch: String::new(),
-                                name: String::new(),
-                                version: String::new(),
-                                download_link: String::new(),
-                                tag: String::new(),
-                                kind: String::new(),
-                                sha256: None,
-                            });
-                        if asset.download_link.is_empty() {
-                            asset.download_link = item
-                                .get("downloadLink")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default()
-                                .to_string();
-                        }
-                        if asset.kind.is_empty() {
-                            asset.kind = item
-                                .get("type")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default()
-                                .to_string();
-                        }
-                        assets.push(asset);
-                    }
-                    return Ok(assets);
-                }
-                Err(error) => last_error = Some(error),
-            }
-        }
-        Err(AppError::network("无法获取 LoCyanFrp 客户端列表")
-            .with_detail(last_error.map(|e| e.to_string()).unwrap_or_default()))
-    }
-
-    pub async fn prepare(&self, os: &str, arch: &str) -> Result<PreparedFrpc> {
-        let assets = self.assets(os, arch).await?;
-        let asset = pick_asset(&assets, os, arch)
-            .ok_or_else(|| AppError::not_found("官方资源列表中没有当前平台的 FRPC 客户端"))?;
-        if asset.download_link.is_empty() {
+    /// Download the upstream fatedier/frp client. 52FRP's tutorial explicitly
+    /// uses the official frp releases, and those releases publish SHA-256
+    /// checksums.
+    pub async fn prepare(&self) -> Result<PreparedFrpc> {
+        let release = self.release().await?;
+        let version = release.tag_name.trim_start_matches('v').to_string();
+        let platform = platform_name(std::env::consts::OS)?;
+        let arch = arch_name(std::env::consts::ARCH)?;
+        let ext = if platform == "windows" {
+            "zip"
+        } else {
+            "tar.gz"
+        };
+        let wanted = format!("frp_{version}_{platform}_{arch}.{ext}");
+        let asset = release
+            .assets
+            .iter()
+            .find(|a| a.name == wanted)
+            .or_else(|| {
+                release.assets.iter().find(|a| {
+                    a.name.contains(&format!("_{platform}_{arch}.")) && a.name.ends_with(ext)
+                })
+            })
+            .ok_or_else(|| {
+                AppError::not_found(format!("frp {version} 没有当前平台的客户端（{wanted}）"))
+            })?;
+        if asset.size > MAX_FRPC_BYTES {
             return Err(AppError::new(
                 ErrorCode::Http,
-                "LoCyanFrp 没有返回 FRPC 下载地址",
+                "FRPC 下载文件超过 100 MB，已拒绝",
             ));
         }
-        verify_download_url(&asset.download_link)?;
+        verify_download_url(&asset.browser_download_url)?;
 
-        let safe_version = sanitize_component(if asset.version.is_empty() {
-            &asset.name
+        // GitHub's release API exposes the asset digest. Prefer it; fall back
+        // to the checksum text asset only when the digest is absent.
+        let expected = if let Some(digest) = asset
+            .digest
+            .as_deref()
+            .and_then(|v| v.strip_prefix("sha256:"))
+            .filter(|v| !v.is_empty())
+        {
+            digest.to_ascii_lowercase()
         } else {
-            &asset.version
+            let checksums = release
+                .assets
+                .iter()
+                .find(|a| a.name == "frp_sha256_checksums.txt")
+                .ok_or_else(|| {
+                    AppError::new(
+                        ErrorCode::ChecksumMismatch,
+                        "frp Release 没有 SHA-256 校验信息，已拒绝下载",
+                    )
+                })?;
+            let checksum_text = self.download_text(&checksums.browser_download_url).await?;
+            checksum_for(&checksum_text, &asset.name).ok_or_else(|| {
+                AppError::new(
+                    ErrorCode::ChecksumMismatch,
+                    "frp Release 的校验文件中没有当前客户端",
+                )
+            })?
+        };
+
+        let target_dir = self.dir.join(format!("{version}-{platform}-{arch}"));
+        let target = target_dir.join(if platform == "windows" {
+            "frpc.exe"
+        } else {
+            "frpc"
         });
-        let target_dir = self.dir.join(format!("{safe_version}-{arch}"));
-        let exe_name = if cfg!(windows) { "frpc.exe" } else { "frpc" };
-        let target = target_dir.join(exe_name);
         let hash_sidecar = target_dir.join("frpc.sha256");
         if target.is_file() {
             if let Ok(bytes) = std::fs::read(&target) {
                 if executable_magic_ok(&bytes) {
                     let actual = sha256_hex(&bytes);
-                    let expected = std::fs::read_to_string(&hash_sidecar)
+                    let cached = std::fs::read_to_string(&hash_sidecar)
                         .ok()
                         .map(|v| v.trim().to_string());
-                    if expected.as_deref().is_none_or(|value| value == actual) {
-                        let _ = std::fs::write(&hash_sidecar, &actual);
+                    if actual.eq_ignore_ascii_case(&expected)
+                        && cached.as_deref().is_none_or(|v| v == actual)
+                    {
                         return Ok(PreparedFrpc {
-                            sha256: actual,
-                            version: asset.version.clone(),
                             path: target,
+                            version,
+                            sha256: actual,
                         });
                     }
                 }
@@ -188,8 +168,10 @@ impl FrpcManager {
         }
 
         crate::util::ensure_dir(&target_dir).await?;
-        let bytes = self.download(&asset.download_link).await?;
-        let extracted = extract_executable(&bytes, os)?;
+        let bytes = self
+            .download_with_fallback(&asset.browser_download_url)
+            .await?;
+        let extracted = extract_executable(&bytes, platform)?;
         if !executable_magic_ok(&extracted) {
             return Err(AppError::new(
                 ErrorCode::ChecksumMismatch,
@@ -197,15 +179,8 @@ impl FrpcManager {
             ));
         }
         let sha256 = sha256_hex(&extracted);
-        if let Some(expected) = asset
-            .sha256
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-        {
-            if !expected.eq_ignore_ascii_case(&sha256) {
-                return Err(AppError::checksum(expected, &sha256));
-            }
+        if !sha256.eq_ignore_ascii_case(&expected) {
+            return Err(AppError::checksum(&expected, &sha256));
         }
         std::fs::write(&target, &extracted)?;
         let _ = std::fs::write(&hash_sidecar, &sha256);
@@ -216,9 +191,66 @@ impl FrpcManager {
         }
         Ok(PreparedFrpc {
             path: target,
-            version: asset.version.clone(),
+            version,
             sha256,
         })
+    }
+
+    async fn release(&self) -> Result<GitHubRelease> {
+        let response = self
+            .http
+            .get("https://api.github.com/repos/fatedier/frp/releases/latest")
+            .header("Accept", "application/vnd.github+json")
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+            .map_err(|e| AppError::network("无法获取 frp 最新版本").with_detail(e.to_string()))?;
+        if !response.status().is_success() {
+            return Err(AppError::new(
+                ErrorCode::Http,
+                format!("GitHub Release 返回 HTTP {}", response.status().as_u16()),
+            ));
+        }
+        response.json::<GitHubRelease>().await.map_err(|e| {
+            AppError::new(ErrorCode::Http, "无法解析 frp Release").with_detail(e.to_string())
+        })
+    }
+
+    async fn download_text(&self, url: &str) -> Result<String> {
+        verify_download_url(url)?;
+        let response = self
+            .http
+            .get(url)
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+            .map_err(|e| AppError::network("下载 frp 校验文件失败").with_detail(e.to_string()))?;
+        if !response.status().is_success() {
+            return Err(AppError::new(
+                ErrorCode::Http,
+                format!("下载校验文件返回 HTTP {}", response.status().as_u16()),
+            ));
+        }
+        response
+            .text()
+            .await
+            .map_err(|e| AppError::network("读取校验文件失败").with_detail(e.to_string()))
+    }
+
+    async fn download_with_fallback(&self, url: &str) -> Result<Vec<u8>> {
+        let mut last = None;
+        for candidate in [
+            url.to_string(),
+            format!("https://ghproxy.com/{url}"),
+            format!("https://gh-proxy.com/{url}"),
+            format!("https://mirror.ghproxy.com/{url}"),
+        ] {
+            match self.download(&candidate).await {
+                Ok(bytes) => return Ok(bytes),
+                Err(error) => last = Some(error),
+            }
+        }
+        Err(last.unwrap_or_else(|| AppError::network("下载 FRPC 失败")))
     }
 
     async fn download(&self, url: &str) -> Result<Vec<u8>> {
@@ -408,35 +440,35 @@ fn redact(line: &str) -> String {
     line.to_string()
 }
 
-pub fn pick_asset<'a>(assets: &'a [FrpcAsset], os: &str, arch: &str) -> Option<&'a FrpcAsset> {
-    let os_aliases = os_aliases(os);
-    let arch_aliases = arch_aliases(arch);
-    let mut candidates: Vec<&FrpcAsset> = assets
-        .iter()
-        .filter(|a| {
-            os_aliases.iter().any(|v| a.os.eq_ignore_ascii_case(v))
-                && arch_aliases.iter().any(|v| a.arch.eq_ignore_ascii_case(v))
-                && !a.download_link.is_empty()
-        })
-        .collect();
-    candidates.sort_by(|a, b| b.version.cmp(&a.version));
-    candidates.into_iter().next()
-}
-
-fn os_aliases(os: &str) -> Vec<&'static str> {
+fn platform_name(os: &str) -> Result<&'static str> {
     match os.to_ascii_lowercase().as_str() {
-        "macos" | "darwin" | "osx" => vec!["darwin", "macos", "osx"],
-        "windows" | "win" => vec!["windows", "win"],
-        _ => vec!["linux"],
+        "macos" | "darwin" | "osx" => Ok("darwin"),
+        "windows" => Ok("windows"),
+        "linux" => Ok("linux"),
+        other => Err(AppError::unsupported(format!("不支持的操作系统：{other}"))),
     }
 }
 
-fn arch_aliases(arch: &str) -> Vec<&'static str> {
+fn arch_name(arch: &str) -> Result<&'static str> {
     match arch.to_ascii_lowercase().as_str() {
-        "aarch64" | "arm64" => vec!["arm64", "aarch64"],
-        "x86" | "i686" => vec!["386", "x86", "i386"],
-        _ => vec!["amd64", "x86_64", "x64"],
+        "x86_64" | "amd64" | "x64" => Ok("amd64"),
+        "aarch64" | "arm64" => Ok("arm64"),
+        "arm" | "armv7" => Ok("arm"),
+        "x86" | "i686" | "i386" => Ok("386"),
+        other => Err(AppError::unsupported(format!("不支持的 CPU 架构：{other}"))),
     }
+}
+
+fn checksum_for(text: &str, filename: &str) -> Option<String> {
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let Some(hash) = parts.next() else { continue };
+        let Some(name) = parts.next() else { continue };
+        if name.trim_start_matches('*') == filename {
+            return Some(hash.to_ascii_lowercase());
+        }
+    }
+    None
 }
 
 fn verify_download_url(url: &str) -> Result<()> {
@@ -448,31 +480,18 @@ fn verify_download_url(url: &str) -> Result<()> {
     let host = parsed
         .host_str()
         .ok_or_else(|| AppError::invalid_input("FRPC 下载地址缺少主机名"))?;
-    let allowed = host == "locyanfrp.cn"
-        || host.ends_with(".locyanfrp.cn")
-        || host == "locyan.cn"
-        || host.ends_with(".locyan.cn")
-        || host == "github.com"
-        || host.ends_with(".githubusercontent.com");
+    let allowed = host == "github.com"
+        || host == "objects.githubusercontent.com"
+        || host.ends_with(".githubusercontent.com")
+        || host == "ghproxy.com"
+        || host == "gh-proxy.com"
+        || host == "mirror.ghproxy.com";
     if !allowed {
         return Err(AppError::path_unsafe(format!(
-            "FRPC 下载来源不在官方域名内：{host}"
+            "FRPC 下载来源不是 frp 官方 GitHub：{host}"
         )));
     }
     Ok(())
-}
-
-fn sanitize_component(value: &str) -> String {
-    let cleaned: String = value
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-' || *c == '_')
-        .take(48)
-        .collect();
-    if cleaned.is_empty() {
-        "unknown".into()
-    } else {
-        cleaned
-    }
 }
 
 fn extract_executable(bytes: &[u8], os: &str) -> Result<Vec<u8>> {
@@ -570,39 +589,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn picks_matching_asset() {
-        let assets = vec![
-            FrpcAsset {
-                os: "linux".into(),
-                arch: "amd64".into(),
-                name: "frpc".into(),
-                version: "0.61.0".into(),
-                download_link: "https://a".into(),
-                tag: String::new(),
-                kind: "zip".into(),
-                sha256: None,
-            },
-            FrpcAsset {
-                os: "linux".into(),
-                arch: "amd64".into(),
-                name: "frpc".into(),
-                version: "0.62.0".into(),
-                download_link: "https://b".into(),
-                tag: String::new(),
-                kind: "zip".into(),
-                sha256: None,
-            },
-        ];
+    fn parses_checksum_file() {
+        let text = "abc123  frp_0.72.0_linux_amd64.tar.gz\ndef456  frp_0.72.0_windows_amd64.zip\n";
         assert_eq!(
-            pick_asset(&assets, "linux", "x86_64").unwrap().version,
-            "0.62.0"
+            checksum_for(text, "frp_0.72.0_windows_amd64.zip").as_deref(),
+            Some("def456")
         );
+        assert_eq!(checksum_for(text, "missing"), None);
+    }
+
+    #[test]
+    fn maps_platforms_and_architectures() {
+        assert_eq!(platform_name("macos").unwrap(), "darwin");
+        assert_eq!(platform_name("windows").unwrap(), "windows");
+        assert_eq!(arch_name("x86_64").unwrap(), "amd64");
+        assert_eq!(arch_name("aarch64").unwrap(), "arm64");
     }
 
     #[test]
     fn rejects_executable_from_random_host() {
         assert!(verify_download_url("https://evil.example/frpc.zip").is_err());
-        assert!(verify_download_url("https://cdn.locyanfrp.cn/frpc.zip").is_ok());
+        assert!(verify_download_url(
+            "https://github.com/fatedier/frp/releases/download/v0.72.0/x.tar.gz"
+        )
+        .is_ok());
+        assert!(verify_download_url("https://objects.githubusercontent.com/x").is_ok());
     }
 
     #[test]

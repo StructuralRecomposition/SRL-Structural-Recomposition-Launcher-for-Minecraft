@@ -16,8 +16,6 @@ export const fixtureBootstrap: Bootstrap = {
     applyOfflineSkin: true,
     assistantModel: "deepseek-chat",
     assistantBaseUrl: "https://api.deepseek.com",
-    locyanClientId: null,
-    locyanScopes: "Node.Read,Node.Read.Stat,Node.RandomPort,Tunnel.Read,Tunnel.Read.Config,Tunnel.Read.Status,Tunnel.Write.Create,Tunnel.Write.Delete",
   },
   paths: {
     dataDir: "/tmp/sr-test",

@@ -78,8 +78,6 @@ export interface Settings {
   applyOfflineSkin: boolean;
   assistantModel: string;
   assistantBaseUrl: string;
-  locyanClientId: string | null;
-  locyanScopes: string;
 }
 
 
@@ -779,7 +777,7 @@ export interface InstallAccepted {
 }
 
 
-// --- Minecraft Multiplayer (LoCyanFrp) -------------------------------------
+// --- Minecraft Multiplayer (52FRP) -----------------------------------------
 
 export type MultiplayerEdition = "java" | "bedrock";
 
@@ -792,6 +790,8 @@ export interface MultiplayerAccount {
   verified: boolean | null;
   tunnelCount: number | null;
   tunnelLimit: number | null;
+  balance: number | null;
+  trafficRemaining: number | null;
 }
 
 export interface MultiplayerLocalService {
@@ -808,14 +808,14 @@ export interface MultiplayerNode {
   id: number;
   name: string;
   host: string;
-  serverPort: number;
+  region: string | null;
   description: string | null;
   allowUdp: boolean;
   allowBigTraffic: boolean;
   needIcp: boolean;
   latencyMs: number | null;
   clients: number | null;
-  outbound: number | null;
+  load: number | null;
   score: number;
   available: boolean;
   reason: string | null;
@@ -862,7 +862,7 @@ export interface MultiplayerOrphan {
 export interface MultiplayerStatus {
   provider: string;
   providerName: string;
-  clientConfigured: boolean;
+  tokenConfigured: boolean;
   loggedIn: boolean;
   account: MultiplayerAccount | null;
   room: MultiplayerRoom | null;
@@ -1120,7 +1120,8 @@ export const api = {
     command<LoaderRecommendations>("get_loader_recommendations", { gameVersion }),
   openTrustedUrl: (url: string) => command<void>("open_trusted_url", { url }),
   multiplayerStatus: () => command<MultiplayerStatus>("multiplayer_status"),
-  multiplayerLogin: () => command<MultiplayerAccount>("multiplayer_login"),
+  multiplayerConnect: (token: string) =>
+    command<MultiplayerAccount>("multiplayer_connect", { token }),
   multiplayerLogout: () => command<void>("multiplayer_logout"),
   multiplayerNodes: (edition: MultiplayerEdition) =>
     command<MultiplayerNode[]>("multiplayer_nodes", { edition }),

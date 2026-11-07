@@ -6884,3 +6884,15 @@ textarea:focus {
     font-size: 15px;
   }
 }
+
+.mp-token-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 620px;
+}
+
+.mp-token-row input {
+  flex: 1;
+  min-width: 0;
+}

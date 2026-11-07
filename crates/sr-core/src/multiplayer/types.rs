@@ -1,14 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-pub const PROVIDER_ID: &str = "locyanfrp";
-pub const PROVIDER_NAME: &str = "LoCyanFrp";
-pub const API_BASE: &str = "https://api.locyanfrp.cn/v3";
-pub const API_BACKUP_BASE: &str = "https://backup.api.locyanfrp.cn/v3";
-pub const OAUTH_AUTHORIZE: &str = "https://dashboard.locyanfrp.cn/auth/oauth/authorize";
-pub const OAUTH_REDIRECT_LOCALHOST: &str =
-    "https://dashboard.locyanfrp.cn/auth/oauth/redirect-localhost";
-pub const DEFAULT_TUNNEL_PREFIX: &str = "SRL-MP-";
+pub const PROVIDER_ID: &str = "frp52";
+pub const PROVIDER_NAME: &str = "52FRP";
+pub const API_BASE: &str = "https://www.52frp.com/api/v1";
+pub const TOKEN_HELP_URL: &str = "https://www.52frp.com/user/#/user-center";
+pub const DEFAULT_TUNNEL_PREFIX: &str = "SRL_";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -20,8 +17,8 @@ pub enum Edition {
 impl Edition {
     pub fn tunnel_type(self) -> &'static str {
         match self {
-            Edition::Java => "TCP",
-            Edition::Bedrock => "UDP",
+            Edition::Java => "tcp",
+            Edition::Bedrock => "udp",
         }
     }
     pub fn default_port(self) -> u16 {
@@ -40,21 +37,6 @@ impl Edition {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MultiplayerConfig {
-    pub client_id: Option<String>,
-    pub scopes: String,
-}
-
-impl MultiplayerConfig {
-    pub fn configured(&self) -> bool {
-        self.client_id
-            .as_deref()
-            .is_some_and(|v| !v.trim().is_empty())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AccountView {
     pub provider: String,
     pub user_id: u64,
@@ -64,6 +46,8 @@ pub struct AccountView {
     pub verified: Option<bool>,
     pub tunnel_count: Option<u32>,
     pub tunnel_limit: Option<u32>,
+    pub balance: Option<f64>,
+    pub traffic_remaining: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,14 +68,14 @@ pub struct NodeView {
     pub id: u64,
     pub name: String,
     pub host: String,
-    pub server_port: u16,
+    pub region: Option<String>,
     pub description: Option<String>,
     pub allow_udp: bool,
     pub allow_big_traffic: bool,
     pub need_icp: bool,
     pub latency_ms: Option<u64>,
     pub clients: Option<u32>,
-    pub outbound: Option<f64>,
+    pub load: Option<f64>,
     pub score: f64,
     pub available: bool,
     pub reason: Option<String>,
@@ -122,7 +106,6 @@ pub struct RoomView {
     pub public_port: u16,
     pub local_ip: String,
     pub local_port: u16,
-    #[serde(default)]
     pub local_pid: Option<u32>,
     pub latency_ms: Option<u64>,
     pub created_at: String,
@@ -147,7 +130,7 @@ pub struct OrphanTunnel {
 pub struct MultiplayerStatus {
     pub provider: String,
     pub provider_name: String,
-    pub client_configured: bool,
+    pub token_configured: bool,
     pub logged_in: bool,
     pub account: Option<AccountView>,
     pub room: Option<RoomView>,

@@ -25,8 +25,8 @@ use sr_core::modrinth::{
 use sr_core::mods as mods_service;
 use sr_core::mods::ModEntry;
 use sr_core::multiplayer::{
-    AccountView as MultiplayerAccount, CreateRoomRequest, Edition, LocalServiceView,
-    MultiplayerConfig, MultiplayerStatus, NodeView, OrphanTunnel, RoomView, StopRoomResult,
+    AccountView as MultiplayerAccount, CreateRoomRequest, Edition, FrpcView, LocalServiceView,
+    MultiplayerStatus, NodeView, OrphanTunnel, RoomView, StopRoomResult,
 };
 use sr_core::paths::GamePaths;
 use sr_core::recommend::{self as recommend_service, Recommendations};
@@ -128,19 +128,8 @@ pub async fn get_bootstrap(state: State<'_, AppState>) -> Result<Bootstrap> {
             },
             FeatureState {
                 id: "multiplayer".into(),
-                available: settings
-                    .locyan_client_id
-                    .as_deref()
-                    .is_some_and(|id| !id.trim().is_empty()),
-                reason: if settings
-                    .locyan_client_id
-                    .as_deref()
-                    .is_some_and(|id| !id.trim().is_empty())
-                {
-                    None
-                } else {
-                    Some("在设置中填写 LoCyanFrp OAuth 应用 ID 后启用".into())
-                },
+                available: true,
+                reason: None,
             },
             FeatureState {
                 id: "modpacks".into(),
@@ -2348,11 +2337,8 @@ pub async fn open_trusted_url(url: String) -> Result<()> {
         "learn.microsoft.com",
         "www.curseforge.com",
         "console.curseforge.com",
-        "locyanfrp.cn",
-        "www.locyanfrp.cn",
-        "dashboard.locyanfrp.cn",
-        "api-docs.locyanfrp.cn",
-        "api.locyanfrp.cn",
+        "www.52frp.com",
+        "52frp.com",
     ];
     if !ALLOWED.contains(&host) {
         return Err(AppError::path_unsafe(format!("不允许打开的站点：{host}")));
@@ -4329,46 +4315,25 @@ pub async fn export_diagnostics(
 }
 
 // ---------------------------------------------------------------------------
-// Minecraft Multiplayer (LoCyanFrp)
+// Minecraft Multiplayer (52FRP)
 // ---------------------------------------------------------------------------
-
-fn multiplayer_config(settings: &Settings) -> MultiplayerConfig {
-    MultiplayerConfig {
-        client_id: settings
-            .locyan_client_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .map(str::to_string),
-        scopes: settings.locyan_scopes.clone(),
-    }
-}
 
 #[tauri::command]
 pub async fn multiplayer_status(state: State<'_, AppState>) -> Result<MultiplayerStatus> {
-    let settings = state.settings_snapshot().await;
-    Ok(state
-        .multiplayer
-        .status(&multiplayer_config(&settings))
-        .await)
+    Ok(state.multiplayer.status().await)
 }
 
 #[tauri::command]
-pub async fn multiplayer_login(state: State<'_, AppState>) -> Result<MultiplayerAccount> {
-    let settings = state.settings_snapshot().await;
-    state
-        .multiplayer
-        .login(&multiplayer_config(&settings))
-        .await
+pub async fn multiplayer_connect(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<MultiplayerAccount> {
+    state.multiplayer.connect(&token).await
 }
 
 #[tauri::command]
 pub async fn multiplayer_logout(state: State<'_, AppState>) -> Result<()> {
-    let settings = state.settings_snapshot().await;
-    state
-        .multiplayer
-        .logout(&multiplayer_config(&settings))
-        .await
+    state.multiplayer.logout().await
 }
 
 #[tauri::command]
@@ -4376,11 +4341,7 @@ pub async fn multiplayer_nodes(
     state: State<'_, AppState>,
     edition: Edition,
 ) -> Result<Vec<NodeView>> {
-    let settings = state.settings_snapshot().await;
-    state
-        .multiplayer
-        .nodes(&multiplayer_config(&settings), edition)
-        .await
+    state.multiplayer.nodes(edition).await
 }
 
 #[tauri::command]
@@ -4403,13 +4364,12 @@ pub async fn multiplayer_create_room(
     state: State<'_, AppState>,
     request: CreateRoomRequest,
 ) -> Result<RoomView> {
-    let settings = state.settings_snapshot().await;
     let game = state.game_snapshot().await;
     let instance = InstanceManager::new(game).get(&request.instance_id).await?;
     let pid = state.launches.read().await.pid(&request.instance_id).await;
     state
         .multiplayer
-        .create_room(&multiplayer_config(&settings), &request, &instance, pid)
+        .create_room(&request, &instance, pid)
         .await
 }
 
@@ -4418,38 +4378,20 @@ pub async fn multiplayer_stop_room(
     state: State<'_, AppState>,
     delete_tunnel: bool,
 ) -> Result<StopRoomResult> {
-    let settings = state.settings_snapshot().await;
-    state
-        .multiplayer
-        .stop_room(&multiplayer_config(&settings), delete_tunnel)
-        .await
+    state.multiplayer.stop_room(delete_tunnel).await
 }
 
 #[tauri::command]
-pub async fn multiplayer_restart_frpc(
-    state: State<'_, AppState>,
-) -> Result<sr_core::multiplayer::FrpcView> {
-    let settings = state.settings_snapshot().await;
-    state
-        .multiplayer
-        .restart_frpc(&multiplayer_config(&settings))
-        .await
+pub async fn multiplayer_restart_frpc(state: State<'_, AppState>) -> Result<FrpcView> {
+    state.multiplayer.restart_frpc().await
 }
 
 #[tauri::command]
 pub async fn multiplayer_orphans(state: State<'_, AppState>) -> Result<Vec<OrphanTunnel>> {
-    let settings = state.settings_snapshot().await;
-    state
-        .multiplayer
-        .orphans(&multiplayer_config(&settings))
-        .await
+    state.multiplayer.orphans().await
 }
 
 #[tauri::command]
 pub async fn multiplayer_delete_orphan(state: State<'_, AppState>, tunnel_id: u64) -> Result<()> {
-    let settings = state.settings_snapshot().await;
-    state
-        .multiplayer
-        .delete_orphan(&multiplayer_config(&settings), tunnel_id)
-        .await
+    state.multiplayer.delete_orphan(tunnel_id).await
 }

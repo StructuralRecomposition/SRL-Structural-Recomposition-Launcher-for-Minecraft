@@ -17,6 +17,10 @@ export function SettingsPage() {
   const [dsConfigured, setDsConfigured] = useState(false);
   const [dsBusy, setDsBusy] = useState(false);
   const [dsMessage, setDsMessage] = useState<string | null>(null);
+  const [frpToken, setFrpToken] = useState("");
+  const [frpConfigured, setFrpConfigured] = useState(false);
+  const [frpBusy, setFrpBusy] = useState(false);
+  const [frpMessage, setFrpMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setForm(bootstrap?.settings ?? null);
@@ -27,6 +31,13 @@ export function SettingsPage() {
       .assistantStatus()
       .then((status) => setDsConfigured(status.configured))
       .catch(() => setDsConfigured(false));
+  }, []);
+
+  useEffect(() => {
+    api
+      .multiplayerStatus()
+      .then((status) => setFrpConfigured(status.tokenConfigured))
+      .catch(() => setFrpConfigured(false));
   }, []);
 
   useEffect(() => {
@@ -155,6 +166,38 @@ export function SettingsPage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveFrpToken() {
+    if (!frpToken.trim()) return;
+    setFrpBusy(true);
+    setFrpMessage(null);
+    try {
+      await api.multiplayerConnect(frpToken.trim());
+      setFrpConfigured(true);
+      setFrpToken("");
+      setFrpMessage("52FRP API 令牌已验证并保存到系统凭据库");
+      pushToast("52FRP 已连接", "success");
+    } catch (e) {
+      setFrpMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFrpBusy(false);
+    }
+  }
+
+  async function clearFrpToken() {
+    setFrpBusy(true);
+    setFrpMessage(null);
+    try {
+      await api.multiplayerLogout();
+      setFrpConfigured(false);
+      setFrpMessage("已清除 52FRP API 令牌");
+      pushToast("已退出 52FRP", "info");
+    } catch (e) {
+      setFrpMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFrpBusy(false);
     }
   }
 
@@ -300,70 +343,56 @@ export function SettingsPage() {
           <Card>
             <div className="card-head">
               <div>
-                <h3>Minecraft 联机（LoCyanFrp）</h3>
-                <p>使用官方 OAuth 2.0 连接账户；SRL 不保存或显示你的 Access Token。</p>
+                <h3>Minecraft 联机（52FRP）</h3>
+                <p>使用 52FRP API 访问令牌连接账户；令牌只保存在系统凭据库。</p>
               </div>
-              <Badge tone={form.locyanClientId ? "success" : "warning"}>
-                {form.locyanClientId ? "已配置应用" : "未配置"}
+              <Badge tone={frpConfigured ? "success" : "warning"}>
+                {frpConfigured ? "已连接" : "未连接"}
               </Badge>
             </div>
             <Field
-              label="LoCyanFrp OAuth 应用 ID"
-              hint="在 LoCyanFrp 后台创建 OAuth2.0 应用后填写。应用的回调地址请设置为 https://dashboard.locyanfrp.cn/auth/oauth/redirect-localhost。这是公开 ID，不是密钥。"
+              label="52FRP API 访问令牌"
+              hint="登录 52FRP 个人中心，在「API 访问令牌」创建（以 hz_ 开头，只显示一次）。不要填账号密码或 FRPC token。"
             >
               <input
-                className="mono"
-                value={form.locyanClientId ?? ""}
-                onChange={(e) => patch({ locyanClientId: e.target.value.trim() || null })}
-                placeholder="例如 123"
-              />
-            </Field>
-            <Field
-              label="OAuth 权限"
-              hint="按官方权限节点申请，多个用英文逗号分隔。修改后需要重新授权。"
-            >
-              <input
-                className="mono"
-                value={form.locyanScopes ?? ""}
-                onChange={(e) => patch({ locyanScopes: e.target.value })}
+                type="password"
+                value={frpToken}
+                onChange={(e) => setFrpToken(e.target.value)}
+                placeholder={frpConfigured ? "已保存令牌，输入新令牌可替换" : "hz_..."}
+                autoComplete="off"
               />
             </Field>
             <div className="toolbar__actions">
+              <Button size="sm" variant="primary" loading={frpBusy} disabled={!frpToken.trim()} onClick={saveFrpToken}>
+                验证并保存
+              </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() =>
-                  void api
-                    .openTrustedUrl("https://dashboard.locyanfrp.cn/app/create")
-                    .catch((e) =>
-                      pushToast(
-                        "无法打开 LoCyanFrp 应用管理",
-                        "warning",
-                        e instanceof Error ? e.message : undefined,
-                      ),
-                    )
-                }
+                disabled={!frpConfigured || frpBusy}
+                onClick={clearFrpToken}
               >
-                打开应用管理
+                退出账户
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={() =>
                   void api
-                    .openTrustedUrl("https://api-docs.locyanfrp.cn/7842804m0")
+                    .openTrustedUrl("https://www.52frp.com/user/#/user-center")
                     .catch((e) =>
                       pushToast(
-                        "无法打开 LoCyanFrp 文档",
+                        "无法打开 52FRP 个人中心",
                         "warning",
                         e instanceof Error ? e.message : undefined,
                       ),
                     )
                 }
               >
-                查看 OAuth 文档
+                打开令牌页面
               </Button>
             </div>
+            {frpMessage ? <p className="muted small">{frpMessage}</p> : null}
           </Card>
 
           <Card>

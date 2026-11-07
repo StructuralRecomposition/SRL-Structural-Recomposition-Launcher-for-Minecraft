@@ -14,7 +14,7 @@ import { Badge, Button, Card, Field, Notice } from "../components/ui";
 import { Icon } from "../components/Icon";
 
 const CREATE_STEPS: { step: string; label: string }[] = [
-  { step: "auth", label: "检查 LoCyanFrp 账户" },
+  { step: "auth", label: "检查 52FRP 账户" },
   { step: "local", label: "检查本地 Minecraft 服务" },
   { step: "nodes", label: "获取可用节点" },
   { step: "node", label: "选择合适节点" },
@@ -71,6 +71,7 @@ export function MultiplayerPage() {
   const [creating, setCreating] = useState(false);
   const [orphans, setOrphans] = useState<MultiplayerOrphan[]>([]);
   const [copied, setCopied] = useState(false);
+  const [token, setToken] = useState("");
 
   const instance = useMemo(
     () => instances.find((item) => item.id === instanceId) ?? instances[0],
@@ -187,12 +188,14 @@ export function MultiplayerPage() {
     else setOrphans([]);
   }, [status?.loggedIn]);
 
-  async function login() {
-    setBusy("login");
+  async function connect() {
+    if (!token.trim()) return;
+    setBusy("connect");
     setError(null);
     try {
-      await api.multiplayerLogin();
-      pushToast("已连接 LoCyanFrp", "success");
+      await api.multiplayerConnect(token.trim());
+      setToken("");
+      pushToast("已连接 52FRP", "success");
       await loadStatus();
       await loadOrphans();
     } catch (e) {
@@ -203,11 +206,11 @@ export function MultiplayerPage() {
   }
 
   async function logout() {
-    if (!window.confirm("退出 LoCyanFrp 账户会清除本机保存的授权令牌。继续？")) return;
+    if (!window.confirm("退出 52FRP 账户会清除本机保存的 API 访问令牌。继续？")) return;
     setBusy("logout");
     try {
       await api.multiplayerLogout();
-      pushToast("已退出 LoCyanFrp 账户", "info");
+      pushToast("已退出 52FRP 账户", "info");
       await loadStatus();
       setOrphans([]);
     } catch (e) {
@@ -367,7 +370,7 @@ export function MultiplayerPage() {
         </div>
         <div className="mp-toolbar__status">
           <Badge tone={status?.loggedIn ? "success" : "neutral"}>
-            {status?.providerName ?? "LoCyanFrp"}
+            {status?.providerName ?? "52FRP"}
           </Badge>
           <Badge tone={online ? "success" : "neutral"}>{online ? "联机在线" : "未联机"}</Badge>
         </div>
@@ -378,17 +381,22 @@ export function MultiplayerPage() {
         <Notice tone="warning" title="最近一次连接状态">{status.lastError}</Notice>
       ) : null}
 
-      {!status?.clientConfigured ? (
-        <Notice tone="warning" title="还需要一个 LoCyanFrp OAuth 应用 ID">
-          联机中心通过官方 OAuth 2.0 授权，不会要求你粘贴 Access Token。请在设置中填写公开的应用
-          ID，并把回调地址设为 LoCyanFrp 的 localhost 回调。
+      {!status?.tokenConfigured ? (
+        <Notice tone="warning" title="先连接 52FRP">
+          在 52FRP 个人中心创建 API 访问令牌，然后粘贴到下方。令牌只保存在系统凭据库，不会写入日志或配置文件。
           <Button
             size="sm"
             variant="primary"
             className="mp-notice-action"
-            onClick={() => setPage("settings")}
+            onClick={() =>
+              void api
+                .openTrustedUrl("https://www.52frp.com/user/#/user-center")
+                .catch((e) =>
+                  pushToast("无法打开 52FRP 个人中心", "warning", e instanceof Error ? e.message : undefined),
+                )
+            }
           >
-            打开设置
+            打开令牌页面
           </Button>
         </Notice>
       ) : null}
@@ -402,7 +410,7 @@ export function MultiplayerPage() {
                   <Icon name="user" size={18} />
                 </span>
                 <div>
-                  <strong>{status.account?.displayName ?? "LoCyanFrp 账户"}</strong>
+                  <strong>{status.account?.displayName ?? "52FRP 账户"}</strong>
                   <span className="muted small">
                     {status.account
                       ? `用户 ID ${status.account.userId}${status.account.group ? ` · ${status.account.group}` : ""}`
@@ -454,16 +462,41 @@ export function MultiplayerPage() {
               {!status?.loggedIn ? (
                 <div className="mp-login-block">
                   <p className="muted">
-                    连接 LoCyanFrp 后，SRL 会通过系统浏览器完成授权，刷新令牌只保存在系统凭据库。
+                    在 52FRP 个人中心创建 API 访问令牌（以 hz_ 开头），粘贴到这里。SRL 只会把令牌保存到系统凭据库。
                   </p>
+                  <div className="mp-token-row">
+                    <input
+                      type="password"
+                      className="mono"
+                      value={token}
+                      onChange={(event) => setToken(event.target.value)}
+                      placeholder="hz_..."
+                      autoComplete="off"
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void connect();
+                      }}
+                    />
+                    <Button
+                      variant="primary"
+                      loading={busy === "connect"}
+                      disabled={!token.trim()}
+                      onClick={() => void connect()}
+                    >
+                      连接 52FRP
+                    </Button>
+                  </div>
                   <Button
-                    variant="primary"
-                    icon="globe"
-                    loading={busy === "login"}
-                    disabled={!status?.clientConfigured}
-                    onClick={() => void login()}
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      void api
+                        .openTrustedUrl("https://www.52frp.com/user/#/user-center")
+                        .catch((e) =>
+                          pushToast("无法打开 52FRP 个人中心", "warning", e instanceof Error ? e.message : undefined),
+                        )
+                    }
                   >
-                    连接 LoCyanFrp 账户
+                    没有令牌？打开 52FRP 个人中心
                   </Button>
                 </div>
               ) : (
@@ -616,13 +649,13 @@ export function MultiplayerPage() {
             <div className="card-head">
               <div>
                 <h3>当前状态</h3>
-                <p>所有状态都来自本机进程与 LoCyanFrp API。</p>
+                <p>所有状态都来自本机进程与 52FRP API。</p>
               </div>
             </div>
             <dl className="mp-facts">
               <div>
                 <dt>隧道服务</dt>
-                <dd>{status?.providerName ?? "LoCyanFrp"}</dd>
+                <dd>{status?.providerName ?? "52FRP"}</dd>
               </div>
               <div>
                 <dt>账户</dt>
@@ -670,7 +703,7 @@ export function MultiplayerPage() {
             <h3>联机说明</h3>
             <ul className="plain-list">
               <li>Java 版使用 TCP；Bedrock 版使用 UDP。</li>
-              <li>实际公网地址以 LoCyanFrp 返回的 host 与 port 为准。</li>
+              <li>实际公网地址以 52FRP 返回的 host 与 port 为准。</li>
               <li>停止联机与删除云端隧道是两个操作，删除只针对本次 SRL 创建的临时隧道。</li>
               <li>FRPC 配置包含临时凭据，停止后会删除本地临时文件。</li>
             </ul>
