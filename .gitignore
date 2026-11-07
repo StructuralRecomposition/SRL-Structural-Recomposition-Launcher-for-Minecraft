@@ -30,3 +30,6 @@ icon-1024.png
 # Bundled third-party runtime (fetched by scripts/fetch-easytier.sh)
 src-tauri/resources/easytier/*
 !src-tauri/resources/easytier/README.md
+
+# Local v0.1.1 test builds (not published yet)
+release/v0.1.1/*

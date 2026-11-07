@@ -17,7 +17,7 @@
 
 **English:** SRL (Structural Recomposition Launcher) is an independent, local-first Minecraft: Java Edition launcher built with Rust, Tauri 2, React and TypeScript. It focuses on verifiable downloads, real process launching, clear diagnostics, and honest capability boundaries. No telemetry, no proprietary game files, MIT licensed.
 
-> **首个公开发布：`v0.1.0`** · 仓库源码包含内部 0.1.1 / 0.1.2 的修复；安装包与校验值见 [GitHub Releases](#下载与安装)。
+> **当前源码：`v0.1.1`（UI 重构版，本地验证中）** · 视觉与交互整体升级，功能保持完整；安装包与校验值仍以 [GitHub Releases](#下载与安装) 中的 `v0.1.0` 为准，待测试通过后再发布 `v0.1.1`。
 
 ---
 

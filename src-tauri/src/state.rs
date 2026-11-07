@@ -55,8 +55,6 @@ pub fn task_sink(app: AppHandle) -> sr_core::download::TaskSink {
 
 pub fn launch_sink(app: AppHandle) -> LaunchSink {
     Arc::new(move |event| {
-        if event.kind == "exit" {        }
         let _ = app.emit("launch://event", event);
     })
 }
-

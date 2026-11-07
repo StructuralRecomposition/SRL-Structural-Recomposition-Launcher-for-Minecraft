@@ -12,7 +12,7 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <div className="topbar__title">
+      <div className="topbar__title" key={page}>
         <h1>{item.label}</h1>
         <p>{item.subtitle}</p>
       </div>
