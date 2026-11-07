@@ -86,6 +86,10 @@ impl LaunchManager {
         self.running.read().await.keys().cloned().collect()
     }
 
+    pub async fn pid(&self, instance_id: &str) -> Option<u32> {
+        self.running.read().await.get(instance_id).map(|p| p.pid)
+    }
+
     /// Stop a running instance. On Unix this sends SIGTERM first so the JVM can
     /// run shutdown hooks (saving worlds); a forced kill follows after 8s.
     /// Only the child process started by this launcher is signalled.

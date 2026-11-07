@@ -11,6 +11,7 @@ import { HomePage } from "./pages/Home";
 import { InstancesPage } from "./pages/Instances";
 import { VersionsPage } from "./pages/Versions";
 import { ResourcesPage } from "./pages/Resources";
+import { MultiplayerPage } from "./pages/Multiplayer";
 import { TasksPage } from "./pages/Tasks";
 import { JavaPage } from "./pages/Java";
 import { AccountsPage } from "./pages/Accounts";
@@ -23,6 +24,7 @@ const PAGES = {
   instances: InstancesPage,
   versions: VersionsPage,
   resources: ResourcesPage,
+  multiplayer: MultiplayerPage,
   tasks: TasksPage,
   java: JavaPage,
   assistant: AssistantPage,

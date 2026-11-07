@@ -7,6 +7,7 @@ use sr_core::download::DownloadManager;
 use sr_core::java;
 use sr_core::launch::LaunchManager;
 use sr_core::modrinth::ModrinthService;
+use sr_core::multiplayer::MultiplayerManager;
 use sr_core::paths::{AppPaths, GamePaths};
 use sr_core::settings;
 use sr_core::skin::SkinLibrary;
@@ -58,6 +59,12 @@ pub fn run() {
                 game.ensure_layout().await?;
                 Ok::<_, sr_core::AppError>((settings, game))
             })?;
+            let multiplayer =
+                std::sync::Arc::new(tauri::async_runtime::block_on(MultiplayerManager::new(
+                    paths.clone(),
+                    http.clone(),
+                    state::multiplayer_sink(handle.clone()),
+                )));
 
             let versions = VersionService::new(http.clone());
             let downloads = DownloadManager::with_store(
@@ -85,6 +92,7 @@ pub fn run() {
                 accounts,
                 skins,
                 modrinth,
+                multiplayer,
                 java: std::sync::Arc::new(RwLock::new(Vec::new())),
                 launches: std::sync::Arc::new(RwLock::new(launches)),
                 http,
@@ -267,6 +275,16 @@ pub fn run() {
             commands::list_crash_reports,
             commands::analyze_crash,
             commands::delete_crash_report,
+            commands::multiplayer_status,
+            commands::multiplayer_login,
+            commands::multiplayer_logout,
+            commands::multiplayer_nodes,
+            commands::multiplayer_detect,
+            commands::multiplayer_create_room,
+            commands::multiplayer_stop_room,
+            commands::multiplayer_restart_frpc,
+            commands::multiplayer_orphans,
+            commands::multiplayer_delete_orphan,
         ]);
 
     builder
@@ -278,6 +296,7 @@ pub fn run() {
                 tauri::async_runtime::block_on(async {
                     state.downloads.cancel_all().await;
                     let _ = state.downloads.save().await;
+                    state.multiplayer.shutdown().await;
                 });
                 tracing::info!("application exiting");
             }

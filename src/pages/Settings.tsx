@@ -300,6 +300,75 @@ export function SettingsPage() {
           <Card>
             <div className="card-head">
               <div>
+                <h3>Minecraft 联机（LoCyanFrp）</h3>
+                <p>使用官方 OAuth 2.0 连接账户；SRL 不保存或显示你的 Access Token。</p>
+              </div>
+              <Badge tone={form.locyanClientId ? "success" : "warning"}>
+                {form.locyanClientId ? "已配置应用" : "未配置"}
+              </Badge>
+            </div>
+            <Field
+              label="LoCyanFrp OAuth 应用 ID"
+              hint="在 LoCyanFrp 后台创建 OAuth2.0 应用后填写。应用的回调地址请设置为 https://dashboard.locyanfrp.cn/auth/oauth/redirect-localhost。这是公开 ID，不是密钥。"
+            >
+              <input
+                className="mono"
+                value={form.locyanClientId ?? ""}
+                onChange={(e) => patch({ locyanClientId: e.target.value.trim() || null })}
+                placeholder="例如 123"
+              />
+            </Field>
+            <Field
+              label="OAuth 权限"
+              hint="按官方权限节点申请，多个用英文逗号分隔。修改后需要重新授权。"
+            >
+              <input
+                className="mono"
+                value={form.locyanScopes ?? ""}
+                onChange={(e) => patch({ locyanScopes: e.target.value })}
+              />
+            </Field>
+            <div className="toolbar__actions">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  void api
+                    .openTrustedUrl("https://dashboard.locyanfrp.cn/app/create")
+                    .catch((e) =>
+                      pushToast(
+                        "无法打开 LoCyanFrp 应用管理",
+                        "warning",
+                        e instanceof Error ? e.message : undefined,
+                      ),
+                    )
+                }
+              >
+                打开应用管理
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  void api
+                    .openTrustedUrl("https://api-docs.locyanfrp.cn/7842804m0")
+                    .catch((e) =>
+                      pushToast(
+                        "无法打开 LoCyanFrp 文档",
+                        "warning",
+                        e instanceof Error ? e.message : undefined,
+                      ),
+                    )
+                }
+              >
+                查看 OAuth 文档
+              </Button>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="card-head">
+              <div>
                 <h3>CurseForge API</h3>
                 <p>
                   搜索 CurseForge 模组 / 整合包 / 光影 / 材质 / 地图，以及解析 CurseForge

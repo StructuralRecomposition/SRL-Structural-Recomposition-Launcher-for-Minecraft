@@ -127,6 +127,19 @@ pub async fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(
     atomic_write(path, &bytes).await
 }
 
+/// Write a small file that may contain credentials. The permissions are
+/// tightened after the atomic rename so a crash cannot leave a world-readable
+/// temporary copy behind on Unix.
+pub async fn write_private_file(path: &Path, bytes: &[u8]) -> Result<()> {
+    atomic_write(path, bytes).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).await?;
+    }
+    Ok(())
+}
+
 pub async fn sha1_file(path: &Path) -> Result<String> {
     let mut file = tokio::fs::File::open(path).await?;
     let mut hasher = Sha1::new();

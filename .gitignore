@@ -33,3 +33,6 @@ src-tauri/resources/easytier/*
 
 # Local v0.1.1 test builds (not published yet)
 release/v0.1.1/*
+
+# Local v0.2.0 test builds (not published yet)
+release/v0.2.0/*

@@ -6389,3 +6389,498 @@ textarea:focus {
 .reco-row__title {
   letter-spacing: -0.01em;
 }
+
+/* --------------------------------------------------- Minecraft multiplayer */
+
+.multiplayer-page {
+  --accent: #2f6f9f;
+  --accent-strong: #24597f;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(47, 111, 159, 0.1);
+}
+
+:root[data-theme="dark"] .multiplayer-page {
+  --accent: #83b4dc;
+  --accent-strong: #a3cbea;
+  --accent-ink: #0b141d;
+  --accent-soft: rgba(131, 180, 220, 0.13);
+}
+
+.mp-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 2px 2px 4px;
+}
+
+.mp-toolbar h2 {
+  font-size: 22px;
+  margin-top: 4px;
+}
+
+.mp-toolbar p {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin-top: 4px;
+  max-width: 620px;
+}
+
+.mp-toolbar__status {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.mp-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.78fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.mp-main,
+.mp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.mp-create .card-head {
+  margin-bottom: 16px;
+}
+
+.mp-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+}
+
+.mp-account__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mp-account__avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  flex: none;
+}
+
+.mp-account__main > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.mp-account__main strong {
+  font-size: 13px;
+}
+
+.mp-account__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mp-login-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 6px 0 2px;
+}
+
+.mp-edition {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  margin-bottom: 14px;
+}
+
+.mp-edition .segmented__item {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.mp-edition .segmented__item--active {
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.mp-local-row {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 12px;
+}
+
+.mp-port-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.mp-port-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.mp-local-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11.5px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  margin: 2px 0 14px;
+}
+
+.mp-local-note svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.mp-create-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.mp-notice-action {
+  margin-top: 8px;
+}
+
+.mp-facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mp-facts > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mp-facts > div:last-child {
+  border-bottom: 0;
+}
+
+.mp-facts dt {
+  color: var(--muted);
+  font-size: 11.5px;
+  flex: none;
+}
+
+.mp-facts dd {
+  margin: 0;
+  font-size: 12px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-side-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-top: 8px;
+}
+
+.mp-room__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.mp-room__head h3 {
+  font-size: 18px;
+  margin: 4px 0 2px;
+}
+
+.mp-address {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+}
+
+.mp-address--online {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--accent-soft);
+}
+
+.mp-address > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mp-address span {
+  color: var(--muted);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mp-address strong {
+  font-size: 18px;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+}
+
+.mp-room__stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 14px 0;
+}
+
+.mp-room__stats > div {
+  background: var(--panel);
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.mp-room__stats dt {
+  color: var(--muted);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.mp-room__stats dd {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-room__message {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin: 0 0 12px;
+}
+
+.mp-log {
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 8px 10px;
+}
+
+.mp-log summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.mp-log pre {
+  margin: 8px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mp-room__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.mp-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.mp-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.mp-step:last-child {
+  border-bottom: 0;
+}
+
+.mp-step__icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  flex: none;
+}
+
+.mp-step--ok .mp-step__icon {
+  background: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  color: var(--success);
+}
+
+.mp-step--running .mp-step__icon {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--accent);
+}
+
+.mp-step--error .mp-step__icon {
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  color: var(--danger);
+}
+
+.mp-step__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.6;
+}
+
+.mp-step > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.mp-step__state {
+  color: var(--muted);
+  font-size: 10.5px;
+  flex: none;
+}
+
+.mp-step--ok .mp-step__state {
+  color: var(--success);
+}
+
+.mp-step--running .mp-step__state {
+  color: var(--accent);
+}
+
+.mp-step--error .mp-step__state {
+  color: var(--danger);
+}
+
+.mp-orphans {
+  display: flex;
+  flex-direction: column;
+}
+
+.mp-orphan {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mp-orphan:last-child {
+  border-bottom: 0;
+}
+
+.mp-orphan > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mp-orphan strong {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1050px) {
+  .mp-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mp-room__stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .mp-local-row,
+  .mp-room__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mp-address strong {
+    font-size: 15px;
+  }
+}

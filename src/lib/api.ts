@@ -78,6 +78,8 @@ export interface Settings {
   applyOfflineSkin: boolean;
   assistantModel: string;
   assistantBaseUrl: string;
+  locyanClientId: string | null;
+  locyanScopes: string;
 }
 
 
@@ -776,6 +778,121 @@ export interface InstallAccepted {
   includeAssets: boolean;
 }
 
+
+// --- Minecraft Multiplayer (LoCyanFrp) -------------------------------------
+
+export type MultiplayerEdition = "java" | "bedrock";
+
+export interface MultiplayerAccount {
+  provider: string;
+  userId: number;
+  displayName: string;
+  email: string | null;
+  group: string | null;
+  verified: boolean | null;
+  tunnelCount: number | null;
+  tunnelLimit: number | null;
+}
+
+export interface MultiplayerLocalService {
+  found: boolean;
+  pid: number | null;
+  edition: MultiplayerEdition;
+  ports: number[];
+  detectedPort: number | null;
+  source: string;
+  message: string;
+}
+
+export interface MultiplayerNode {
+  id: number;
+  name: string;
+  host: string;
+  serverPort: number;
+  description: string | null;
+  allowUdp: boolean;
+  allowBigTraffic: boolean;
+  needIcp: boolean;
+  latencyMs: number | null;
+  clients: number | null;
+  outbound: number | null;
+  score: number;
+  available: boolean;
+  reason: string | null;
+}
+
+export interface MultiplayerFrpc {
+  running: boolean;
+  version: string | null;
+  path: string | null;
+  sha256: string | null;
+  logTail: string[];
+}
+
+export interface MultiplayerRoom {
+  tunnelId: number;
+  tunnelName: string;
+  edition: MultiplayerEdition;
+  instanceId: string;
+  instanceName: string;
+  versionId: string;
+  nodeId: number;
+  nodeName: string;
+  publicHost: string;
+  publicPort: number;
+  localIp: string;
+  localPort: number;
+  localPid: number | null;
+  latencyMs: number | null;
+  createdAt: string;
+  state: "online" | "offline" | "retained" | string;
+  frpcRunning: boolean;
+  frpcPid: number | null;
+  message: string | null;
+}
+
+export interface MultiplayerOrphan {
+  tunnelId: number;
+  name: string;
+  tunnelType: string;
+  localPort: number;
+  nodeName: string | null;
+}
+
+export interface MultiplayerStatus {
+  provider: string;
+  providerName: string;
+  clientConfigured: boolean;
+  loggedIn: boolean;
+  account: MultiplayerAccount | null;
+  room: MultiplayerRoom | null;
+  frpc: MultiplayerFrpc;
+  lastError: string | null;
+}
+
+export interface MultiplayerProgress {
+  step: string;
+  label: string;
+  status: "pending" | "running" | "ok" | "error" | string;
+  detail: string | null;
+}
+
+export interface MultiplayerCreateRequest {
+  instanceId: string;
+  edition: MultiplayerEdition;
+  localIp?: string | null;
+  localPort?: number | null;
+  nodeId?: number | null;
+  autoNode?: boolean;
+  name?: string | null;
+}
+
+export interface MultiplayerStopResult {
+  localStopped: boolean;
+  tunnelDeleted: boolean;
+  message: string;
+}
+
 // --- Command wrappers ------------------------------------------------------
 
 export const api = {
@@ -1002,6 +1119,21 @@ export const api = {
   loaderRecommendations: (gameVersion: string) =>
     command<LoaderRecommendations>("get_loader_recommendations", { gameVersion }),
   openTrustedUrl: (url: string) => command<void>("open_trusted_url", { url }),
+  multiplayerStatus: () => command<MultiplayerStatus>("multiplayer_status"),
+  multiplayerLogin: () => command<MultiplayerAccount>("multiplayer_login"),
+  multiplayerLogout: () => command<void>("multiplayer_logout"),
+  multiplayerNodes: (edition: MultiplayerEdition) =>
+    command<MultiplayerNode[]>("multiplayer_nodes", { edition }),
+  multiplayerDetect: (instanceId: string, edition: MultiplayerEdition) =>
+    command<MultiplayerLocalService>("multiplayer_detect", { instanceId, edition }),
+  multiplayerCreateRoom: (request: MultiplayerCreateRequest) =>
+    command<MultiplayerRoom>("multiplayer_create_room", { request }),
+  multiplayerStopRoom: (deleteTunnel: boolean) =>
+    command<MultiplayerStopResult>("multiplayer_stop_room", { deleteTunnel }),
+  multiplayerRestartFrpc: () => command<MultiplayerFrpc>("multiplayer_restart_frpc"),
+  multiplayerOrphans: () => command<MultiplayerOrphan[]>("multiplayer_orphans"),
+  multiplayerDeleteOrphan: (tunnelId: number) =>
+    command<void>("multiplayer_delete_orphan", { tunnelId }),
   listFabricLoaders: (gameVersion: string) =>
     command<FabricLoader[]>("list_fabric_loaders", { gameVersion }),
   installFabric: (gameVersion: string, loaderVersion: string) =>

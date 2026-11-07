@@ -3,6 +3,7 @@ use sr_core::download::DownloadManager;
 use sr_core::java::JavaInfo;
 use sr_core::launch::{LaunchManager, LaunchSink};
 use sr_core::modrinth::ModrinthService;
+use sr_core::multiplayer::{MultiplayerManager, ProgressSink};
 use sr_core::paths::{AppPaths, GamePaths};
 use sr_core::settings::Settings;
 use sr_core::skin::SkinLibrary;
@@ -22,6 +23,7 @@ pub struct AppState {
     pub accounts: AccountStore,
     pub skins: SkinLibrary,
     pub modrinth: ModrinthService,
+    pub multiplayer: Arc<MultiplayerManager>,
     pub java: Arc<RwLock<Vec<JavaInfo>>>,
     pub launches: Arc<RwLock<LaunchManager>>,
     pub http: reqwest::Client,
@@ -56,5 +58,11 @@ pub fn task_sink(app: AppHandle) -> sr_core::download::TaskSink {
 pub fn launch_sink(app: AppHandle) -> LaunchSink {
     Arc::new(move |event| {
         let _ = app.emit("launch://event", event);
+    })
+}
+
+pub fn multiplayer_sink(app: AppHandle) -> ProgressSink {
+    Arc::new(move |event| {
+        let _ = app.emit("multiplayer://progress", event);
     })
 }

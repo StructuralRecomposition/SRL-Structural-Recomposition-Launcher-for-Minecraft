@@ -24,6 +24,7 @@ export type PageId =
   | "instances"
   | "versions"
   | "resources"
+  | "multiplayer"
   | "java"
   | "tasks"
   | "assistant"

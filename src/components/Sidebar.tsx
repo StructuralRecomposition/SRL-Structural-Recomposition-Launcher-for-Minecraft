@@ -4,7 +4,7 @@ import { useApp } from "../state/AppContext";
 import logo from "../assets/logo.png";
 
 const GROUPS: { label: string; ids: string[] }[] = [
-  { label: "游戏", ids: ["home", "instances", "versions", "resources"] },
+  { label: "游戏", ids: ["home", "instances", "versions", "resources", "multiplayer"] },
   { label: "工具", ids: ["java", "tasks", "assistant"] },
   { label: "系统", ids: ["accounts", "diagnostics", "settings"] },
 ];

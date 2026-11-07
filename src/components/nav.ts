@@ -13,6 +13,7 @@ export const NAV: NavItem[] = [
   { id: "instances", label: "游戏实例", icon: "box", subtitle: "隔离的游戏目录与配置" },
   { id: "versions", label: "版本管理", icon: "layers", subtitle: "官方版本清单与安装" },
   { id: "resources", label: "资源", icon: "search", subtitle: "Modrinth 模组、整合包、光影与材质" },
+  { id: "multiplayer", label: "Minecraft 联机", icon: "globe", subtitle: "创建房间、邀请好友、管理隧道" },
   { id: "java", label: "Java 环境", icon: "coffee", subtitle: "发现、检测与兼容性" },
   { id: "tasks", label: "下载任务", icon: "download", subtitle: "真实进度、速度与取消" },
   { id: "assistant", label: "鸦鸭", icon: "cpu", subtitle: "崩溃诊断与模组助手" },

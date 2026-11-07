@@ -10,6 +10,8 @@ import {
 } from "./fixtures";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
+let multiplayerLoggedIn = false;
+let multiplayerConfigured = false;
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: Record<string, unknown>) => invokeMock(cmd, args),
@@ -20,6 +22,8 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 beforeEach(() => {
+  multiplayerLoggedIn = false;
+  multiplayerConfigured = false;
   Object.defineProperty(window, "__TAURI_INTERNALS__", {
     value: {},
     configurable: true,
@@ -204,6 +208,42 @@ beforeEach(() => {
         return "/tmp";
       case "curseforge_key_status":
         return "builtin";
+      case "multiplayer_status":
+        return {
+          provider: "locyanfrp",
+          providerName: "LoCyanFrp",
+          clientConfigured: multiplayerConfigured,
+          loggedIn: multiplayerLoggedIn,
+          account: multiplayerLoggedIn
+            ? {
+                provider: "locyanfrp",
+                userId: 42,
+                displayName: "max",
+                email: null,
+                group: "VIP",
+                verified: true,
+                tunnelCount: 0,
+                tunnelLimit: 5,
+              }
+            : null,
+          room: null,
+          frpc: { running: false, version: null, path: null, sha256: null, logTail: [] },
+          lastError: null,
+        };
+      case "multiplayer_nodes":
+        return [];
+      case "multiplayer_detect":
+        return {
+          found: true,
+          pid: 123,
+          edition: "java",
+          ports: [25565],
+          detectedPort: 25565,
+          source: "log",
+          message: "从游戏日志识别到局域网端口 25565",
+        };
+      case "multiplayer_orphans":
+        return [];
       case "search_curseforge":
         return {
           hits: [
@@ -600,6 +640,24 @@ describe("SR Launcher UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "下载任务" }));
     expect(await screen.findByText("没有下载任务")).toBeInTheDocument();
     expect(screen.getByText(/所有进度均为真实数据/)).toBeInTheDocument();
+  });
+
+  it("shows the LoCyanFrp setup guidance when no OAuth app id is configured", async () => {
+    render(<App />);
+    await screen.findByRole("button", { name: "Minecraft 联机" });
+    fireEvent.click(screen.getByRole("button", { name: "Minecraft 联机" }));
+    expect(await screen.findByText("还需要一个 LoCyanFrp OAuth 应用 ID")).toBeInTheDocument();
+  });
+
+  it("shows the multiplayer create form after the account is connected", async () => {
+    multiplayerConfigured = true;
+    multiplayerLoggedIn = true;
+    render(<App />);
+    await screen.findByRole("button", { name: "Minecraft 联机" });
+    fireEvent.click(screen.getByRole("button", { name: "Minecraft 联机" }));
+    expect(await screen.findByRole("button", { name: "创建联机房间" })).toBeInTheDocument();
+    expect(screen.getByText("Java Edition · TCP")).toBeInTheDocument();
+    expect(screen.getAllByText("max").length).toBeGreaterThan(0);
   });
 
   it("offers loader downloads inside the resources page", async () => {

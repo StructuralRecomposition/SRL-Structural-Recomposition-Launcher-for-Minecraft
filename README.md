@@ -17,7 +17,7 @@
 
 **English:** SRL (Structural Recomposition Launcher) is an independent, local-first Minecraft: Java Edition launcher built with Rust, Tauri 2, React and TypeScript. It focuses on verifiable downloads, real process launching, clear diagnostics, and honest capability boundaries. No telemetry, no proprietary game files, MIT licensed.
 
-> **当前源码：`v0.1.1`（UI 重构版，本地验证中）** · 视觉与交互整体升级，功能保持完整；安装包与校验值仍以 [GitHub Releases](#下载与安装) 中的 `v0.1.0` 为准，待测试通过后再发布 `v0.1.1`。
+> **当前源码：`v0.2.0`（Minecraft 联机中心）** · 新增 LoCyanFrp 隧道联机；安装包与校验值仍以 [GitHub Releases](#下载与安装) 中的 `v0.1.0` 为准，待测试通过后再发布。
 
 ---
 
@@ -127,6 +127,20 @@
 
 > CurseForge 搜索需要 API key。可在设置中保存个人 key（系统凭据库）；未配置时回退到项目内置的共享配置。共享配置只用于默认体验，公开部署或二次分发时请替换为你自己的 key。
 
+### Minecraft 联机
+
+| 能力 | 状态 | 说明 |
+|---|---|---|
+| LoCyanFrp OAuth 2.0 | 🟡 | 系统浏览器授权 + 本地回环回调；刷新令牌存系统凭据库，访问令牌只在内存；需要自建 OAuth 应用 ID |
+| 节点选择 | ✅ | 官方节点列表；综合 TCP 延迟、客户端数量、出站流量、大流量与 ICP 标记评分；支持手动选择 |
+| 创建隧道 | ✅ | 普通隧道接口 `PUT /v3/tunnel`；TCP/UDP；远程端口来自 `/v3/node/port` |
+| FRPC 生命周期 | ✅ | `/v3/software/frp` 解析平台客户端，HTTPS 来源与可执行文件格式校验，启动/停止/重启/异常退出检测 |
+| 本地服务检测 | ✅ | Java 局域网动态端口日志 + 进程监听端口；Bedrock UDP 端口占用检查；支持手动 IP/端口 |
+| 停止与清理 | ✅ | 停止 FRPC 与删除云端隧道分离；只删除 `SRL-MP-` 前缀的临时隧道 |
+| 真实联调 | ⛔ | 当前开发网络无法解析 `api.locyanfrp.cn`，需在可访问网络下用真实 LoCyanFrp 账户完成联调 |
+
+> 联机中心不要求用户理解 FRP、公网 IP 或端口映射。用户只需要启动游戏、创建房间、复制地址。OAuth 应用 ID 在设置页填写；它不是密钥，但必须先在 LoCyanFrp 后台创建应用并把回调地址设为 `https://dashboard.locyanfrp.cn/auth/oauth/redirect-localhost`。
+
 ### 诊断与 AI 助手
 
 | 能力 | 状态 | 说明 |
@@ -164,6 +178,7 @@
 | 游戏实例 | 实例列表、创建、编辑、复制、启动、导出 |
 | 版本管理 | 官方版本清单、安装、本地版本检查与删除 |
 | 资源 | Modrinth / CurseForge 搜索、筛选、详情、安装、本地整合包导入 |
+| Minecraft 联机 | LoCyanFrp 账户、节点、创建/停止房间、复制公网地址 |
 | Java 环境 | 发现、手动添加、兼容性检查、Temurin 一键安装（支持国内镜像） |
 | 下载任务 | 真实进度、速度、取消、历史记录 |
 | 鸦鸭 | 崩溃诊断、证据分析、对话、修复计划、模组安装 |

@@ -30,7 +30,8 @@ export type IconName =
   | "info"
   | "edit"
   | "map"
-  | "palette";
+  | "palette"
+  | "globe";
 
 const paths: Record<IconName, string> = {
   home: "M3 10.5 12 3l9 7.5M5 9.5V21h5v-6h4v6h5V9.5",
@@ -65,6 +66,8 @@ const paths: Record<IconName, string> = {
   map: "M3 6.5 9 3l6 3 6-3v14.5L15 21l-6-3-6 3V6.5ZM9 3v15m6-12v15",
   palette:
     "M12 3a9 9 0 1 0 0 18h1.2a2.3 2.3 0 0 0 0-4.6h-1a1.7 1.7 0 0 1 0-3.4h3.1A4.7 4.7 0 0 0 20 8.3C20 5.4 16.4 3 12 3ZM7.5 8h.01M10 6h.01M14 6h.01M6.5 11h.01",
+  globe:
+    "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 0c2.5-2.4 4-5.6 4-9s-1.5-6.6-4-9m0 18c-2.5-2.4-4-5.6-4-9s1.5-6.6 4-9M3.5 9h17M3.5 15h17",
 };
 
 interface IconProps {

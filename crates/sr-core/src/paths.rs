@@ -46,6 +46,15 @@ impl AppPaths {
     pub fn java_dir(&self) -> PathBuf {
         self.base.join("java")
     }
+    pub fn multiplayer_dir(&self) -> PathBuf {
+        self.base.join("multiplayer")
+    }
+    pub fn multiplayer_room_file(&self) -> PathBuf {
+        self.multiplayer_dir().join("room.json")
+    }
+    pub fn frpc_dir(&self) -> PathBuf {
+        self.multiplayer_dir().join("frpc")
+    }
 
     pub async fn ensure_layout(&self) -> crate::error::Result<()> {
         for dir in [
@@ -54,6 +63,7 @@ impl AppPaths {
             self.cache_dir(),
             self.skins_dir(),
             self.java_dir(),
+            self.multiplayer_dir(),
         ] {
             crate::util::ensure_dir(&dir).await?;
         }

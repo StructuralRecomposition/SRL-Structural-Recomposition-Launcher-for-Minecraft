@@ -23,6 +23,7 @@ pub mod microsoft;
 pub mod mod_install;
 pub mod modrinth;
 pub mod mods;
+pub mod multiplayer;
 pub mod paths;
 pub mod recommend;
 pub mod repair;
