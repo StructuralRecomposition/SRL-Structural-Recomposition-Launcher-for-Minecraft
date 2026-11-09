@@ -59,12 +59,18 @@ pub fn run() {
                 game.ensure_layout().await?;
                 Ok::<_, sr_core::AppError>((settings, game))
             })?;
-            let multiplayer =
-                std::sync::Arc::new(tauri::async_runtime::block_on(MultiplayerManager::new(
+            let multiplayer = std::sync::Arc::new(tauri::async_runtime::block_on(
+                MultiplayerManager::new_with_bundle(
                     paths.clone(),
                     http.clone(),
                     state::multiplayer_sink(handle.clone()),
-                )));
+                    app.path()
+                        .resource_dir()
+                        .ok()
+                        .map(|dir| dir.join("frpc"))
+                        .filter(|dir| dir.is_dir()),
+                ),
+            ));
 
             let versions = VersionService::new(http.clone());
             let downloads = DownloadManager::with_store(
@@ -177,6 +183,7 @@ pub fn run() {
             commands::delete_instance,
             commands::duplicate_instance,
             commands::export_instance_archive,
+            commands::export_instance_modpack,
             commands::inspect_instance_archive,
             commands::import_instance_archive,
             commands::list_mods,

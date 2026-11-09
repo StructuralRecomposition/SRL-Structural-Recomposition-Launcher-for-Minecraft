@@ -680,6 +680,18 @@ export interface ExportSummary {
   skipped: number;
 }
 
+export interface ModpackExportSummary {
+  path: string;
+  name: string;
+  versionId: string;
+  minecraftVersion: string;
+  resolvedMods: number;
+  bundledMods: number;
+  overrides: number;
+  bytes: number;
+  warnings: string[];
+}
+
 export interface VerificationIssue {
   path: string;
   kind: string;
@@ -924,6 +936,20 @@ export const api = {
     command<Instance>("duplicate_instance", { instanceId, newName }),
   exportInstanceArchive: (instanceId: string, destPath: string, overwrite: boolean) =>
     command<ExportSummary>("export_instance_archive", { instanceId, destPath, overwrite }),
+  exportInstanceModpack: (
+    instanceId: string,
+    destPath: string,
+    overwrite: boolean,
+    name?: string,
+    versionId?: string,
+  ) =>
+    command<ModpackExportSummary>("export_instance_modpack", {
+      instanceId,
+      destPath,
+      overwrite,
+      name,
+      versionId,
+    }),
   listMods: (instanceId: string) => command<ModEntry[]>("list_mods", { instanceId }),
   toggleMod: (instanceId: string, fileName: string, enabled: boolean) =>
     command<ModEntry>("toggle_mod", { instanceId, fileName, enabled }),

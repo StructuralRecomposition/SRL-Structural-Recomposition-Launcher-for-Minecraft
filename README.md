@@ -106,7 +106,7 @@
 | 材质包管理 | ✅ | 列表、ZIP 导入、启停（同步 `options.txt`）、删除；校验 `pack.mcmeta` 与压缩包安全 |
 | 光影包管理 | ✅ | `shaderpacks/` 列表、导入、启停、删除；离线皮肤包只读 |
 | 整合包安装 | ✅ | Modrinth `.mrpack`、CurseForge `manifest.zip`、普通整合 ZIP；解析依赖并校验 SHA-1 |
-| 整合包导出 | ⛔ | 通用实例归档已支持；CurseForge / Modrinth 格式导出尚未实现 |
+| 整合包导出 | ✅ | 导出 Modrinth `.mrpack`：可识别的模组写入索引，其余模组与配置/资源包/光影进入 `overrides/`；排除存档、日志与令牌 |
 
 ### 账号与皮肤
 
@@ -137,7 +137,7 @@
 | 节点选择 | ✅ | 官方节点列表 + `/nodes/load`；按 available、在线、协议、隧道配额、延迟、负载评分；支持手动选择 |
 | 创建隧道 | ✅ | `POST /v1/tunnels`；Java `tcp`、Bedrock `udp`；创建前检查名称与端口 |
 | 端口分配 | ✅ | 遵守节点 `proxies_allowed` / `proxies_denied`，避开已占用端口并调用 `check-port` |
-| FRPC 生命周期 | ✅ | 官方 fatedier/frp Release；SHA-256 校验；启动、停止、重启、日志、异常退出 |
+| FRPC 生命周期 | ✅ | 安装包内置官方 frpc（按平台/架构，SHA-256 锁定）；解压后启动、停止、重启、日志、异常退出；仅在内置缺失时回退 GitHub 下载 |
 | 本地服务检测 | ✅ | Java 局域网动态端口日志 + 进程监听端口；Bedrock UDP 端口占用检查；支持手动 IP/端口 |
 | 停止与清理 | ✅ | 停止 FRPC 与删除云端隧道分离；只删除 `SRL_` 前缀的临时隧道 |
 | 真实联调 | 🟡 | 需要真实 52FRP 账户与 API 令牌；代码按官方 v1 OpenAPI 实现 |

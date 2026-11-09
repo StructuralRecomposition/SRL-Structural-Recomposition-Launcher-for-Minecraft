@@ -2,7 +2,7 @@ use crate::error::{AppError, ErrorCode, Result};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -15,6 +15,7 @@ use tokio::sync::Mutex;
 use super::types::FrpcView;
 
 const MAX_FRPC_BYTES: u64 = 100 * 1024 * 1024;
+const BUNDLE_LOCK: &str = "frpc.lock.json";
 const RELEASE_API: &str = "https://api.github.com/repos/fatedier/frp/releases/latest";
 const CHECK_INTERVAL_SECS: i64 = 24 * 60 * 60;
 
@@ -37,6 +38,19 @@ struct GitHubAsset {
     size: u64,
     #[serde(default)]
     digest: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct BundleLock {
+    version: String,
+    #[serde(default)]
+    assets: HashMap<String, BundleAsset>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct BundleAsset {
+    name: String,
+    sha256: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,6 +119,10 @@ impl FrpcManager {
         }
     }
 
+    pub fn bundled_dir_clone(&self) -> Option<PathBuf> {
+        self.bundled_dir.clone()
+    }
+
     /// Fast path: use the already downloaded/bundled executable without any
     /// network call. This is what makes the second and later room creations
     /// immediate.
@@ -112,7 +130,7 @@ impl FrpcManager {
         if let Some(cached) = self.cached() {
             return Ok(cached);
         }
-        if let Some(bundled) = self.bundled() {
+        if let Some(bundled) = self.bundled().await {
             return Ok(bundled);
         }
         self.update_cache(progress).await
@@ -121,6 +139,10 @@ impl FrpcManager {
     /// Called after connecting the account and at app startup. It does not
     /// block room creation and respects a 24-hour check interval.
     pub async fn warm_update(&self) {
+        // A bundled client is pinned and offline; never touch the network.
+        if self.bundled().await.is_some() {
+            return;
+        }
         if let Some(meta) = self.read_meta() {
             if chrono::Utc::now().timestamp() - meta.checked_at < CHECK_INTERVAL_SECS {
                 return;
@@ -130,6 +152,9 @@ impl FrpcManager {
     }
 
     pub async fn update_cache(&self, progress: Option<DownloadProgress>) -> Result<PreparedFrpc> {
+        if let Some(bundled) = self.bundled().await {
+            return Ok(bundled);
+        }
         let _guard = PREPARE_LOCK.lock().await;
         if let Some(cached) = self.cached() {
             // The binary exists; refresh metadata at most once per day.
@@ -293,21 +318,14 @@ impl FrpcManager {
         })
     }
 
-    fn bundled(&self) -> Option<PreparedFrpc> {
-        let dir = self.bundled_dir.as_ref()?;
-        let exe = if cfg!(windows) { "frpc.exe" } else { "frpc" };
-        let path = dir
-            .join(platform_name(std::env::consts::OS).ok()?)
-            .join(exe);
-        let bytes = std::fs::read(&path).ok()?;
-        if !executable_magic_ok(&bytes) {
-            return None;
-        }
-        Some(PreparedFrpc {
-            path,
-            version: "bundled".into(),
-            sha256: sha256_hex(&bytes),
-        })
+    async fn bundled(&self) -> Option<PreparedFrpc> {
+        let dir = self.bundled_dir.clone()?;
+        let platform = platform_name(std::env::consts::OS).ok()?;
+        let arch = arch_name(std::env::consts::ARCH).ok()?;
+        let cache_dir = self.dir.clone();
+        tokio::task::spawn_blocking(move || bundled_blocking(&dir, &cache_dir, platform, arch))
+            .await
+            .ok()?
     }
 
     async fn release(&self) -> Result<GitHubRelease> {
@@ -360,6 +378,9 @@ impl FrpcManager {
         // China-first mirror order. The archive SHA-256 from GitHub is the
         // source of truth, so a mirror cannot substitute a different binary.
         let candidates = [
+            format!("https://ghproxy.net/{url}"),
+            format!("https://gh-proxy.net/{url}"),
+            format!("https://ghfast.top/{url}"),
             format!("https://ghproxy.com/{url}"),
             format!("https://gh-proxy.com/{url}"),
             format!("https://mirror.ghproxy.com/{url}"),
@@ -619,6 +640,90 @@ fn checksum_for(text: &str, filename: &str) -> Option<String> {
     None
 }
 
+/// Extract the client shipped inside the installer into the writable app data
+/// directory. Shipping the archive (not a bare executable) keeps macOS code
+/// signing happy and lets us verify the pinned SHA-256 before every first run.
+fn bundled_blocking(
+    bundle: &Path,
+    cache: &Path,
+    platform: &str,
+    arch: &str,
+) -> Option<PreparedFrpc> {
+    let lock_bytes = std::fs::read(bundle.join(BUNDLE_LOCK)).ok()?;
+    let lock: BundleLock = serde_json::from_slice(&lock_bytes).ok()?;
+    let key = format!("{platform}-{arch}");
+    let asset = lock.assets.get(&key)?;
+    let archive_path = bundle.join(platform).join(arch).join(&asset.name);
+    let target_dir = cache.join(format!("bundled-{}-{key}", lock.version));
+    let exe_name = if platform == "windows" {
+        "frpc.exe"
+    } else {
+        "frpc"
+    };
+    let target = target_dir.join(exe_name);
+    let record = target_dir.join(".sha256");
+
+    if let Ok(bytes) = std::fs::read(&target) {
+        if executable_magic_ok(&bytes) {
+            let sha = sha256_hex(&bytes);
+            let recorded = std::fs::read_to_string(&record).unwrap_or_default();
+            if recorded.trim().eq_ignore_ascii_case(&sha) {
+                return Some(PreparedFrpc {
+                    path: target,
+                    version: lock.version,
+                    sha256: sha,
+                });
+            }
+        }
+    }
+
+    let archive = match std::fs::read(&archive_path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::warn!(path = %archive_path.display(), %error, "bundled frpc archive missing");
+            return None;
+        }
+    };
+    if !sha256_hex(&archive).eq_ignore_ascii_case(&asset.sha256) {
+        tracing::warn!(path = %archive_path.display(), "bundled frpc archive checksum mismatch");
+        return None;
+    }
+    let exe = match extract_executable(&archive, platform) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::warn!(%error, "cannot extract bundled frpc");
+            return None;
+        }
+    };
+    if !executable_magic_ok(&exe) {
+        tracing::warn!("bundled frpc is not a native executable");
+        return None;
+    }
+    crate::util::ensure_dir_sync(&target_dir).ok()?;
+    let tmp = target_dir.join(format!(".{exe_name}.tmp"));
+    if std::fs::write(&tmp, &exe).is_err() {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
+    }
+    let _ = std::fs::remove_file(&target);
+    if std::fs::rename(&tmp, &target).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return None;
+    }
+    let sha = sha256_hex(&exe);
+    let _ = std::fs::write(&record, format!("{sha}\n"));
+    tracing::info!(version = %lock.version, arch = %arch, "using bundled FRPC");
+    Some(PreparedFrpc {
+        path: target,
+        version: lock.version,
+        sha256: sha,
+    })
+}
+
 fn verify_download_url(url: &str) -> Result<()> {
     let parsed =
         reqwest::Url::parse(url).map_err(|_| AppError::invalid_input("FRPC 下载地址格式无效"))?;
@@ -633,6 +738,9 @@ fn verify_download_url(url: &str) -> Result<()> {
         || host.ends_with(".githubusercontent.com")
         || host == "ghproxy.com"
         || host == "gh-proxy.com"
+        || host == "gh-proxy.net"
+        || host == "ghproxy.net"
+        || host == "ghfast.top"
         || host == "mirror.ghproxy.com";
     if !allowed {
         return Err(AppError::path_unsafe(format!(
@@ -788,5 +896,87 @@ mod tests {
         assert!(manager.is_running().await);
         manager.stop().await.unwrap();
         assert!(!manager.is_running().await);
+    }
+
+    fn fake_elf() -> Vec<u8> {
+        let mut bytes = b"\x7fELF".to_vec();
+        bytes.extend_from_slice(&[0u8; 60]);
+        bytes
+    }
+
+    fn write_bundle(root: &Path, sha_override: Option<String>) -> PathBuf {
+        let bundle = root.join("bundle");
+        let dir = bundle.join("darwin").join("amd64");
+        std::fs::create_dir_all(&dir).unwrap();
+        let name = "frp_test_darwin_amd64.tar.gz";
+        let exe = fake_elf();
+        let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        let mut header = tar::Header::new_gnu();
+        header.set_size(exe.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "frp_test/frpc", exe.as_slice())
+            .unwrap();
+        let archive = builder.into_inner().unwrap().finish().unwrap();
+        std::fs::write(dir.join(name), &archive).unwrap();
+        let sha = sha_override.unwrap_or_else(|| sha256_hex(&archive));
+        let lock = serde_json::json!({
+            "version": "test",
+            "assets": { "darwin-amd64": { "name": name, "sha256": sha } }
+        });
+        std::fs::write(bundle.join(BUNDLE_LOCK), serde_json::to_vec(&lock).unwrap()).unwrap();
+        bundle
+    }
+
+    #[test]
+    fn extracts_bundled_frpc_and_reuses_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle = write_bundle(root.path(), None);
+        let cache = root.path().join("cache");
+        let first = bundled_blocking(&bundle, &cache, "darwin", "amd64").unwrap();
+        assert_eq!(first.version, "test");
+        assert!(first.path.is_file());
+        assert!(executable_magic_ok(&std::fs::read(&first.path).unwrap()));
+
+        // Remove the archive: the extracted cache must still work.
+        let archive = bundle
+            .join("darwin")
+            .join("amd64")
+            .join("frp_test_darwin_amd64.tar.gz");
+        std::fs::remove_file(archive).unwrap();
+        let second = bundled_blocking(&bundle, &cache, "darwin", "amd64").unwrap();
+        assert_eq!(second.sha256, first.sha256);
+    }
+
+    #[test]
+    fn rejects_bundle_with_bad_checksum() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle = write_bundle(root.path(), Some("0".repeat(64)));
+        let cache = root.path().join("cache");
+        assert!(bundled_blocking(&bundle, &cache, "darwin", "amd64").is_none());
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    #[test]
+    fn extracts_real_bundled_archive_when_present() {
+        let bundle = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("src-tauri")
+            .join("resources")
+            .join("frpc");
+        if !bundle.join(BUNDLE_LOCK).is_file() {
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let prepared = bundled_blocking(&bundle, root.path(), "darwin", "amd64");
+        let Some(prepared) = prepared else {
+            panic!("bundled frpc should be usable");
+        };
+        let bytes = std::fs::read(&prepared.path).unwrap();
+        assert!(executable_magic_ok(&bytes));
+        assert!(bytes.len() > 1_000_000);
     }
 }

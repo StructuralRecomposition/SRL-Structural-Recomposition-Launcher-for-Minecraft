@@ -21,6 +21,7 @@ pub mod java_runtime;
 pub mod launch;
 pub mod microsoft;
 pub mod mod_install;
+pub mod modpack_export;
 pub mod modrinth;
 pub mod mods;
 pub mod multiplayer;

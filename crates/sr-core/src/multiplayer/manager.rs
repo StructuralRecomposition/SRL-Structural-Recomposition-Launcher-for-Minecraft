@@ -32,8 +32,17 @@ pub struct MultiplayerManager {
 
 impl MultiplayerManager {
     pub async fn new(paths: AppPaths, http: reqwest::Client, progress: ProgressSink) -> Self {
+        Self::new_with_bundle(paths, http, progress, None).await
+    }
+
+    pub async fn new_with_bundle(
+        paths: AppPaths,
+        http: reqwest::Client,
+        progress: ProgressSink,
+        bundled_frpc: Option<std::path::PathBuf>,
+    ) -> Self {
         let room = load_room(&paths).await;
-        let frpc = FrpcManager::new(paths.frpc_dir(), http.clone());
+        let frpc = FrpcManager::new_with_bundle(paths.frpc_dir(), http.clone(), bundled_frpc);
         Self {
             paths,
             http,
@@ -44,6 +53,14 @@ impl MultiplayerManager {
             progress,
             last_error: RwLock::new(None),
         }
+    }
+
+    fn frpc_manager(&self) -> FrpcManager {
+        FrpcManager::new_with_bundle(
+            self.paths.frpc_dir(),
+            self.http.clone(),
+            self.frpc.bundled_dir_clone(),
+        )
     }
 
     fn provider(&self) -> Frp52Provider {
@@ -142,7 +159,7 @@ impl MultiplayerManager {
         let account = provider.account_with_token(token).await?;
         self.tokens.set(token).await?;
         *self.last_error.write().await = None;
-        let frpc = FrpcManager::new(self.paths.frpc_dir(), self.http.clone());
+        let frpc = self.frpc_manager();
         tokio::spawn(async move {
             frpc.warm_update().await;
         });

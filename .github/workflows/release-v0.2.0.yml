@@ -27,14 +27,17 @@ jobs:
             name: macos-universal
             args: --target universal-apple-darwin --bundles dmg
             targets: aarch64-apple-darwin,x86_64-apple-darwin
+            frpc_targets: darwin-amd64,darwin-arm64
           - os: ubuntu-22.04
             name: linux-x64
             args: --bundles deb,appimage
             targets: ""
+            frpc_targets: linux-amd64
           - os: windows-latest
             name: windows-x64
             args: --no-bundle
             targets: ""
+            frpc_targets: windows-amd64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +60,9 @@ jobs:
       - name: Verify no AI key in source
         run: node scripts/verify-no-secrets.mjs
       - run: npm ci
+      - name: Fetch bundled FRPC
+        shell: bash
+        run: node scripts/fetch-frpc.mjs --targets=${{ matrix.frpc_targets }}
       - name: Build application
         run: npm run tauri build -- ${{ matrix.args }}
       - name: Package Windows portable
@@ -67,6 +73,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path portable | Out-Null
           Copy-Item target/release/sr-launcher.exe portable/
           Copy-Item packaging/windows/* portable/
+          Copy-Item -Recurse src-tauri/resources/frpc portable/frpc
+          Copy-Item src-tauri/resources/THIRD_PARTY_NOTICES.md portable/
           Compress-Archive -Path portable/* -DestinationPath "SRL_${version}_windows-x64-portable.zip"
       - name: Upload build output
         uses: actions/upload-artifact@v4

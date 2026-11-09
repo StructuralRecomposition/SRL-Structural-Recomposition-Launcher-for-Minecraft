@@ -19,6 +19,7 @@ use sr_core::microsoft::{
     load_tokens, player_from_tokens, save_tokens, DeviceCodeView, MicrosoftAuth, MicrosoftPoll,
 };
 use sr_core::mod_install;
+use sr_core::modpack_export::{self, ModpackExportSummary};
 use sr_core::modrinth::{
     ResourceHit, ResourceProject, ResourceSearchPage, ResourceSearchQuery, ResourceVersion,
 };
@@ -704,6 +705,33 @@ pub async fn export_instance_archive(
     let manager = InstanceManager::new(game.clone());
     let instance = manager.get(&instance_id).await?;
     transfer::export_instance(&game, &instance, &PathBuf::from(dest_path), overwrite).await
+}
+
+#[tauri::command]
+pub async fn export_instance_modpack(
+    state: State<'_, AppState>,
+    instance_id: String,
+    dest_path: String,
+    overwrite: bool,
+    name: Option<String>,
+    version_id: Option<String>,
+) -> Result<ModpackExportSummary> {
+    if dest_path.trim().is_empty() {
+        return Err(AppError::invalid_input("请选择导出文件路径"));
+    }
+    let game = state.game_snapshot().await;
+    let manager = InstanceManager::new(game.clone());
+    let instance = manager.get(&instance_id).await?;
+    modpack_export::export_mrpack(
+        &game,
+        &instance,
+        &PathBuf::from(dest_path),
+        overwrite,
+        name,
+        version_id,
+        &state.http,
+    )
+    .await
 }
 
 #[tauri::command]

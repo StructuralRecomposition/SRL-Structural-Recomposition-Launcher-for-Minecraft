@@ -31,6 +31,9 @@ icon-1024.png
 src-tauri/resources/easytier/*
 !src-tauri/resources/easytier/README.md
 
+# Bundled frpc archives (fetched by scripts/fetch-frpc.mjs; lock is committed)
+src-tauri/resources/frpc/*/*/
+
 
 # Local v0.2.0 test builds (not published yet)
 release/v0.2.0/*

@@ -37,6 +37,11 @@ export function InstancesPage() {
   const [exporting, setExporting] = useState<Instance | null>(null);
   const [exportPath, setExportPath] = useState("");
   const [overwrite, setOverwrite] = useState(false);
+  const [packFor, setPackFor] = useState<Instance | null>(null);
+  const [packPath, setPackPath] = useState("");
+  const [packName, setPackName] = useState("");
+  const [packVersion, setPackVersion] = useState("1.0.0");
+  const [packOverwrite, setPackOverwrite] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importPath, setImportPath] = useState("");
   const [importCheck, setImportCheck] = useState<ImportCheck | null>(null);
@@ -188,6 +193,31 @@ export function InstancesPage() {
         "实例已导出",
         "success",
         `${summary.files} 个文件 · ${formatBytes(summary.bytes)}${summary.skipped ? ` · 跳过 ${summary.skipped} 个符号链接` : ""}`,
+      );
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doPackExport() {
+    if (!packFor) return;
+    setBusy("modpack");
+    setFormError(null);
+    try {
+      const summary = await api.exportInstanceModpack(
+        packFor.id,
+        packPath.trim(),
+        packOverwrite,
+        packName.trim() || undefined,
+        packVersion.trim() || undefined,
+      );
+      setPackFor(null);
+      pushToast(
+        "整合包已导出",
+        summary.warnings.length ? "warning" : "success",
+        `${summary.resolvedMods} 个模组走 Modrinth 下载 · ${summary.bundledMods} 个放入 overrides · ${formatBytes(summary.bytes)}`,
       );
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
@@ -395,6 +425,18 @@ export function InstancesPage() {
                       setExporting(inst);
                       setExportPath(`${inst.name}.zip`);
                       setOverwrite(false);
+                      setFormError(null);
+                    }}
+                  />
+                  <IconButton
+                    icon="box"
+                    label="导出整合包"
+                    onClick={() => {
+                      setPackFor(inst);
+                      setPackPath(`${inst.name}.mrpack`);
+                      setPackName(inst.name);
+                      setPackVersion("1.0.0");
+                      setPackOverwrite(false);
                       setFormError(null);
                     }}
                   />
@@ -636,6 +678,68 @@ export function InstancesPage() {
         <p className="muted small">
           默认包含存档、模组、配置、资源包与光影；排除 <span className="mono">logs/</span>、
           <span className="mono">crash-reports/</span> 和启动器内部配置。
+        </p>
+        {formError ? <p className="form-error">{formError}</p> : null}
+      </Modal>
+
+      <Modal
+        open={packFor !== null}
+        onClose={() => setPackFor(null)}
+        title="导出整合包"
+        subtitle={packFor ? `${packFor.name} · ${packFor.versionId}` : ""}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPackFor(null)}>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              loading={busy === "modpack"}
+              onClick={doPackExport}
+              disabled={!packPath.trim()}
+            >
+              导出 .mrpack
+            </Button>
+          </>
+        }
+      >
+        <Field label="整合包名称">
+          <input
+            value={packName}
+            onChange={(e) => setPackName(e.target.value)}
+            placeholder={packFor?.name ?? "整合包名称"}
+          />
+        </Field>
+        <Field label="整合包版本" hint="用于区分同一整合包的不同发布版本。">
+          <input
+            value={packVersion}
+            onChange={(e) => setPackVersion(e.target.value)}
+            placeholder="1.0.0"
+          />
+        </Field>
+        <Field
+          label="导出文件路径"
+          hint="必须为 .mrpack；可在 Modrinth 客户端、Prism、ATLauncher 等启动器中导入。"
+        >
+          <input
+            className="mono"
+            value={packPath}
+            onChange={(e) => setPackPath(e.target.value)}
+            placeholder="/Users/you/Desktop/modpack.mrpack"
+          />
+        </Field>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={packOverwrite}
+            onChange={(e) => setPackOverwrite(e.target.checked)}
+          />
+          <span>允许覆盖已存在的文件</span>
+        </label>
+        <p className="muted small">
+          能在 Modrinth 识别到的模组会写入 <span className="mono">modrinth.index.json</span>，
+          由导入方重新下载；其余模组和配置、资源包、光影会打包进
+          <span className="mono">overrides/</span>。不会包含存档、日志或账号令牌。
         </p>
         {formError ? <p className="form-error">{formError}</p> : null}
       </Modal>

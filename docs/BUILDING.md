@@ -68,6 +68,15 @@ npm run build           # tsc -b + vite build
 npm run build:desktop   # Tauri 打包（dmg/app、msi/nsis、deb/rpm/AppImage）
 ```
 
+`beforeBuildCommand` 会自动执行 `scripts/fetch-frpc.mjs`，把当前平台/架构的
+官方 frpc 压缩包下载到 `src-tauri/resources/frpc/<platform>/<arch>/` 并校验
+SHA-256；压缩包不提交到 git，首次构建需要网络。手动下载或重新锁定版本：
+
+```bash
+node scripts/fetch-frpc.mjs --targets=darwin-amd64,darwin-arm64
+node scripts/fetch-frpc.mjs --version=0.71.0
+```
+
 仅验证 Rust 可执行文件、不生成安装包：
 
 ```bash

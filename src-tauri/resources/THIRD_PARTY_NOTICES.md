@@ -1,12 +1,20 @@
 # Third-party notices
 
-SR Launcher 当前版本不再内置或调用 EasyTier。此前 Structural Connect（跨网络联机）
-功能已从代码库中移除，相关第三方组件与 LGPL 义务一并取消。
+## FRPC（fatedier/frp）
 
-如需查看历史版本的分发说明，请参考 git 历史。
+SRL 联机中心内置 fatedier/frp 官方发布版中的 `frpc` 客户端（当前锁定版本见
+`src-tauri/resources/frpc/frpc.lock.json`），用于连接 52FRP 提供的隧道服务。
 
-## Minecraft 联机
+- 上游项目：https://github.com/fatedier/frp
+- 许可证：Apache License 2.0，全文见 `frpc/LICENSE`
+- 分发方式：安装包只包含对应平台/架构的官方压缩包；首次使用时校验官方
+  SHA-256 并解压到应用数据目录，不修改二进制。
+- 回退路径：如果安装包未包含当前平台的内置客户端，SRL 才会从官方 GitHub
+  Release 下载，并校验官方 SHA-256 校验文件。
 
-SRL 不内置 FRPC 二进制。联机中心使用 52FRP 开放 API，并从 fatedier/frp 官方 GitHub Release
-下载当前平台的 FRPC 客户端（含官方 SHA-256 校验文件）。FRPC 的许可以上游 fatedier/frp 发布物为准；
-SRL 仅调用 52FRP 隧道接口，不修改 FRPC。
+SRL 仅调用 52FRP 隧道接口并生成 `frpc` 配置，不修改 `frpc` 本身。
+
+## 历史说明
+
+此前 Structural Connect（跨网络联机）功能已从代码库中移除；当前版本不再
+内置或调用 EasyTier。

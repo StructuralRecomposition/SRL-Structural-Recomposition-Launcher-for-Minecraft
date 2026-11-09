@@ -13,16 +13,19 @@ jobs:
             args: --target universal-apple-darwin --bundles app,dmg
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             artifact: macos-universal
+            frpc_targets: darwin-amd64,darwin-arm64
             bundle_path: target/universal-apple-darwin/release/bundle
           - os: ubuntu-22.04
             args: --bundles deb,appimage
             rust_targets: ""
             artifact: linux-x64
+            frpc_targets: linux-amd64
             bundle_path: target/release/bundle
           - os: windows-latest
             args: --bundles nsis,msi
             rust_targets: ""
             artifact: windows-x64
+            frpc_targets: windows-amd64
             bundle_path: target/release/bundle
     runs-on: ${{ matrix.os }}
     steps:
@@ -43,6 +46,9 @@ jobs:
       - name: Verify no AI key in source
         run: node scripts/verify-no-secrets.mjs
       - run: npm ci
+      - name: Fetch bundled FRPC
+        shell: bash
+        run: node scripts/fetch-frpc.mjs --targets=${{ matrix.frpc_targets }}
       - name: Build
         run: npm run tauri build -- ${{ matrix.args }}
       - name: Verify clean bundle

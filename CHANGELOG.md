@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### 联机
+
+- FRPC 改为安装包内置：按平台/架构携带官方压缩包，锁定 SHA-256，首次使用时校验并解压到应用数据目录；有内置客户端时完全离线，不再访问 GitHub。
+- 内置缺失时才回退官方 Release 下载，并保留镜像与 SHA-256 校验。
+
+### 实例与内容
+
+- 新增 Modrinth `.mrpack` 整合包导出：本地模组按 SHA-1 在 Modrinth 识别，命中项写入 `modrinth.index.json`，其余模组与 `config`、`defaultconfigs`、`kubejs`、`scripts`、资源包、光影进入 `overrides/`。
+- 导出会读取实例版本元数据确定 Minecraft 版本与加载器依赖；不包含存档、日志、截图或账号令牌。
+- 实例卡片新增「导出整合包」入口，可设置整合包名称、版本与导出路径。
+
 ## 0.2.0 — 2026-11-07
 
 ### Minecraft 联机中心
