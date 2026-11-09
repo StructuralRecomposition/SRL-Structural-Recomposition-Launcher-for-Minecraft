@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { t } from "./i18n";
+
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -29,7 +31,7 @@ function normalizeError(raw: unknown): ApiError {
 
 export async function command<T>(name: string, args?: Record<string, unknown>): Promise<T> {
   if (!isTauri()) {
-    throw new ApiError("NOT_DESKTOP", "此功能需要在 SRL 桌面应用中运行。");
+    throw new ApiError("NOT_DESKTOP", t("此功能需要在 SRL 桌面应用中运行。"));
   }
   try {
     return await invoke<T>(name, args);
@@ -49,7 +51,7 @@ export async function commandBytes<T>(
   headers: Record<string, string>,
 ): Promise<T> {
   if (!isTauri()) {
-    throw new ApiError("NOT_DESKTOP", "此功能需要在 SRL 桌面应用中运行。");
+    throw new ApiError("NOT_DESKTOP", t("此功能需要在 SRL 桌面应用中运行。"));
   }
   try {
     return await invoke<T>(name, bytes, { headers });

@@ -3,6 +3,9 @@ import { api, type Settings } from "../lib/api";
 import { useApp } from "../state/AppContext";
 import { Badge, Button, Card, Field, Toggle } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { normalizeLanguage, setLanguage } from "../lib/i18n";
+import { t } from "../lib/i18n";
+
 
 export function SettingsPage() {
   const { bootstrap, updateBootstrap, pushToast, refreshTasks, theme, setTheme } = useApp();
@@ -55,8 +58,8 @@ export function SettingsPage() {
       await api.setCurseforgeApiKey(cfKey.trim());
       setCfSource("custom");
       setCfKey("");
-      setCfMessage("个人 API key 已保存到系统凭据库，将优先于内置公共 key 使用");
-      pushToast("CurseForge API key 已保存", "success");
+      setCfMessage(t("个人 API key 已保存到系统凭据库，将优先于内置公共 key 使用"));
+      pushToast(t("CurseForge API key 已保存"), "success");
     } catch (e) {
       setCfMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -69,8 +72,8 @@ export function SettingsPage() {
     setCfMessage(null);
     try {
       await api.testCurseforgeApiKey();
-      setCfMessage("连接成功，key 可用");
-      pushToast("CurseForge 连接成功", "success");
+      setCfMessage(t("连接成功，key 可用"));
+      pushToast(t("CurseForge 连接成功"), "success");
     } catch (e) {
       setCfMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -86,8 +89,8 @@ export function SettingsPage() {
       await api.setDeepseekApiKey(dsKey.trim());
       setDsConfigured(true);
       setDsKey("");
-      setDsMessage("DeepSeek key 已保存到系统凭据库");
-      pushToast("DeepSeek key 已保存", "success");
+      setDsMessage(t("DeepSeek key 已保存到系统凭据库"));
+      pushToast(t("DeepSeek key 已保存"), "success");
     } catch (e) {
       setDsMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -100,8 +103,8 @@ export function SettingsPage() {
     setDsMessage(null);
     try {
       await api.testDeepseekApiKey();
-      setDsMessage("连接成功，key 可用");
-      pushToast("DeepSeek 连接成功", "success");
+      setDsMessage(t("连接成功，key 可用"));
+      pushToast(t("DeepSeek 连接成功"), "success");
     } catch (e) {
       setDsMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -115,8 +118,8 @@ export function SettingsPage() {
     try {
       await api.clearDeepseekApiKey();
       setDsConfigured(false);
-      setDsMessage("已清除个人 DeepSeek key");
-      pushToast("已清除 DeepSeek key", "info");
+      setDsMessage(t("已清除个人 DeepSeek key"));
+      pushToast(t("已清除 DeepSeek key"), "info");
     } catch (e) {
       setDsMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -130,8 +133,8 @@ export function SettingsPage() {
     try {
       await api.clearCurseforgeApiKey();
       setCfSource("builtin");
-      setCfMessage("已清除个人 key，恢复使用内置公共 key");
-      pushToast("已清除 CurseForge API key", "info");
+      setCfMessage(t("已清除个人 key，恢复使用内置公共 key"));
+      pushToast(t("已清除 CurseForge API key"), "info");
     } catch (e) {
       setCfMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -142,7 +145,7 @@ export function SettingsPage() {
   if (!bootstrap || !form) {
     return (
       <div className="page">
-        <p className="muted">正在加载设置…</p>
+        <p className="muted">{t("正在加载设置…")}</p>
       </div>
     );
   }
@@ -154,14 +157,21 @@ export function SettingsPage() {
   }
 
   async function save() {
-    if (!form) return;
+    if (!form || !bootstrap) return;
     setError(null);
     setSaving(true);
     try {
+      const languageChanged =
+        normalizeLanguage(form.language) !== normalizeLanguage(bootstrap.settings.language);
       const saved = await api.updateSettings(form);
       updateBootstrap((b) => ({ ...b, settings: saved }));
       setForm(saved);
-      pushToast("设置已保存", "success");
+      if (languageChanged) {
+        setLanguage(normalizeLanguage(saved.language));
+        window.location.reload();
+        return;
+      }
+      pushToast(t("设置已保存"), "success");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -177,8 +187,8 @@ export function SettingsPage() {
       await api.multiplayerConnect(frpToken.trim());
       setFrpConfigured(true);
       setFrpToken("");
-      setFrpMessage("52FRP API 令牌已验证并保存到系统凭据库");
-      pushToast("52FRP 已连接", "success");
+      setFrpMessage(t("52FRP API 令牌已验证并保存到系统凭据库"));
+      pushToast(t("52FRP 已连接"), "success");
     } catch (e) {
       setFrpMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -192,8 +202,8 @@ export function SettingsPage() {
     try {
       await api.multiplayerLogout();
       setFrpConfigured(false);
-      setFrpMessage("已清除 52FRP API 令牌");
-      pushToast("已退出 52FRP", "info");
+      setFrpMessage(t("已清除 52FRP API 令牌"));
+      pushToast(t("已退出 52FRP"), "info");
     } catch (e) {
       setFrpMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -204,9 +214,9 @@ export function SettingsPage() {
   async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      pushToast("已复制到剪贴板", "success");
+      pushToast(t("已复制到剪贴板"), "success");
     } catch {
-      pushToast("复制失败", "warning", "当前环境不允许访问剪贴板");
+      pushToast(t("复制失败"), "warning", t("当前环境不允许访问剪贴板"));
     }
   }
 
@@ -214,9 +224,9 @@ export function SettingsPage() {
     try {
       await api.clearFinishedTasks();
       await refreshTasks();
-      pushToast("已清除结束的任务", "info");
+      pushToast(t("已清除结束的任务"), "info");
     } catch (e) {
-      pushToast("清除失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(t("清除失败"), "error", e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -224,15 +234,13 @@ export function SettingsPage() {
     <div className="page settings-page">
       <div className="toolbar">
         <div>
-          <h2>设置</h2>
+          <h2>{t("设置")}</h2>
         </div>
         <div className="toolbar__actions">
           <Button variant="ghost" onClick={() => setForm(bootstrap.settings)} disabled={!dirty || saving}>
-            还原
-          </Button>
+            {t("还原")}</Button>
           <Button variant="primary" onClick={save} loading={saving} disabled={!dirty}>
-            保存设置
-          </Button>
+            {t("保存设置")}</Button>
         </div>
       </div>
 
@@ -243,13 +251,13 @@ export function SettingsPage() {
           <Card>
             <div className="card-head">
               <div>
-                <h3>游戏与下载</h3>
-                <p>版本、库、资源与实例都存放在游戏目录下。</p>
+                <h3>{t("游戏与下载")}</h3>
+                <p>{t("版本、库、资源与实例都存放在游戏目录下。")}</p>
               </div>
             </div>
             <Field
-              label="游戏目录"
-              hint="更改后，新的安装与实例使用新目录；已有实例保留其原始路径。"
+              label={t("游戏目录")}
+              hint={t("更改后，新的安装与实例使用新目录；已有实例保留其原始路径。")}
             >
               <input
                 className="mono"
@@ -258,7 +266,7 @@ export function SettingsPage() {
               />
             </Field>
             <div className="form-grid">
-              <Field label="并发下载数" hint={`1 - 16，当前建议 ${form.maxConcurrentDownloads} 个连接`}>
+              <Field label={t("并发下载数")} hint={t("1 - 16，当前建议 {0} 个连接", [form.maxConcurrentDownloads])}>
                 <input
                   type="number"
                   min={1}
@@ -267,7 +275,7 @@ export function SettingsPage() {
                   onChange={(e) => patch({ maxConcurrentDownloads: Number(e.target.value) })}
                 />
               </Field>
-              <Field label="界面主题" hint="主题立即预览，点击保存后持久化。">
+              <Field label={t("界面主题")} hint={t("主题立即预览，点击保存后持久化。")}>
                 <select
                   value={theme}
                   onChange={(e) => {
@@ -276,54 +284,66 @@ export function SettingsPage() {
                     patch({ theme: next });
                   }}
                 >
-                  <option value="dark">深色</option>
-                  <option value="light">浅色</option>
+                  <option value="dark">{t("深色")}</option>
+                  <option value="light">{t("浅色")}</option>
                 </select>
               </Field>
             </div>
+            <Field
+              label={t("界面语言")}
+              hint={t("默认简体中文；切换后界面会重新加载。")}
+            >
+              <select
+                value={normalizeLanguage(form.language)}
+                onChange={(e) => patch({ language: e.target.value })}
+              >
+                <option value="zh-CN">简体中文</option>
+                <option value="en">English</option>
+              </select>
+            </Field>
             <Toggle
               id="assets-default"
               checked={form.downloadAssetsOnInstall}
               onChange={(v) => patch({ downloadAssetsOnInstall: v })}
-              label="安装版本时默认下载资源文件"
-              description="资源文件约数百 MB，但缺少资源会影响声音与贴图。安装时可逐次覆盖此选项。"
+              label={t("安装版本时默认下载资源文件")}
+              description={t("资源文件约数百 MB，但缺少资源会影响声音与贴图。安装时可逐次覆盖此选项。")}
             />
             <Toggle
               id="offline-skin"
               checked={form.applyOfflineSkin}
               onChange={(v) => patch({ applyOfflineSkin: v })}
-              label="为离线账号应用本地皮肤"
-              description="启动时把所选皮肤写入实例的 resourcepacks 并启用本地资源包。仅本机可见，会覆盖默认皮肤贴图，无法改变手臂模型。"
+              label={t("为离线账号应用本地皮肤")}
+              description={t("启动时把所选皮肤写入实例的 resourcepacks 并启用本地资源包。仅本机可见，会覆盖默认皮肤贴图，无法改变手臂模型。")}
             />
           </Card>
 
           <Card>
             <div className="card-head">
               <div>
-                <h3>网络与来源</h3>
-                <p>默认只信任 Mojang 官方 HTTPS 域名。</p>
+                <h3>{t("网络与来源")}</h3>
+                <p>{t("默认只信任 Mojang 官方 HTTPS 域名。")}</p>
               </div>
-              <Badge tone="success">官方源 + 国内镜像</Badge>
+              <Badge tone="success">{t("官方源 + 国内镜像")}</Badge>
             </div>
             <Toggle
               id="use-mirror"
               checked={form.useMirror}
               onChange={(v) => patch({ useMirror: v })}
-              label="优先使用国内镜像（BMCLAPI）"
-              description="Fabric 元数据与 Maven 构件优先走 BMCLAPI，Java 一键安装优先走清华 TUNA Adoptium 镜像，失败时自动回退官方源。Quilt 仍使用官方 meta；不会绕过 SHA-1 校验（镜像缺失校验值时如实标注）。"
+              label={t("优先使用国内镜像（BMCLAPI）")}
+              description={t("Fabric 元数据与 Maven 构件优先走 BMCLAPI，Java 一键安装优先走清华 TUNA Adoptium 镜像，失败时自动回退官方源。Quilt 仍使用官方 meta；不会绕过 SHA-1 校验（镜像缺失校验值时如实标注）。")}
             />
             <Toggle
               id="custom-hosts"
               checked={false}
               onChange={() => {
-                pushToast("自定义镜像尚未实现", "warning", "阶段 1 固定使用官方域名，避免未验证的下载源。");
+                pushToast(t("自定义镜像尚未实现"), "warning", t("阶段 1 固定使用官方域名，避免未验证的下载源。"));
               }}
-              label="允许自定义下载镜像"
-              description="未实现。启用前需要镜像签名、校验与可信度评估。"
+              label={t("允许自定义下载镜像")}
+              description={t("未实现。启用前需要镜像签名、校验与可信度评估。")}
             />
             <Field
-              label="Microsoft 登录 client id"
-              hint="Azure 应用的公开客户端 ID（GUID）。留空则保持登录禁用；这不是密钥。"
+              label={t("Microsoft 登录 client id")}
+              hint={t("Azure 应用的公开客户端 ID（GUID）。留空则保持登录禁用；这不是密钥。")}
             >
               <input
                 className="mono"
@@ -334,7 +354,7 @@ export function SettingsPage() {
                 placeholder="00000000-0000-0000-0000-000000000000"
               />
             </Field>
-            <Field label="语言" hint="当前版本仅提供简体中文界面。">
+            <Field label={t("语言")} hint={t("当前版本仅提供简体中文界面。")}>
               <input value="简体中文 (zh-CN)" readOnly disabled />
             </Field>
           </Card>
@@ -342,37 +362,35 @@ export function SettingsPage() {
           <Card>
             <div className="card-head">
               <div>
-                <h3>Minecraft 联机（52FRP）</h3>
-                <p>使用 52FRP API 访问令牌连接账户；令牌只保存在系统凭据库。</p>
+                <h3>{t("Minecraft 联机（52FRP）")}</h3>
+                <p>{t("使用 52FRP API 访问令牌连接账户；令牌只保存在系统凭据库。")}</p>
               </div>
               <Badge tone={frpConfigured ? "success" : "warning"}>
-                {frpConfigured ? "已连接" : "未连接"}
+                {frpConfigured ? t("已连接") : t("未连接")}
               </Badge>
             </div>
             <Field
-              label="52FRP API 访问令牌"
-              hint="登录 52FRP 个人中心，在「API 访问令牌」创建（以 hz_ 开头，只显示一次）。不要填账号密码或 FRPC token。"
+              label={t("52FRP API 访问令牌")}
+              hint={t("登录 52FRP 个人中心，在「API 访问令牌」创建（以 hz_ 开头，只显示一次）。不要填账号密码或 FRPC token。")}
             >
               <input
                 type="password"
                 value={frpToken}
                 onChange={(e) => setFrpToken(e.target.value)}
-                placeholder={frpConfigured ? "已保存令牌，输入新令牌可替换" : "hz_..."}
+                placeholder={frpConfigured ? t("已保存令牌，输入新令牌可替换") : "hz_..."}
                 autoComplete="off"
               />
             </Field>
             <div className="toolbar__actions">
               <Button size="sm" variant="primary" loading={frpBusy} disabled={!frpToken.trim()} onClick={saveFrpToken}>
-                验证并保存
-              </Button>
+                {t("验证并保存")}</Button>
               <Button
                 size="sm"
                 variant="ghost"
                 disabled={!frpConfigured || frpBusy}
                 onClick={clearFrpToken}
               >
-                退出账户
-              </Button>
+                {t("退出账户")}</Button>
               <Button
                 size="sm"
                 variant="ghost"
@@ -381,15 +399,14 @@ export function SettingsPage() {
                     .openTrustedUrl("https://www.52frp.com/user/#/user-center")
                     .catch((e) =>
                       pushToast(
-                        "无法打开 52FRP 个人中心",
+                        t("无法打开 52FRP 个人中心"),
                         "warning",
                         e instanceof Error ? e.message : undefined,
                       ),
                     )
                 }
               >
-                打开令牌页面
-              </Button>
+                {t("打开令牌页面")}</Button>
             </div>
             {frpMessage ? <p className="muted small">{frpMessage}</p> : null}
           </Card>
@@ -399,17 +416,15 @@ export function SettingsPage() {
               <div>
                 <h3>CurseForge API</h3>
                 <p>
-                  搜索 CurseForge 模组 / 整合包 / 光影 / 材质 / 地图，以及解析 CurseForge
-                  `manifest.zip` 整合包。默认使用随启动器发布的内置公共 key，开箱即用。
-                </p>
+                  {t("搜索 CurseForge 模组 / 整合包 / 光影 / 材质 / 地图，以及解析 CurseForge `manifest.zip` 整合包。默认使用随启动器发布的内置公共 key，开箱即用。")}</p>
               </div>
               <Badge tone="success">
-                {cfSource === "custom" ? "个人 key" : "内置公共 key"}
+                {cfSource === "custom" ? t("个人 key") : t("内置公共 key")}
               </Badge>
             </div>
             <Field
-              label="个人 API key（可选）"
-              hint="默认使用内置公共 key，搜索时不会访问系统钥匙串。只有保存个人 key 后才会读写钥匙串（macOS 可能会询问一次权限）。个人 key 只保存在系统凭据库，不写入 settings.json，也不会出现在日志中。"
+              label={t("个人 API key（可选）")}
+              hint={t("默认使用内置公共 key，搜索时不会访问系统钥匙串。只有保存个人 key 后才会读写钥匙串（macOS 可能会询问一次权限）。个人 key 只保存在系统凭据库，不写入 settings.json，也不会出现在日志中。")}
             >
               <input
                 type="password"
@@ -417,27 +432,24 @@ export function SettingsPage() {
                 onChange={(e) => setCfKey(e.target.value)}
                 placeholder={
                   cfSource === "custom"
-                    ? "已配置个人 key，输入新 key 可替换"
-                    : "可选：粘贴自己的 CurseForge API key"
+                    ? t("已配置个人 key，输入新 key 可替换")
+                    : t("可选：粘贴自己的 CurseForge API key")
                 }
                 autoComplete="off"
               />
             </Field>
             <div className="toolbar__actions">
               <Button size="sm" loading={cfBusy} disabled={!cfKey.trim()} onClick={saveCurseForgeKey}>
-                保存 key
-              </Button>
+                {t("保存 key")}</Button>
               <Button size="sm" variant="ghost" loading={cfBusy} onClick={testCurseForgeKey}>
-                测试连接
-              </Button>
+                {t("测试连接")}</Button>
               <Button
                 size="sm"
                 variant="ghost"
                 disabled={cfSource !== "custom" || cfBusy}
                 onClick={clearCurseForgeKey}
               >
-                清除个人 key
-              </Button>
+                {t("清除个人 key")}</Button>
               <Button
                 size="sm"
                 variant="ghost"
@@ -446,15 +458,14 @@ export function SettingsPage() {
                     .openTrustedUrl("https://console.curseforge.com/")
                     .catch((e) =>
                       pushToast(
-                        "无法打开申请页",
+                        t("无法打开申请页"),
                         "warning",
                         e instanceof Error ? e.message : undefined,
                       ),
                     )
                 }
               >
-                申请地址
-              </Button>
+                {t("申请地址")}</Button>
             </div>
             {cfMessage ? <p className="muted small">{cfMessage}</p> : null}
           </Card>
@@ -462,24 +473,23 @@ export function SettingsPage() {
           <Card>
             <div className="card-head">
               <div>
-                <h3>鸦鸭 AI 助手（DeepSeek）</h3>
+                <h3>{t("鸦鸭 AI 助手（DeepSeek）")}</h3>
                 <p>
-                  API key 只保存在系统凭据库；模型与地址写入本地设置。未配置时助手仍可做本地日志分析。
-                </p>
+                  {t("API key 只保存在系统凭据库；模型与地址写入本地设置。未配置时助手仍可做本地日志分析。")}</p>
               </div>
               <Badge tone={dsConfigured ? "success" : "warning"}>
-                {dsConfigured ? "已配置" : "未配置"}
+                {dsConfigured ? t("已配置") : t("未配置")}
               </Badge>
             </div>
             <div className="form-grid">
-              <Field label="模型">
+              <Field label={t("模型")}>
                 <input
                   value={form.assistantModel}
                   onChange={(e) => patch({ assistantModel: e.target.value })}
                   placeholder="deepseek-chat"
                 />
               </Field>
-              <Field label="API 地址" hint="必须是 https；默认 https://api.deepseek.com">
+              <Field label={t("API 地址")} hint={t("必须是 https；默认 https://api.deepseek.com")}>
                 <input
                   value={form.assistantBaseUrl}
                   onChange={(e) => patch({ assistantBaseUrl: e.target.value })}
@@ -490,34 +500,30 @@ export function SettingsPage() {
             </div>
             <Field
               label="DeepSeek API key"
-              hint="只保存在系统凭据库，不写入 settings.json，也不会出现在日志中。macOS 可能询问一次钥匙串权限。"
+              hint={t("只保存在系统凭据库，不写入 settings.json，也不会出现在日志中。macOS 可能询问一次钥匙串权限。")}
             >
               <input
                 type="password"
                 value={dsKey}
                 onChange={(e) => setDsKey(e.target.value)}
-                placeholder={dsConfigured ? "已配置，输入新 key 可替换" : "粘贴 DeepSeek API key"}
+                placeholder={dsConfigured ? t("已配置，输入新 key 可替换") : t("粘贴 DeepSeek API key")}
                 autoComplete="off"
               />
             </Field>
             <div className="toolbar__actions">
               <Button size="sm" loading={dsBusy} disabled={!dsKey.trim()} onClick={saveDeepSeekKey}>
-                保存 key
-              </Button>
+                {t("保存 key")}</Button>
               <Button size="sm" variant="ghost" loading={dsBusy} onClick={testDeepSeekKey}>
-                测试连接
-              </Button>
+                {t("测试连接")}</Button>
               <Button
                 size="sm"
                 variant="ghost"
                 disabled={!dsConfigured || dsBusy}
                 onClick={clearDeepSeekKey}
               >
-                清除
-              </Button>
+                {t("清除")}</Button>
               <Button size="sm" variant="ghost" onClick={save} disabled={!dirty || saving}>
-                保存模型配置
-              </Button>
+                {t("保存模型配置")}</Button>
               <Button
                 size="sm"
                 variant="ghost"
@@ -526,15 +532,14 @@ export function SettingsPage() {
                     .openTrustedUrl("https://platform.deepseek.com/api_keys")
                     .catch((e) =>
                       pushToast(
-                        "无法打开 DeepSeek 控制台",
+                        t("无法打开 DeepSeek 控制台"),
                         "warning",
                         e instanceof Error ? e.message : undefined,
                       ),
                     )
                 }
               >
-                申请 key
-              </Button>
+                {t("申请 key")}</Button>
             </div>
             {dsMessage ? <p className="muted small">{dsMessage}</p> : null}
           </Card>
@@ -542,53 +547,48 @@ export function SettingsPage() {
           <Card>
             <div className="card-head">
               <div>
-                <h3>数据与隐私</h3>
-                <p>本地优先：不上传账号令牌、游戏日志或诊断报告。</p>
+                <h3>{t("数据与隐私")}</h3>
+                <p>{t("本地优先：不上传账号令牌、游戏日志或诊断报告。")}</p>
               </div>
               <Icon name="shield" size={20} />
             </div>
             <ul className="plain-list">
-              <li>账号档案只保存用户名与本地 UUID，令牌仅存于系统凭据库（当前版本不写入令牌）。</li>
-              <li>诊断报告在导出前会进行预览与脱敏。</li>
-              <li>没有内置遥测；不会自动上传任何数据。</li>
+              <li>{t("账号档案只保存用户名与本地 UUID，令牌仅存于系统凭据库（当前版本不写入令牌）。")}</li>
+              <li>{t("诊断报告在导出前会进行预览与脱敏。")}</li>
+              <li>{t("没有内置遥测；不会自动上传任何数据。")}</li>
             </ul>
             <Button size="sm" variant="ghost" icon="trash" onClick={clearTasks}>
-              清除已完成的任务记录
-            </Button>
+              {t("清除已完成的任务记录")}</Button>
           </Card>
         </div>
 
         <div className="settings-side">
           <Card>
-            <h3>路径</h3>
+            <h3>{t("路径")}</h3>
             <div className="path-row">
-              <span>应用数据</span>
+              <span>{t("应用数据")}</span>
               <code title={bootstrap.paths.dataDir}>{bootstrap.paths.dataDir}</code>
               <Button size="sm" variant="ghost" icon="copy" onClick={() => copy(bootstrap.paths.dataDir)}>
-                复制
-              </Button>
+                {t("复制")}</Button>
             </div>
             <div className="path-row">
-              <span>游戏目录</span>
+              <span>{t("游戏目录")}</span>
               <code title={bootstrap.paths.gameDir}>{bootstrap.paths.gameDir}</code>
               <Button size="sm" variant="ghost" icon="copy" onClick={() => copy(bootstrap.paths.gameDir)}>
-                复制
-              </Button>
+                {t("复制")}</Button>
             </div>
             <div className="path-row">
-              <span>日志</span>
+              <span>{t("日志")}</span>
               <code title={bootstrap.paths.logsDir}>{bootstrap.paths.logsDir}</code>
               <Button size="sm" variant="ghost" icon="copy" onClick={() => copy(bootstrap.paths.logsDir)}>
-                复制
-              </Button>
+                {t("复制")}</Button>
             </div>
           </Card>
 
 
           <Card>
             <p className="about-signature">
-              SRL (Structural Recomposition Launcher) V{bootstrap.appVersion} 结构重组
-            </p>
+              SRL (Structural Recomposition Launcher) V{bootstrap.appVersion} {t("结构重组")}</p>
           </Card>
         </div>
       </div>

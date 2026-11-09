@@ -1,6 +1,8 @@
 import { useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "./Icon";
+import { t } from "../lib/i18n";
+
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "md" | "sm";
@@ -119,7 +121,7 @@ export function ProgressBar({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={indeterminate ? undefined : Math.round(value)}
-        aria-label={label ?? "进度"}
+        aria-label={label ?? t("进度")}
       >
         <div className="progress__bar" style={indeterminate ? undefined : { width: `${value}%` }} />
       </div>
@@ -155,7 +157,7 @@ export function InfoHint({ text }: { text: string }) {
         ref={ref}
         type="button"
         className="info-hint"
-        aria-label={`说明：${text}`}
+        aria-label={t("说明：{0}", [text])}
         title={text}
         onMouseEnter={show}
         onMouseLeave={hide}

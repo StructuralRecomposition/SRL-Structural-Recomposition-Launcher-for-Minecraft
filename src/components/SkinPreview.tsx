@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SkinModel } from "../lib/api";
+import { t } from "../lib/i18n";
+
 
 function useSkinImage(src?: string | null) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -138,7 +140,7 @@ export function SkinFigure({
       height={32 * scale}
       className={`skin-canvas ${className}`}
       style={{ height, width: "auto" }}
-      aria-label="皮肤预览"
+      aria-label={t("皮肤预览")}
     />
   );
 }

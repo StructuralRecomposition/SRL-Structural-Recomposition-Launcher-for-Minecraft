@@ -1,4 +1,6 @@
 import type { InstalledVersion } from "./api";
+import { t } from "./i18n";
+
 
 export type VersionBucket =
   | "release"
@@ -19,12 +21,12 @@ export function versionBucket(v: InstalledVersion): VersionBucket {
 
 export function versionBucketLabel(v: InstalledVersion): string {
   const bucket = versionBucket(v);
-  if (bucket === "loader") return v.loader ?? "加载器";
-  if (bucket === "release") return "正式版";
-  if (bucket === "snapshot") return "快照";
-  if (bucket === "old_beta") return "旧版 Beta";
-  if (bucket === "old_alpha") return "旧版 Alpha";
-  return "未知类型";
+  if (bucket === "loader") return v.loader ?? t("加载器");
+  if (bucket === "release") return t("正式版");
+  if (bucket === "snapshot") return t("快照");
+  if (bucket === "old_beta") return t("旧版 Beta");
+  if (bucket === "old_alpha") return t("旧版 Alpha");
+  return t("未知类型");
 }
 
 export function versionBucketTone(
@@ -41,13 +43,13 @@ export function versionBucketTone(
 export function manifestTypeLabel(type: string): string {
   switch (type) {
     case "release":
-      return "正式版";
+      return t("正式版");
     case "snapshot":
-      return "快照";
+      return t("快照");
     case "old_beta":
-      return "旧版 Beta";
+      return t("旧版 Beta");
     case "old_alpha":
-      return "旧版 Alpha";
+      return t("旧版 Alpha");
     default:
       return type;
   }

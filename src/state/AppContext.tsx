@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { getLanguage, normalizeLanguage, setLanguage } from "../lib/i18n";
 import {
   api,
   ApiError,
@@ -18,6 +19,8 @@ import {
   type TaskView,
 } from "../lib/api";
 import type { ToastItem, ToastTone } from "../components/Toast";
+import { t as tr } from "../lib/i18n";
+
 
 export type PageId =
   | "home"
@@ -110,6 +113,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const data = await api.bootstrap();
       setBootstrap(data);
       setThemeState(resolveTheme(data.settings.theme));
+      const language = normalizeLanguage(data.settings.language);
+      if (language !== getLanguage() && sessionStorage.getItem("srl.lang-reloaded") !== "1") {
+        sessionStorage.setItem("srl.lang-reloaded", "1");
+        setLanguage(language);
+        window.location.reload();
+        return;
+      }
       setRunning(new Set(data.runningInstances));
       setError(null);
       const initialTasks = await api.listTasks();
@@ -193,7 +203,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return next;
         });
         pushToast(
-          event.code === 0 ? "游戏已退出" : "游戏进程已结束",
+          event.code === 0 ? tr("游戏已退出") : tr("游戏进程已结束"),
           event.code === 0 ? "info" : "warning",
           event.message ?? undefined,
         );
@@ -233,7 +243,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const saved = await api.updateSettings(settings);
         updateBootstrap((b) => ({ ...b, settings: saved }));
       } catch (e) {
-        pushToast("主题已应用，但未能保存", "warning", e instanceof Error ? e.message : undefined);
+        pushToast(tr("主题已应用，但未能保存"), "warning", e instanceof Error ? e.message : undefined);
       }
     },
     [bootstrap, pushToast, updateBootstrap],

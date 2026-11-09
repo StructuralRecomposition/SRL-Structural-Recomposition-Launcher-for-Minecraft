@@ -6,6 +6,8 @@ import { useApp } from "../state/AppContext";
 import { Badge, Button, Card, EmptyState, ProgressBar } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { formatSpeed } from "../lib/format";
+import { t as tr } from "../lib/i18n";
+
 
 export function HomePage() {
   const {
@@ -73,7 +75,7 @@ export function HomePage() {
   async function launch() {
     if (!instance) return;
     if (!activeAccount) {
-      pushToast("请先添加并选择一个账号", "warning", "离线档案可用于本地游戏。");
+      pushToast(tr("请先添加并选择一个账号"), "warning", tr("离线档案可用于本地游戏。"));
       setPage("accounts");
       return;
     }
@@ -82,9 +84,9 @@ export function HomePage() {
     try {
       const result = await api.launchInstance(instance.id);
       markRunning(instance.id, true);
-      pushToast("游戏进程已启动", "success", `PID ${result.pid}`);
+      pushToast(tr("游戏进程已启动"), "success", `PID ${result.pid}`);
       if (result.warnings.length) {
-        pushToast("启动前检查有提示", "warning", result.warnings.join("；"));
+        pushToast(tr("启动前检查有提示"), "warning", result.warnings.join("；"));
       }
       updateBootstrap((b) => ({
         ...b,
@@ -93,7 +95,7 @@ export function HomePage() {
         ),
       }));
     } catch (e) {
-      pushToast("启动失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(tr("启动失败"), "error", e instanceof Error ? e.message : String(e));
     } finally {
       setLaunching(false);
     }
@@ -103,9 +105,9 @@ export function HomePage() {
     if (!instance) return;
     try {
       await api.stopInstance(instance.id);
-      pushToast("正在终止游戏进程", "warning");
+      pushToast(tr("正在终止游戏进程"), "warning");
     } catch (e) {
-      pushToast("无法终止进程", "error", e instanceof Error ? e.message : String(e));
+      pushToast(tr("无法终止进程"), "error", e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -114,18 +116,15 @@ export function HomePage() {
       <div className="page">
         <section className="hero">
           <div>
-            <span className="eyebrow">结构重组 · Structural Recomposition</span>
-            <h2>从第一个独立实例开始</h2>
+            <span className="eyebrow">{tr("结构重组 · Structural Recomposition")}</span>
+            <h2>{tr("从第一个独立实例开始")}</h2>
             <p>
-              安装一个官方 Minecraft 版本，然后创建实例。每个实例拥有独立的游戏目录、Java 与内存配置。
-            </p>
+              {tr("安装一个官方 Minecraft 版本，然后创建实例。每个实例拥有独立的游戏目录、Java 与内存配置。")}</p>
             <div className="hero__actions">
               <Button variant="primary" icon="layers" onClick={() => setPage("versions")}>
-                安装游戏版本
-              </Button>
+                {tr("安装游戏版本")}</Button>
               <Button icon="box" onClick={() => setPage("instances")}>
-                查看实例
-              </Button>
+                {tr("查看实例")}</Button>
             </div>
           </div>
           <div className="hero__mark" aria-hidden="true">
@@ -138,24 +137,24 @@ export function HomePage() {
         <div className="grid-3">
           <Card>
             <div className="stat">
-              <span>已安装版本</span>
+              <span>{tr("已安装版本")}</span>
               <strong>{bootstrap?.installedVersions.length ?? 0}</strong>
             </div>
-            <p className="muted">从 Mojang 官方源下载并校验。</p>
+            <p className="muted">{tr("从 Mojang 官方源下载并校验。")}</p>
           </Card>
           <Card>
             <div className="stat">
-              <span>Java 环境</span>
+              <span>{tr("Java 环境")}</span>
               <strong>{bootstrap?.java.length ?? 0}</strong>
             </div>
-            <p className="muted">自动发现本机 Java，不修改系统安装。</p>
+            <p className="muted">{tr("自动发现本机 Java，不修改系统安装。")}</p>
           </Card>
           <Card>
             <div className="stat">
-              <span>账号档案</span>
+              <span>{tr("账号档案")}</span>
               <strong>{accounts.length}</strong>
             </div>
-            <p className="muted">离线档案仅用于本地游戏，不冒充正版。</p>
+            <p className="muted">{tr("离线档案仅用于本地游戏，不冒充正版。")}</p>
           </Card>
         </div>
       </div>
@@ -166,7 +165,7 @@ export function HomePage() {
     <div className="page">
       <div className="home-top">
         <div className="instance-switcher">
-          <label htmlFor="instance-select">当前实例</label>
+          <label htmlFor="instance-select">{tr("当前实例")}</label>
           <div className="select-wrap">
             <select
               id="instance-select"
@@ -184,9 +183,9 @@ export function HomePage() {
         </div>
         <div className="home-top__meta">
           <Badge tone={isRunning ? "success" : "neutral"}>
-            {isRunning ? "运行中" : "未运行"}
+            {isRunning ? tr("运行中") : tr("未运行")}
           </Badge>
-          <span className="muted">上次启动 {relativeTime(instance?.lastLaunchedAt)}</span>
+          <span className="muted">{tr("上次启动")}{relativeTime(instance?.lastLaunchedAt)}</span>
         </div>
       </div>
 
@@ -202,9 +201,9 @@ export function HomePage() {
                   {instance.modLoader.kind} {instance.modLoader.version}
                 </Badge>
               ) : (
-                <Badge>原版</Badge>
+                <Badge>{tr("原版")}</Badge>
               )}
-              <Badge>{instance?.memoryMb} MB 内存</Badge>
+              <Badge>{instance?.memoryMb} {tr("MB 内存")}</Badge>
               {detail?.javaCheck ? (
                 <Badge
                   tone={
@@ -215,7 +214,7 @@ export function HomePage() {
                         : "danger"
                   }
                 >
-                  Java {detail.javaCheck.actualMajor} / 需要 {detail.javaCheck.requiredMajor}+
+                  Java {detail.javaCheck.actualMajor} {tr("/ 需要")}{detail.javaCheck.requiredMajor}+
                 </Badge>
               ) : null}
             </div>
@@ -223,8 +222,7 @@ export function HomePage() {
           <div className="launch-card__actions">
             {isRunning ? (
               <Button variant="danger" icon="stop" onClick={stop}>
-                终止游戏
-              </Button>
+                {tr("终止游戏")}</Button>
             ) : (
               <Button
                 variant="primary"
@@ -232,39 +230,37 @@ export function HomePage() {
                 loading={launching}
                 onClick={launch}
                 disabled={!activeAccount}
-                title={!activeAccount ? "请先选择账号" : undefined}
+                title={!activeAccount ? tr("请先选择账号") : undefined}
               >
-                启动游戏
-              </Button>
+                {tr("启动游戏")}</Button>
             )}
             <Button icon="settings" onClick={() => setPage("instances")}>
-              实例设置
-            </Button>
+              {tr("实例设置")}</Button>
           </div>
         </div>
 
         <div className="launch-card__stats">
           <div>
             <span>Java</span>
-            <strong title={instance?.javaPath ?? "自动选择"}>
-              {instance?.javaPath ? "手动指定" : detail?.javaCheck ? `Java ${detail.javaCheck.actualMajor}` : "自动"}
+            <strong title={instance?.javaPath ?? tr("自动选择")}>
+              {instance?.javaPath ? tr("手动指定") : detail?.javaCheck ? `Java ${detail.javaCheck.actualMajor}` : tr("自动")}
             </strong>
           </div>
           <div>
-            <span>游戏目录</span>
+            <span>{tr("游戏目录")}</span>
             <strong className="mono ellipsis" title={instance?.gameDir}>
               {instance?.gameDir}
             </strong>
           </div>
           <div>
-            <span>文件完整性</span>
+            <span>{tr("文件完整性")}</span>
             <strong>
-              {detail ? (detail.installed ? "完整" : `${detail.issues.length} 项缺失`) : "检查中…"}
+              {detail ? (detail.installed ? tr("完整") : tr("{0} 项缺失", [detail.issues.length])) : tr("检查中…")}
             </strong>
           </div>
           <div>
-            <span>账号</span>
-            <strong>{activeAccount ? activeAccount.username : "未选择"}</strong>
+            <span>{tr("账号")}</span>
+            <strong>{activeAccount ? activeAccount.username : tr("未选择")}</strong>
           </div>
         </div>
 
@@ -272,24 +268,22 @@ export function HomePage() {
           <div className="notice notice--warning">
             <Icon name="alert" size={17} />
             <div>
-              <strong>版本文件不完整</strong>
+              <strong>{tr("版本文件不完整")}</strong>
               <p>{detail.issues.slice(0, 3).join("；")}</p>
             </div>
             <Button size="sm" onClick={() => setPage("versions")}>
-              去修复
-            </Button>
+              {tr("去修复")}</Button>
           </div>
         ) : null}
         {!activeAccount ? (
           <div className="notice">
             <Icon name="user" size={17} />
             <div>
-              <strong>还没有可用账号</strong>
-              <p>离线档案可以在本地启动游戏，但不会被当作已验证的正版账号。</p>
+              <strong>{tr("还没有可用账号")}</strong>
+              <p>{tr("离线档案可以在本地启动游戏，但不会被当作已验证的正版账号。")}</p>
             </div>
             <Button size="sm" onClick={() => setPage("accounts")}>
-              添加账号
-            </Button>
+              {tr("添加账号")}</Button>
           </div>
         ) : null}
       </section>
@@ -298,16 +292,15 @@ export function HomePage() {
         <Card className="console-card">
           <div className="card-head">
             <div>
-              <h3>启动日志</h3>
-              <p>来自游戏进程的真实 stdout / stderr，令牌已脱敏。</p>
+              <h3>{tr("启动日志")}</h3>
+              <p>{tr("来自游戏进程的真实 stdout / stderr，令牌已脱敏。")}</p>
             </div>
             <div className="card-head__actions">
               <Button size="sm" variant="ghost" onClick={() => setLogOpen((v) => !v)}>
-                {logOpen ? "收起" : "展开"}
+                {logOpen ? tr("收起") : tr("展开")}
               </Button>
               <Button size="sm" variant="ghost" icon="trash" onClick={clearLaunchEvents}>
-                清空
-              </Button>
+                {tr("清空")}</Button>
             </div>
           </div>
           {logOpen ? (
@@ -326,12 +319,12 @@ export function HomePage() {
                 )}
               </pre>
             ) : (
-              <p className="console console--empty">启动游戏后，日志会显示在这里。</p>
+              <p className="console console--empty">{tr("启动游戏后，日志会显示在这里。")}</p>
             )
           ) : (
             <button className="console-preview" onClick={() => setLogOpen(true)}>
               <Icon name="terminal" size={16} />
-              <span>{events.length > 0 ? `查看最近 ${Math.min(events.length, 400)} 行输出` : "打开日志面板"}</span>
+              <span>{events.length > 0 ? tr("查看最近 {0} 行输出", [Math.min(events.length, 400)]) : tr("打开日志面板")}</span>
             </button>
           )}
         </Card>
@@ -339,18 +332,17 @@ export function HomePage() {
         <Card>
           <div className="card-head">
             <div>
-              <h3>最近活动</h3>
-              <p>下载与安装任务的真实状态。</p>
+              <h3>{tr("最近活动")}</h3>
+              <p>{tr("下载与安装任务的真实状态。")}</p>
             </div>
             <Button size="sm" variant="ghost" onClick={() => setPage("tasks")}>
-              全部
-            </Button>
+              {tr("全部")}</Button>
           </div>
           {recentTasks.length === 0 ? (
             <EmptyState
               icon="download"
-              title="还没有任务"
-              description="安装版本或校验文件后，这里会显示真实的任务记录。"
+              title={tr("还没有任务")}
+              description={tr("安装版本或校验文件后，这里会显示真实的任务记录。")}
             />
           ) : (
             <ul className="activity">
@@ -378,14 +370,14 @@ export function HomePage() {
             <div className="notice notice--danger">
               <Icon name="alert" size={16} />
               <div>
-                <strong>最近有失败任务</strong>
-                <p>{failed[0].error?.message ?? "下载失败"}</p>
+                <strong>{tr("最近有失败任务")}</strong>
+                <p>{failed[0].error?.message ?? tr("下载失败")}</p>
               </div>
             </div>
           ) : null}
           {activeTasks.length > 0 ? (
             <div className="card-foot muted">
-              {activeTasks.length} 个任务进行中 · 并发上限 {bootstrap?.settings.maxConcurrentDownloads}
+              {activeTasks.length} {tr("个任务进行中 · 并发上限")}{bootstrap?.settings.maxConcurrentDownloads}
             </div>
           ) : null}
         </Card>

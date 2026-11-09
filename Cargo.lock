@@ -3752,7 +3752,7 @@ dependencies = [
 
 [[package]]
 name = "sr-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3783,7 +3783,7 @@ dependencies = [
 
 [[package]]
 name = "sr-launcher"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "percent-encoding",

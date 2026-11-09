@@ -21,24 +21,26 @@ import { Badge, Button, Card, EmptyState, Field, IconButton } from "../component
 import { Modal } from "../components/Modal";
 import { Icon } from "../components/Icon";
 import { InstallVersionModal } from "../components/InstallVersionModal";
+import { t as tr } from "../lib/i18n";
+
 
 type Tab = "download" | "installed";
 type DownloadKind = "release" | "snapshot" | "old_beta" | "old_alpha";
 type LocalFilter = "all" | "release" | "snapshot" | "legacy" | "loader";
 
 const DOWNLOAD_TABS: [DownloadKind, string][] = [
-  ["release", "正式版"],
-  ["snapshot", "快照"],
-  ["old_beta", "旧版 Beta"],
-  ["old_alpha", "旧版 Alpha"],
+  ["release", tr("正式版")],
+  ["snapshot", tr("快照")],
+  ["old_beta", tr("旧版 Beta")],
+  ["old_alpha", tr("旧版 Alpha")],
 ];
 
 const LOCAL_TABS: [LocalFilter, string][] = [
-  ["all", "全部"],
-  ["release", "正式版"],
-  ["snapshot", "快照"],
-  ["legacy", "旧版"],
-  ["loader", "加载器"],
+  ["all", tr("全部")],
+  ["release", tr("正式版")],
+  ["snapshot", tr("快照")],
+  ["legacy", tr("旧版")],
+  ["loader", tr("加载器")],
 ];
 
 export function VersionsPage() {
@@ -170,7 +172,7 @@ export function VersionsPage() {
     try {
       setDetail(await api.versionDetail(versionId));
     } catch (e) {
-      pushToast("读取版本详情失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(tr("读取版本详情失败"), "error", e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -179,7 +181,7 @@ export function VersionsPage() {
     try {
       setVerify(await api.verifyVersion(versionId, false));
     } catch (e) {
-      pushToast("校验失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(tr("校验失败"), "error", e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -187,7 +189,7 @@ export function VersionsPage() {
 
   function openConfig(version: InstalledVersion) {
     setConfiguring(version);
-    setConfigName(`${version.id} 实例`);
+    setConfigName(tr("{0} 实例", [version.id]));
     setConfigMemory(4096);
     setConfigError(null);
   }
@@ -196,7 +198,7 @@ export function VersionsPage() {
     if (!configuring) return;
     setConfigError(null);
     if (!configName.trim()) {
-      setConfigError("请输入实例名称");
+      setConfigError(tr("请输入实例名称"));
       return;
     }
     setBusy("create");
@@ -207,7 +209,7 @@ export function VersionsPage() {
         memoryMb: configMemory,
       });
       setConfiguring(null);
-      pushToast("实例已创建", "success", inst.name);
+      pushToast(tr("实例已创建"), "success", inst.name);
       await reload();
       setPage("instances");
     } catch (e) {
@@ -221,7 +223,7 @@ export function VersionsPage() {
     try {
       await api.openLauncherPath(versionId ? "versionDir" : "versionsDir", versionId);
     } catch (e) {
-      pushToast("无法打开文件夹", "error", e instanceof Error ? e.message : String(e));
+      pushToast(tr("无法打开文件夹"), "error", e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -244,10 +246,10 @@ export function VersionsPage() {
     try {
       const result = await api.deleteVersion(deleting.id, deleteForce);
       pushToast(
-        "版本已删除",
+        tr("版本已删除"),
         "info",
         result.deleted.length > 1
-          ? `同时删除 ${result.deleted.length - 1} 个继承版本`
+          ? tr("同时删除 {0} 个继承版本", [result.deleted.length - 1])
           : deleting.id,
       );
       setDeleting(null);
@@ -268,27 +270,23 @@ export function VersionsPage() {
     <div className="page">
       <div className="toolbar">
         <div>
-          <h2>版本管理</h2>
+          <h2>{tr("版本管理")}</h2>
           <p className="muted">
-            下载列表按正式版 / 快照 / 旧版分开；已安装列表直接读取{" "}
-            <span className="mono">versions/</span> 目录，可打开文件夹、创建实例或删除。
-          </p>
+            {tr("下载列表按正式版 / 快照 / 旧版分开；已安装列表直接读取")}{" "}
+            <span className="mono">versions/</span> {tr("目录，可打开文件夹、创建实例或删除。")}</p>
         </div>
         <div className="toolbar__actions">
-          <label className="inline-check inline-check--chip" title="正式版资源通常 300–600 MB、数千个文件">
+          <label className="inline-check inline-check--chip" title={tr("正式版资源通常 300–600 MB、数千个文件")}>
             <input
               type="checkbox"
               checked={installAssets}
               onChange={(e) => setInstallAssets(e.target.checked)}
             />
-            下载资源文件（约数百 MB）
-          </label>
+            {tr("下载资源文件（约数百 MB）")}</label>
           <Button icon="folder" onClick={() => void openFolder()}>
-            打开 versions
-          </Button>
+            {tr("打开 versions")}</Button>
           <Button icon="refresh" onClick={() => void load(true)} loading={loading}>
-            刷新列表
-          </Button>
+            {tr("刷新列表")}</Button>
         </div>
       </div>
 
@@ -297,13 +295,12 @@ export function VersionsPage() {
           className={tab === "download" ? "version-tab version-tab--active" : "version-tab"}
           onClick={() => setTab("download")}
         >
-          下载版本
-        </button>
+          {tr("下载版本")}</button>
         <button
           className={tab === "installed" ? "version-tab version-tab--active" : "version-tab"}
           onClick={() => setTab("installed")}
         >
-          已安装 <span className="version-tab__count">{installed.length}</span>
+          {tr("已安装")}<span className="version-tab__count">{installed.length}</span>
         </button>
       </div>
 
@@ -313,7 +310,7 @@ export function VersionsPage() {
             <div className="notice notice--warning">
               <Icon name="alert" size={17} />
               <div>
-                <strong>网络提示</strong>
+                <strong>{tr("网络提示")}</strong>
                 <p>{data.warning}</p>
               </div>
             </div>
@@ -322,12 +319,11 @@ export function VersionsPage() {
             <div className="notice notice--danger">
               <Icon name="alert" size={17} />
               <div>
-                <strong>无法读取版本列表</strong>
+                <strong>{tr("无法读取版本列表")}</strong>
                 <p>{error}</p>
               </div>
               <Button size="sm" onClick={() => void load(true)}>
-                重试
-              </Button>
+                {tr("重试")}</Button>
             </div>
           ) : null}
 
@@ -340,9 +336,9 @@ export function VersionsPage() {
                   setSearch(latestRelease);
                 }}
               >
-                <span>最新正式版</span>
+                <span>{tr("最新正式版")}</span>
                 <strong>{latestRelease}</strong>
-                <small>稳定版本 · 推荐</small>
+                <small>{tr("稳定版本 · 推荐")}</small>
               </button>
               <button
                 className="latest-card latest-card--snapshot"
@@ -351,16 +347,16 @@ export function VersionsPage() {
                   setSearch(latestSnapshot);
                 }}
               >
-                <span>最新快照</span>
+                <span>{tr("最新快照")}</span>
                 <strong>{latestSnapshot}</strong>
-                <small>测试版本 · 可能不稳定</small>
+                <small>{tr("测试版本 · 可能不稳定")}</small>
               </button>
             </div>
           ) : null}
 
           <Card className="versions-card">
             <div className="versions-toolbar">
-              <div className="segmented" role="tablist" aria-label="版本类型">
+              <div className="segmented" role="tablist" aria-label={tr("版本类型")}>
                 {DOWNLOAD_TABS.map(([id, label]) => (
                   <button
                     key={id}
@@ -382,20 +378,20 @@ export function VersionsPage() {
               <div className="search">
                 <Icon name="search" size={16} />
                 <input
-                  placeholder="搜索版本号…"
+                  placeholder={tr("搜索版本号…")}
                   value={search}
                   onChange={(e) => {
                     setSearch(e.target.value);
                     setLimit(120);
                   }}
-                  aria-label="搜索版本号"
+                  aria-label={tr("搜索版本号")}
                 />
               </div>
-              <span className="muted small">{visible.length} 个版本</span>
+              <span className="muted small">{visible.length} {tr("个版本")}</span>
             </div>
 
             {loading && !data ? (
-              <div className="list-skeleton" aria-label="加载中">
+              <div className="list-skeleton" aria-label={tr("加载中")}>
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="skeleton-row" />
                 ))}
@@ -403,8 +399,8 @@ export function VersionsPage() {
             ) : visible.length === 0 ? (
               <EmptyState
                 icon="layers"
-                title="没有匹配的版本"
-                description="切换上方类型标签或调整搜索关键字。"
+                title={tr("没有匹配的版本")}
+                description={tr("切换上方类型标签或调整搜索关键字。")}
               />
             ) : (
               <ul className="version-list">
@@ -416,8 +412,8 @@ export function VersionsPage() {
                       <div className="version-row__main">
                         <div className="version-row__id">
                           <strong>{v.id}</strong>
-                          {isInstalled ? <Badge tone="success">已安装</Badge> : null}
-                          {taskId ? <Badge tone="accent">安装中</Badge> : null}
+                          {isInstalled ? <Badge tone="success">{tr("已安装")}</Badge> : null}
+                          {taskId ? <Badge tone="accent">{tr("安装中")}</Badge> : null}
                         </div>
                         <div className="version-row__meta">
                           <Badge
@@ -437,8 +433,7 @@ export function VersionsPage() {
                       <div className="version-row__actions">
                         {isInstalled ? (
                           <Button size="sm" onClick={() => setTab("installed")}>
-                            管理
-                          </Button>
+                            {tr("管理")}</Button>
                         ) : (
                           <Button
                             size="sm"
@@ -447,7 +442,7 @@ export function VersionsPage() {
                             loading={busy === v.id || Boolean(taskId)}
                             onClick={() => setInstallTarget(v)}
                           >
-                            {taskId ? "安装中" : "安装"}
+                            {taskId ? tr("安装中") : tr("安装")}
                           </Button>
                         )}
                       </div>
@@ -459,7 +454,7 @@ export function VersionsPage() {
             {visible.length > limit ? (
               <div className="load-more">
                 <Button variant="ghost" onClick={() => setLimit((n) => n + 200)}>
-                  显示更多（剩余 {visible.length - limit}）
+                  {tr("显示更多（剩余")}{visible.length - limit}）
                 </Button>
               </div>
             ) : null}
@@ -468,7 +463,7 @@ export function VersionsPage() {
       ) : (
         <Card className="versions-card">
           <div className="versions-toolbar">
-            <div className="segmented" role="tablist" aria-label="本地版本类型">
+            <div className="segmented" role="tablist" aria-label={tr("本地版本类型")}>
               {LOCAL_TABS.map(([id, label]) => (
                 <button
                   key={id}
@@ -488,29 +483,28 @@ export function VersionsPage() {
             <div className="search">
               <Icon name="search" size={16} />
               <input
-                placeholder="搜索已安装版本…"
+                placeholder={tr("搜索已安装版本…")}
                 value={localSearch}
                 onChange={(e) => setLocalSearch(e.target.value)}
-                aria-label="搜索已安装版本"
+                aria-label={tr("搜索已安装版本")}
               />
             </div>
-            <span className="muted small">{localVisible.length} 个本地版本</span>
+            <span className="muted small">{localVisible.length} {tr("个本地版本")}</span>
           </div>
 
           {localVisible.length === 0 ? (
             <EmptyState
               icon="layers"
-              title={installed.length === 0 ? "还没有已安装的版本" : "没有匹配的本地版本"}
+              title={installed.length === 0 ? tr("还没有已安装的版本") : tr("没有匹配的本地版本")}
               description={
                 installed.length === 0
-                  ? "切换到“下载版本”安装一个正式版或快照。"
-                  : "调整筛选条件或搜索关键字。"
+                  ? tr("切换到“下载版本”安装一个正式版或快照。")
+                  : tr("调整筛选条件或搜索关键字。")
               }
               action={
                 installed.length === 0 ? (
                   <Button variant="primary" icon="download" onClick={() => setTab("download")}>
-                    去下载
-                  </Button>
+                    {tr("去下载")}</Button>
                 ) : undefined
               }
             />
@@ -526,14 +520,14 @@ export function VersionsPage() {
                       <div className="version-row__id">
                         <strong>{v.id}</strong>
                         <Badge tone={versionBucketTone(v)}>{versionBucketLabel(v)}</Badge>
-                        {!v.hasJar ? <Badge tone="danger">缺少 JAR</Badge> : null}
-                        {usage > 0 ? <Badge tone="info">{usage} 个实例</Badge> : null}
+                        {!v.hasJar ? <Badge tone="danger">{tr("缺少 JAR")}</Badge> : null}
+                        {usage > 0 ? <Badge tone="info">{usage} {tr("个实例")}</Badge> : null}
                       </div>
                       <div className="version-row__meta">
                         <span>{formatBytes(v.sizeBytes)}</span>
-                        <span>修改于 {formatDate(v.modifiedAt)}</span>
+                        <span>{tr("修改于")}{formatDate(v.modifiedAt)}</span>
                         {v.inheritsFrom ? (
-                          <span className="mono">继承自 {v.inheritsFrom}</span>
+                          <span className="mono">{tr("继承自")}{v.inheritsFrom}</span>
                         ) : null}
                         <span className="mono ellipsis" title={v.path}>
                           {v.path}
@@ -542,27 +536,24 @@ export function VersionsPage() {
                     </div>
                     <div className="version-row__actions">
                       <Button size="sm" variant="ghost" onClick={() => void showDetail(v.id)}>
-                        详情
-                      </Button>
+                        {tr("详情")}</Button>
                       <Button
                         size="sm"
                         variant="ghost"
                         loading={busy === v.id}
                         onClick={() => void runVerify(v.id)}
                       >
-                        检查
-                      </Button>
+                        {tr("检查")}</Button>
                       <Button size="sm" variant="ghost" onClick={() => openConfig(v)}>
-                        创建实例
-                      </Button>
+                        {tr("创建实例")}</Button>
                       <IconButton
                         icon="folder"
-                        label={`打开 ${v.id} 文件夹`}
+                        label={tr("打开 {0} 文件夹", [v.id])}
                         onClick={() => void openFolder(v.id)}
                       />
                       <IconButton
                         icon="trash"
-                        label={`删除 ${v.id}`}
+                        label={tr("删除 {0}", [v.id])}
                         onClick={() => void openDelete(v)}
                       />
                     </div>
@@ -577,46 +568,46 @@ export function VersionsPage() {
       <Modal
         open={detail !== null}
         onClose={() => setDetail(null)}
-        title={detail ? `版本详情 · ${detail.id}` : ""}
-        subtitle="来自本地已安装的版本元数据"
+        title={detail ? tr("版本详情 · {0}", [detail.id]) : ""}
+        subtitle={tr("来自本地已安装的版本元数据")}
       >
         {detail ? (
           <div className="detail-list">
             <div>
-              <span>主类</span>
+              <span>{tr("主类")}</span>
               <code>{detail.mainClass}</code>
             </div>
             <div>
-              <span>类型</span>
+              <span>{tr("类型")}</span>
               <strong>{detail.versionType}</strong>
             </div>
             <div>
-              <span>要求 Java</span>
+              <span>{tr("要求 Java")}</span>
               <strong>{detail.javaMajor}+</strong>
             </div>
             <div>
-              <span>库 / natives</span>
+              <span>{tr("库 / natives")}</span>
               <strong>
                 {detail.libraryCount} / {detail.nativeCount}
               </strong>
             </div>
             <div>
-              <span>参数格式</span>
-              <strong>{detail.legacyArguments ? "旧版 minecraftArguments" : "现代 arguments"}</strong>
+              <span>{tr("参数格式")}</span>
+              <strong>{detail.legacyArguments ? tr("旧版 minecraftArguments") : tr("现代 arguments")}</strong>
             </div>
             <div>
-              <span>文件状态</span>
-              <strong>{detail.installed ? "完整" : `${detail.issues.length} 项问题`}</strong>
+              <span>{tr("文件状态")}</span>
+              <strong>{detail.installed ? tr("完整") : tr("{0} 项问题", [detail.issues.length])}</strong>
             </div>
             {detail.javaCheck ? (
               <div>
-                <span>Java 检查</span>
+                <span>{tr("Java 检查")}</span>
                 <strong>{detail.javaCheck.message}</strong>
               </div>
             ) : null}
             {detail.issues.length > 0 ? (
               <div className="detail-issues">
-                <span>缺失文件</span>
+                <span>{tr("缺失文件")}</span>
                 <ul>
                   {detail.issues.slice(0, 10).map((i) => (
                     <li key={i} className="mono">
@@ -633,18 +624,18 @@ export function VersionsPage() {
       <Modal
         open={verify !== null}
         onClose={() => setVerify(null)}
-        title="文件完整性检查"
-        subtitle={verify?.ok ? "所有被检查的文件均通过" : "发现缺失或校验失败的文件"}
+        title={tr("文件完整性检查")}
+        subtitle={verify?.ok ? tr("所有被检查的文件均通过") : tr("发现缺失或校验失败的文件")}
       >
         {verify ? (
           <>
             <div className="verify-summary">
-              <Badge tone={verify.ok ? "success" : "danger"}>{verify.ok ? "通过" : "存在问题"}</Badge>
-              <span>已检查 {verify.checked} 个核心文件</span>
-              <span>资源文件 {verify.checkedAssets} 个</span>
+              <Badge tone={verify.ok ? "success" : "danger"}>{verify.ok ? tr("通过") : tr("存在问题")}</Badge>
+              <span>{tr("已检查")}{verify.checked} {tr("个核心文件")}</span>
+              <span>{tr("资源文件")}{verify.checkedAssets} {tr("个")}</span>
             </div>
             {verify.issues.length === 0 ? (
-              <p className="muted">客户端 JAR、库文件与资源索引均存在且哈希匹配。</p>
+              <p className="muted">{tr("客户端 JAR、库文件与资源索引均存在且哈希匹配。")}</p>
             ) : (
               <ul className="issue-list">
                 {verify.issues.slice(0, 50).map((issue) => (
@@ -665,28 +656,26 @@ export function VersionsPage() {
       <Modal
         open={configuring !== null}
         onClose={() => setConfiguring(null)}
-        title="从版本创建实例"
+        title={tr("从版本创建实例")}
         subtitle={configuring ? `${configuring.id} · ${formatBytes(configuring.sizeBytes)}` : ""}
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfiguring(null)}>
-              取消
-            </Button>
+              {tr("取消")}</Button>
             <Button variant="primary" loading={busy === "create"} onClick={() => void createConfigured()}>
-              创建并前往实例
-            </Button>
+              {tr("创建并前往实例")}</Button>
           </>
         }
       >
         <div className="form-grid">
-          <Field label="实例名称">
+          <Field label={tr("实例名称")}>
             <input
               value={configName}
               maxLength={64}
               onChange={(e) => setConfigName(e.target.value)}
             />
           </Field>
-          <Field label="最大内存 (MB)" hint="之后仍可在实例设置中修改">
+          <Field label={tr("最大内存 (MB)")} hint={tr("之后仍可在实例设置中修改")}>
             <input
               type="number"
               min={512}
@@ -698,7 +687,7 @@ export function VersionsPage() {
           </Field>
         </div>
         <p className="muted small">
-          版本目录：<span className="mono">{configuring?.path}</span>
+          {tr("版本目录：")}<span className="mono">{configuring?.path}</span>
         </p>
         {configError ? <p className="form-error">{configError}</p> : null}
       </Modal>
@@ -706,47 +695,45 @@ export function VersionsPage() {
       <Modal
         open={deleting !== null}
         onClose={() => setDeleting(null)}
-        title="删除已安装版本"
+        title={tr("删除已安装版本")}
         subtitle={deleting?.id}
         footer={
           <>
             <Button variant="ghost" onClick={() => setDeleting(null)}>
-              取消
-            </Button>
+              {tr("取消")}</Button>
             <Button
               variant="danger"
               loading={deleteBusy}
               disabled={!deletePlan || deletePlan.instances.length > 0}
               onClick={() => void confirmDelete()}
             >
-              确认删除
-            </Button>
+              {tr("确认删除")}</Button>
           </>
         }
       >
         {!deletePlan ? (
-          <p className="muted">{deleteError ?? "正在检查该版本的使用情况…"}</p>
+          <p className="muted">{deleteError ?? tr("正在检查该版本的使用情况…")}</p>
         ) : (
           <>
             <div className="detail-list">
               <div>
-                <span>版本</span>
+                <span>{tr("版本")}</span>
                 <strong className="mono">{deletePlan.id}</strong>
               </div>
               <div>
-                <span>占用空间</span>
+                <span>{tr("占用空间")}</span>
                 <strong>{formatBytes(deletePlan.sizeBytes)}</strong>
               </div>
               <div>
-                <span>继承此版本</span>
+                <span>{tr("继承此版本")}</span>
                 <strong>
-                  {deletePlan.dependents.length > 0 ? deletePlan.dependents.join("、") : "无"}
+                  {deletePlan.dependents.length > 0 ? deletePlan.dependents.join("、") : tr("无")}
                 </strong>
               </div>
               <div>
-                <span>使用中的实例</span>
+                <span>{tr("使用中的实例")}</span>
                 <strong>
-                  {deletePlan.instances.length > 0 ? deletePlan.instances.join("、") : "无"}
+                  {deletePlan.instances.length > 0 ? deletePlan.instances.join("、") : tr("无")}
                 </strong>
               </div>
             </div>
@@ -754,8 +741,8 @@ export function VersionsPage() {
               <div className="notice notice--danger">
                 <Icon name="alert" size={16} />
                 <div>
-                  <strong>版本正在被实例使用</strong>
-                  <p>请先删除或迁移这些实例，再删除版本。启动器不会自动改动实例。</p>
+                  <strong>{tr("版本正在被实例使用")}</strong>
+                  <p>{tr("请先删除或迁移这些实例，再删除版本。启动器不会自动改动实例。")}</p>
                 </div>
               </div>
             ) : null}
@@ -767,15 +754,13 @@ export function VersionsPage() {
                   onChange={(e) => setDeleteForce(e.target.checked)}
                 />
                 <span>
-                  同时删除继承此版本的加载器版本
-                  <small className="mono">{deletePlan.dependents.join(", ")}</small>
+                  {tr("同时删除继承此版本的加载器版本")}<small className="mono">{deletePlan.dependents.join(", ")}</small>
                 </span>
               </label>
             ) : null}
             <p className="muted small">
-              删除会移除 <span className="mono">versions/{deletePlan.id}</span>{" "}
-              及其文件，不会进入回收站。
-            </p>
+              {tr("删除会移除")}<span className="mono">versions/{deletePlan.id}</span>{" "}
+              {tr("及其文件，不会进入回收站。")}</p>
           </>
         )}
         {deleteError && deletePlan ? <p className="form-error">{deleteError}</p> : null}

@@ -1,5 +1,7 @@
+
+import { t as tr } from "./i18n";
 export function formatBytes(bytes: number, signed = false): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return "未知";
+  if (!Number.isFinite(bytes) || bytes < 0) return tr("未知");
   if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
@@ -18,9 +20,9 @@ export function formatSpeed(bps: number): string {
 
 export function formatEta(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds) || seconds <= 0) return "—";
-  if (seconds < 60) return `${Math.ceil(seconds)} 秒`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分 ${Math.floor(seconds % 60)} 秒`;
-  return `${Math.floor(seconds / 3600)} 小时 ${Math.floor((seconds % 3600) / 60)} 分`;
+  if (seconds < 60) return tr("{0} 秒", [Math.ceil(seconds)]);
+  if (seconds < 3600) return tr("{0} 分 {1} 秒", [Math.floor(seconds / 60), Math.floor(seconds % 60)]);
+  return tr("{0} 小时 {1} 分", [Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60)]);
 }
 
 export function formatDate(iso: string | null | undefined): string {
@@ -37,17 +39,17 @@ export function formatDate(iso: string | null | undefined): string {
 }
 
 export function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "从未";
+  if (!iso) return tr("从未");
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return "—";
   const diff = Date.now() - t;
   const min = Math.floor(diff / 60000);
-  if (min < 1) return "刚刚";
-  if (min < 60) return `${min} 分钟前`;
+  if (min < 1) return tr("刚刚");
+  if (min < 60) return tr("{0} 分钟前", [min]);
   const h = Math.floor(min / 60);
-  if (h < 24) return `${h} 小时前`;
+  if (h < 24) return tr("{0} 小时前", [h]);
   const d = Math.floor(h / 24);
-  if (d < 30) return `${d} 天前`;
+  if (d < 30) return tr("{0} 天前", [d]);
   return formatDate(iso);
 }
 

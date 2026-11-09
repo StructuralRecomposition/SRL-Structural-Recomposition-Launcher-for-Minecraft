@@ -6,6 +6,8 @@ import { Badge, Button, Field } from "../components/ui";
 import { DropZone } from "../components/DropZone";
 import { Icon } from "../components/Icon";
 import { SkinFigure, SkinHead } from "../components/SkinPreview";
+import { t } from "../lib/i18n";
+
 
 export interface SkinSelection {
   skinId: string | null;
@@ -15,13 +17,13 @@ export interface SkinSelection {
 type Tab = "builtin" | "mine" | "import" | "mojang";
 
 const SOURCE_LABEL: Record<Skin["source"], string> = {
-  builtin: "官方默认",
-  local: "本地导入",
-  mojang: "正版玩家",
+  builtin: t("官方默认"),
+  local: t("本地导入"),
+  mojang: t("正版玩家"),
 };
 
 function modelLabel(model: SkinModel) {
-  return model === "slim" ? "纤细" : "标准";
+  return model === "slim" ? t("纤细") : t("标准");
 }
 
 export function SkinPicker({
@@ -82,7 +84,7 @@ export function SkinPicker({
     const file = files[0];
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
-      setError("皮肤文件超过 2 MB");
+      setError(t("皮肤文件超过 2 MB"));
       return;
     }
     setBusy(true);
@@ -93,7 +95,7 @@ export function SkinPicker({
       await load();
       onChange({ skinId: skin.id, model: skin.model });
       setTab("mine");
-      pushToast("皮肤已导入", "success", `${skin.name} · ${skin.width}×${skin.height}`);
+      pushToast(t("皮肤已导入"), "success", `${skin.name} · ${skin.width}×${skin.height}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -109,7 +111,7 @@ export function SkinPicker({
       await load();
       onChange({ skinId: skin.id, model: skin.model });
       setTab("mine");
-      pushToast("皮肤已导入", "success", `${skin.name} · ${skin.width}×${skin.height}`);
+      pushToast(t("皮肤已导入"), "success", `${skin.name} · ${skin.width}×${skin.height}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -127,7 +129,7 @@ export function SkinPicker({
       await load();
       onChange({ skinId: skin.id, model: skin.model });
       setTab("mine");
-      pushToast("已获取正版玩家皮肤", "success", skin.owner ?? skin.name);
+      pushToast(t("已获取正版玩家皮肤"), "success", skin.owner ?? skin.name);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -138,13 +140,13 @@ export function SkinPicker({
   return (
     <div className="skin-picker">
       <div className="skin-picker__main">
-        <div className="segmented skin-tabs" role="tablist" aria-label="皮肤来源">
+        <div className="segmented skin-tabs" role="tablist" aria-label={t("皮肤来源")}>
           {(
             [
-              ["builtin", "内置默认"],
-              ["mine", "我的皮肤"],
-              ["import", "导入本地"],
-              ["mojang", "正版玩家"],
+              ["builtin", t("内置默认")],
+              ["mine", t("我的皮肤")],
+              ["import", t("导入本地")],
+              ["mojang", t("正版玩家")],
             ] as [Tab, string][]
           ).map(([id, label]) => (
             <button
@@ -162,12 +164,12 @@ export function SkinPicker({
         </div>
 
         <div className="skin-model-row">
-          <span className="muted small">模型</span>
+          <span className="muted small">{t("模型")}</span>
           <div className="segmented">
             {(
               [
-                ["classic", "标准"],
-                ["slim", "纤细"],
+                ["classic", t("标准")],
+                ["slim", t("纤细")],
               ] as [SkinModel, string][]
             ).map(([id, label]) => (
               <button
@@ -182,19 +184,19 @@ export function SkinPicker({
             ))}
           </div>
           <span className="muted small">
-            {value.model === "slim" ? "3 像素手臂" : "4 像素手臂"}
+            {value.model === "slim" ? t("3 像素手臂") : t("4 像素手臂")}
           </span>
         </div>
 
         {tab === "builtin" ? (
           loading ? (
-            <p className="muted small">正在读取皮肤库…</p>
+            <p className="muted small">{t("正在读取皮肤库…")}</p>
           ) : builtins.length === 0 ? (
             <div className="skin-empty">
               <Icon name="info" size={18} />
               <p>
                 {builtinHint ??
-                  "没有可用的默认皮肤。安装 1.20.2+ 原版后会自动从游戏文件中提取官方默认皮肤。"}
+                  t("没有可用的默认皮肤。安装 1.20.2+ 原版后会自动从游戏文件中提取官方默认皮肤。")}
               </p>
             </div>
           ) : (
@@ -214,11 +216,11 @@ export function SkinPicker({
 
         {tab === "mine" ? (
           loading ? (
-            <p className="muted small">正在读取皮肤库…</p>
+            <p className="muted small">{t("正在读取皮肤库…")}</p>
           ) : mine.length === 0 ? (
             <div className="skin-empty">
               <Icon name="info" size={18} />
-              <p>还没有导入或获取的皮肤。可从“导入本地”或“正版玩家”添加。</p>
+              <p>{t("还没有导入或获取的皮肤。可从“导入本地”或“正版玩家”添加。")}</p>
             </div>
           ) : (
             <div className="skin-grid">
@@ -240,8 +242,8 @@ export function SkinPicker({
             <DropZone
               accept={[".png"]}
               onPaths={(paths) => void importPath(paths[0])}
-              title="拖入 PNG 皮肤到这里"
-              hint="支持 64×64、128×128 与旧版 64×32；会保留原图并生成 64×64 兼容副本。"
+              title={t("拖入 PNG 皮肤到这里")}
+              hint={t("支持 64×64、128×128 与旧版 64×32；会保留原图并生成 64×64 兼容副本。")}
               disabled={disabled || busy}
             />
             <div className="skin-import__actions">
@@ -255,9 +257,8 @@ export function SkinPicker({
                   if (files.length > 0) await importFiles(files);
                 }}
               >
-                选择 PNG 文件
-              </Button>
-              <span className="muted small">文件不会上传到任何服务器。</span>
+                {t("选择 PNG 文件")}</Button>
+              <span className="muted small">{t("文件不会上传到任何服务器。")}</span>
             </div>
           </div>
         ) : null}
@@ -265,8 +266,8 @@ export function SkinPicker({
         {tab === "mojang" ? (
           <div className="skin-mojang">
             <Field
-              label="正版玩家名称"
-              hint="通过 Mojang 公开档案读取该玩家当前皮肤，不需要登录。"
+              label={t("正版玩家名称")}
+              hint={t("通过 Mojang 公开档案读取该玩家当前皮肤，不需要登录。")}
             >
               <input
                 value={playerName}
@@ -286,8 +287,7 @@ export function SkinPicker({
               disabled={disabled || playerName.trim().length < 3}
               onClick={() => void fetchByName()}
             >
-              获取皮肤
-            </Button>
+              {t("获取皮肤")}</Button>
           </div>
         ) : null}
 
@@ -299,11 +299,11 @@ export function SkinPicker({
           {selected ? (
             <SkinFigure src={selected.preview} model={value.model} height={158} />
           ) : (
-            <span className="muted small">未选择皮肤</span>
+            <span className="muted small">{t("未选择皮肤")}</span>
           )}
         </div>
         <div className="skin-preview-meta">
-          <strong>{selected ? selected.name : "使用账号当前皮肤"}</strong>
+          <strong>{selected ? selected.name : t("使用账号当前皮肤")}</strong>
           <div className="skin-preview-tags">
             {selected ? <Badge tone="neutral">{SOURCE_LABEL[selected.source]}</Badge> : null}
             {selected ? <Badge tone="info">{modelLabel(value.model)}</Badge> : null}
@@ -313,7 +313,7 @@ export function SkinPicker({
               </Badge>
             ) : null}
           </div>
-          {selected?.owner ? <span className="muted small">来源玩家：{selected.owner}</span> : null}
+          {selected?.owner ? <span className="muted small">{t("来源玩家：")}{selected.owner}</span> : null}
         </div>
         {value.skinId ? (
           <Button
@@ -322,12 +322,10 @@ export function SkinPicker({
             onClick={() => onChange({ skinId: null, model: value.model })}
             disabled={disabled}
           >
-            不设置皮肤
-          </Button>
+            {t("不设置皮肤")}</Button>
         ) : null}
         <p className="muted skin-note">
-          模型只影响手臂宽度。正版账号上传皮肤时会写入官方皮肤服务；离线档案使用本机资源包，手臂模型由客户端决定。
-        </p>
+          {t("模型只影响手臂宽度。正版账号上传皮肤时会写入官方皮肤服务；离线档案使用本机资源包，手臂模型由客户端决定。")}</p>
       </aside>
     </div>
   );

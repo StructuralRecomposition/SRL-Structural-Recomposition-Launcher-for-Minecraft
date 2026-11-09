@@ -1,5 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { IconButton } from "./ui";
+import { t } from "../lib/i18n";
+
 
 export function Modal({
   open,
@@ -63,7 +65,7 @@ export function Modal({
             <h2 id="modal-title">{title}</h2>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
-          <IconButton icon="close" label="关闭" onClick={onClose} />
+          <IconButton icon="close" label={t("关闭")} onClick={onClose} />
         </header>
         <div className="modal__body">{children}</div>
         {footer ? <footer className="modal__footer">{footer}</footer> : null}

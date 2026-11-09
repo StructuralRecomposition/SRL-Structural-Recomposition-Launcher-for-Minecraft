@@ -30,6 +30,8 @@ import { Icon } from "../components/Icon";
 import { Modal } from "../components/Modal";
 import { DropZone } from "../components/DropZone";
 import { LoaderResourcePanel } from "../components/LoaderResourcePanel";
+import { t as tr } from "../lib/i18n";
+
 
 type KindTab = ResourceKind | "map" | "loader";
 
@@ -47,7 +49,7 @@ interface InstallState {
 }
 
 function kindLabel(kind: string) {
-  if (kind === "loader") return "加载器";
+  if (kind === "loader") return tr("加载器");
   return RESOURCE_KIND_LABEL[kind as ResourceKind] ?? kind;
 }
 
@@ -311,11 +313,11 @@ export function ResourcesPage() {
     if (!detail) return;
     const file = pickFile(detail.project.kind, version);
     if (!file) {
-      pushToast("该版本没有可下载文件", "warning");
+      pushToast(tr("该版本没有可下载文件"), "warning");
       return;
     }
     if (!file.sha1) {
-      pushToast("该文件缺少 SHA-1 校验值，已拒绝安装", "warning", file.filename);
+      pushToast(tr("该文件缺少 SHA-1 校验值，已拒绝安装"), "warning", file.filename);
       return;
     }
     setInstallState({
@@ -341,21 +343,19 @@ export function ResourcesPage() {
     <div className="page resource-page">
       <div className="toolbar">
         <div>
-          <h2>资源</h2>
+          <h2>{tr("资源")}</h2>
           <p className="muted">
-            搜索 Modrinth / CurseForge 社区资源，或选择 Minecraft 版本下载 / 安装 Fabric、Quilt、Forge、NeoForge、Iris、OptiFine。
-          </p>
+            {tr("搜索 Modrinth / CurseForge 社区资源，或选择 Minecraft 版本下载 / 安装 Fabric、Quilt、Forge、NeoForge、Iris、OptiFine。")}</p>
         </div>
         <div className="toolbar__actions">
-          <Badge tone="success">Modrinth + CurseForge + 加载器</Badge>
+          <Badge tone="success">{tr("Modrinth + CurseForge + 加载器")}</Badge>
           <Button icon="plus" onClick={() => setImportOpen(true)}>
-            导入本地整合包
-          </Button>
+            {tr("导入本地整合包")}</Button>
         </div>
       </div>
 
       <Card className="resource-search-card">
-        <div className="segmented resource-tabs" role="tablist" aria-label="资源类型">
+        <div className="segmented resource-tabs" role="tablist" aria-label={tr("资源类型")}>
           {RESOURCE_KINDS.map((item) => (
             <button
               key={item.id}
@@ -376,12 +376,11 @@ export function ResourcesPage() {
           <>
         {kind === "map" ? (
           <p className="muted small resource-map-hint">
-            地图来源：CurseForge（内置公共 API key，无需配置）。安装到实例时会解压到 saves/，不覆盖同名存档。
-          </p>
+            {tr("地图来源：CurseForge（内置公共 API key，无需配置）。安装到实例时会解压到 saves/，不覆盖同名存档。")}</p>
         ) : (
           <div className="resource-source-row">
-            <span className="muted small">来源</span>
-            <div className="segmented" role="radiogroup" aria-label="资源来源">
+            <span className="muted small">{tr("来源")}</span>
+            <div className="segmented" role="radiogroup" aria-label={tr("资源来源")}>
               {RESOURCE_SOURCES.map((item) => (
                 <button
                   key={item.value}
@@ -397,8 +396,8 @@ export function ResourcesPage() {
             </div>
             <span className="muted small">
               {source === "curseforge"
-                ? "CurseForge 使用内置公共 key，可直接搜索"
-                : "Modrinth 开放 API，无需登录"}
+                ? tr("CurseForge 使用内置公共 key，可直接搜索")
+                : tr("Modrinth 开放 API，无需登录")}
             </span>
           </div>
         )}
@@ -408,15 +407,15 @@ export function ResourcesPage() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder={`搜索${kindLabel(kind)}…`}
-                  aria-label="搜索资源"
+                  placeholder={tr("搜索{0}…", [kindLabel(kind)])}
+                  aria-label={tr("搜索资源")}
                 />
               </div>
               <select
                 className="resource-sort"
                 value={sort}
                 onChange={(e) => setSort(e.target.value)}
-                aria-label="排序方式"
+                aria-label={tr("排序方式")}
               >
                 {sorts.map((s) => (
                   <option key={s.value} value={s.value}>
@@ -425,21 +424,20 @@ export function ResourcesPage() {
                 ))}
               </select>
               <Button icon="refresh" onClick={() => setReloadKey((v) => v + 1)}>
-                刷新
-              </Button>
+                {tr("刷新")}</Button>
             </div>
 
             <div className="resource-filters">
               <label className="resource-filter">
-                <span>Minecraft 版本</span>
+                <span>{tr("Minecraft 版本")}</span>
                 <select value={gameVersion} onChange={(e) => setGameVersion(e.target.value)}>
-                  <option value="">全部版本</option>
+                  <option value="">{tr("全部版本")}</option>
                   {gameVersion &&
                   !gameVersions.some((v) => v.version === gameVersion) ? (
                     <option value={gameVersion}>{gameVersion}</option>
                   ) : null}
                   {releaseVersions.length > 0 ? (
-                    <optgroup label="正式版">
+                    <optgroup label={tr("正式版")}>
                       {releaseVersions.map((v) => (
                         <option key={`r-${v.version}`} value={v.version}>
                           {v.version}
@@ -448,7 +446,7 @@ export function ResourcesPage() {
                     </optgroup>
                   ) : null}
                   {snapshotVersions.length > 0 ? (
-                    <optgroup label="快照 / 旧版">
+                    <optgroup label={tr("快照 / 旧版")}>
                       {snapshotVersions.map((v) => (
                         <option key={`s-${v.version}`} value={v.version}>
                           {v.version}
@@ -461,7 +459,7 @@ export function ResourcesPage() {
 
               {kind === "mod" || kind === "modpack" ? (
                 <div className="resource-filter">
-                  <span>模组加载器</span>
+                  <span>{tr("模组加载器")}</span>
                   <div className="segmented">
                     {RESOURCE_LOADERS.map((item) => (
                       <button
@@ -479,14 +477,13 @@ export function ResourcesPage() {
             </div>
 
             {tags.length > 0 ? (
-              <div className="resource-tag-row" aria-label="资源标签">
+              <div className="resource-tag-row" aria-label={tr("资源标签")}>
                 <button
                   type="button"
                   className={`resource-tag ${tagValue === "" ? "resource-tag--active" : ""}`}
                   onClick={() => setTagValue("")}
                 >
-                  全部
-                </button>
+                  {tr("全部")}</button>
                 {tags.map((tag) => (
                   <button
                     key={tag.value}
@@ -508,11 +505,11 @@ export function ResourcesPage() {
           <div className="resource-result-head">
             <span>
               {loading
-                ? "正在搜索…"
-                : `共 ${formatCount(total)} 个结果${activeTag ? ` · ${activeTag.label}` : ""}`}
+                ? tr("正在搜索…")
+                : tr("共 {0} 个结果{1}", [formatCount(total), activeTag ? ` · ${activeTag.label}` : ""])}
             </span>
             <span className="muted small">
-              {gameVersion || "全部版本"}
+              {gameVersion || tr("全部版本")}
               {loader ? ` · ${loader}` : ""}
             </span>
           </div>
@@ -529,8 +526,8 @@ export function ResourcesPage() {
             <Card>
               <EmptyState
                 icon="search"
-                title="没有找到资源"
-                description="试试更换关键词、Minecraft 版本、加载器或标签。"
+                title={tr("没有找到资源")}
+                description={tr("试试更换关键词、Minecraft 版本、加载器或标签。")}
               />
             </Card>
           ) : (
@@ -572,8 +569,7 @@ export function ResourcesPage() {
               {hits.length < total ? (
                 <div className="resource-more">
                   <Button loading={loadingMore} onClick={() => void loadMore()}>
-                    加载更多
-                  </Button>
+                    {tr("加载更多")}</Button>
                 </div>
               ) : null}
             </>
@@ -587,7 +583,7 @@ export function ResourcesPage() {
           setDetailHit(null);
           setDetail(null);
         }}
-        title={detail?.project.title ?? detailHit?.title ?? "资源详情"}
+        title={detail?.project.title ?? detailHit?.title ?? tr("资源详情")}
         subtitle={detail ? `${kindLabel(detail.project.kind)} · ${detail.hit.author || sourceLabel(detail.hit.source)}` : undefined}
         wide
         footer={
@@ -598,12 +594,11 @@ export function ResourcesPage() {
               setDetail(null);
             }}
           >
-            关闭
-          </Button>
+            {tr("关闭")}</Button>
         }
       >
         {detailLoading ? (
-          <p className="muted">正在读取资源详情…</p>
+          <p className="muted">{tr("正在读取资源详情…")}</p>
         ) : detailError ? (
           <p className="form-error">{detailError}</p>
         ) : detail ? (
@@ -630,18 +625,17 @@ export function ResourcesPage() {
                         .openTrustedUrl(detail.project.websiteUrl)
                         .catch((e) =>
                           pushToast(
-                            `无法打开 ${sourceLabel(detail.project.source)} 页面`,
+                            tr("无法打开 {0} 页面", [sourceLabel(detail.project.source)]),
                             "warning",
                             e instanceof Error ? e.message : undefined,
                           ),
                         )
                     }
                   >
-                    在 {sourceLabel(detail.project.source)} 查看
-                  </Button>
+                    {tr("在")}{sourceLabel(detail.project.source)} {tr("查看")}</Button>
                   {detail.project.sourceUrl ? (
                     <span className="muted small ellipsis" title={detail.project.sourceUrl}>
-                      源码：{detail.project.sourceUrl}
+                      {tr("源码：")}{detail.project.sourceUrl}
                     </span>
                   ) : null}
                 </div>
@@ -650,20 +644,20 @@ export function ResourcesPage() {
 
             <div className="resource-stats">
               <div>
-                <span>下载</span>
+                <span>{tr("下载")}</span>
                 <strong>{formatCount(detail.project.downloads)}</strong>
               </div>
               <div>
-                <span>关注</span>
+                <span>{tr("关注")}</span>
                 <strong>{formatCount(detail.project.follows)}</strong>
               </div>
               <div>
-                <span>更新</span>
+                <span>{tr("更新")}</span>
                 <strong>{detail.project.updated ? relativeTime(detail.project.updated) : "—"}</strong>
               </div>
               <div>
-                <span>支持加载器</span>
-                <strong>{detail.project.loaders.slice(0, 4).join(" / ") || "通用"}</strong>
+                <span>{tr("支持加载器")}</span>
+                <strong>{detail.project.loaders.slice(0, 4).join(" / ") || tr("通用")}</strong>
               </div>
             </div>
 
@@ -677,19 +671,19 @@ export function ResourcesPage() {
 
             <div className="resource-section-head">
               <div>
-                <h3>可用版本</h3>
+                <h3>{tr("可用版本")}</h3>
                 <p className="muted small">
-                  {gameVersion ? `Minecraft ${gameVersion}` : "全部 Minecraft 版本"}
+                  {gameVersion ? `Minecraft ${gameVersion}` : tr("全部 Minecraft 版本")}
                   {loader ? ` · ${loader}` : ""}
                 </p>
               </div>
-              <span className="muted small">{detail.versions.length} 个</span>
+              <span className="muted small">{detail.versions.length} {tr("个")}</span>
             </div>
 
             {detail.versions.length === 0 ? (
               <div className="notice notice--warning">
                 <Icon name="alert" size={16} />
-                <p>当前筛选条件下没有可用文件。请关闭弹窗后更换 Minecraft 版本或加载器。</p>
+                <p>{tr("当前筛选条件下没有可用文件。请关闭弹窗后更换 Minecraft 版本或加载器。")}</p>
               </div>
             ) : (
               <ul className="resource-version-list">
@@ -708,13 +702,13 @@ export function ResourcesPage() {
                           ) : null}
                         </div>
                         <span className="muted small">
-                          {version.gameVersions.slice(-4).join(", ") || "通用版本"} ·{" "}
-                          {version.loaders.join(" / ") || "通用"}
+                          {version.gameVersions.slice(-4).join(", ") || tr("通用版本")} ·{" "}
+                          {version.loaders.join(" / ") || tr("通用")}
                         </span>
                         <span className="muted small">
                           {formatDate(version.datePublished)} ·{" "}
-                          {file ? formatBytes(file.size) : "无文件"}
-                          {file && !file.sha1 ? " · 缺少校验值" : ""}
+                          {file ? formatBytes(file.size) : tr("无文件")}
+                          {file && !file.sha1 ? tr(" · 缺少校验值") : ""}
                         </span>
                       </div>
                       <Button
@@ -724,8 +718,7 @@ export function ResourcesPage() {
                         disabled={!file?.sha1}
                         onClick={() => startInstall(version)}
                       >
-                        安装
-                      </Button>
+                        {tr("安装")}</Button>
                     </li>
                   );
                 })}
@@ -754,7 +747,7 @@ function TaskPanel({ taskId }: { taskId: string }) {
   const { tasks } = useApp();
   const task = tasks.find((t) => t.id === taskId);
   if (!task) {
-    return <p className="muted small">正在创建下载任务…</p>;
+    return <p className="muted small">{tr("正在创建下载任务…")}</p>;
   }
   const progress = taskProgress(task);
   return (
@@ -769,9 +762,8 @@ function TaskPanel({ taskId }: { taskId: string }) {
           {formatBytes(task.doneBytes)} / {formatBytes(task.totalBytes)}
         </span>
         <span>
-          {task.doneFiles}/{task.totalFiles} 文件
-        </span>
-        {isActive(task.status) ? <span>关闭窗口不会取消任务</span> : null}
+          {task.doneFiles}/{task.totalFiles} {tr("文件")}</span>
+        {isActive(task.status) ? <span>{tr("关闭窗口不会取消任务")}</span> : null}
       </div>
       {task.error ? <p className="form-error">{task.error.message}</p> : null}
     </div>
@@ -821,7 +813,7 @@ function InstallDialog({ state, onClose }: { state: InstallState; onClose: () =>
   useEffect(() => {
     if (task?.status === "completed" && !completed.current) {
       completed.current = true;
-      pushToast("资源安装完成", "success", task.title);
+      pushToast(tr("资源安装完成"), "success", task.title);
       void reload();
     }
   }, [task?.status, task?.title, pushToast, reload]);
@@ -829,11 +821,11 @@ function InstallDialog({ state, onClose }: { state: InstallState; onClose: () =>
   async function start() {
     setError(null);
     if (mode === "instance" && !instanceId) {
-      setError("请选择一个游戏实例");
+      setError(tr("请选择一个游戏实例"));
       return;
     }
     if (mode === "directory" && !dir.trim()) {
-      setError("请输入下载目录");
+      setError(tr("请输入下载目录"));
       return;
     }
     setStarting(true);
@@ -869,14 +861,13 @@ function InstallDialog({ state, onClose }: { state: InstallState; onClose: () =>
     <Modal
       open
       onClose={onClose}
-      title={`安装 ${state.project.title}`}
+      title={tr("安装 {0}", [state.project.title])}
       subtitle={`${state.version.versionNumber} · ${state.file.filename}`}
       wide
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            关闭
-          </Button>
+            {tr("关闭")}</Button>
           <Button
             variant="primary"
             icon="download"
@@ -884,8 +875,7 @@ function InstallDialog({ state, onClose }: { state: InstallState; onClose: () =>
             disabled={accepted !== null}
             onClick={() => void start()}
           >
-            开始
-          </Button>
+            {tr("开始")}</Button>
         </>
       }
     >
@@ -898,8 +888,7 @@ function InstallDialog({ state, onClose }: { state: InstallState; onClose: () =>
           </div>
           <span className="muted small">{state.project.description}</span>
           <span className="muted small">
-            文件：{state.file.filename} · {formatBytes(state.file.size)} · SHA-1 已提供
-          </span>
+            {tr("文件：")}{state.file.filename} · {formatBytes(state.file.size)} {tr("· SHA-1 已提供")}</span>
         </div>
       </div>
 
@@ -909,15 +898,13 @@ function InstallDialog({ state, onClose }: { state: InstallState; onClose: () =>
           className={`segmented__item ${mode === "instance" ? "segmented__item--active" : ""}`}
           onClick={() => setMode("instance")}
         >
-          安装到实例
-        </button>
+          {tr("安装到实例")}</button>
         <button
           type="button"
           className={`segmented__item ${mode === "directory" ? "segmented__item--active" : ""}`}
           onClick={() => setMode("directory")}
         >
-          下载到本地
-        </button>
+          {tr("下载到本地")}</button>
       </div>
 
       {mode === "instance" ? (
@@ -925,8 +912,8 @@ function InstallDialog({ state, onClose }: { state: InstallState; onClose: () =>
           <div className="notice notice--warning">
             <Icon name="alert" size={16} />
             <div>
-              <strong>还没有游戏实例</strong>
-              <p>请先在“游戏实例”创建对应版本和加载器的实例，再安装资源。</p>
+              <strong>{tr("还没有游戏实例")}</strong>
+              <p>{tr("请先在“游戏实例”创建对应版本和加载器的实例，再安装资源。")}</p>
               <Button
                 size="sm"
                 onClick={() => {
@@ -934,20 +921,19 @@ function InstallDialog({ state, onClose }: { state: InstallState; onClose: () =>
                   setPage("instances");
                 }}
               >
-                去创建实例
-              </Button>
+                {tr("去创建实例")}</Button>
             </div>
           </div>
         ) : (
           <>
-            <Field label="目标实例" hint="只显示加载器与 Minecraft 版本匹配的实例。">
+            <Field label={tr("目标实例")} hint={tr("只显示加载器与 Minecraft 版本匹配的实例。")}>
               <select value={instanceId} onChange={(e) => setInstanceId(e.target.value)}>
-                <option value="">选择实例…</option>
+                <option value="">{tr("选择实例…")}</option>
                 {options.map(({ instance, ok }) => (
                   <option key={instance.id} value={instance.id} disabled={!ok}>
                     {instance.name} · {instance.versionId}
-                    {instance.modLoader ? ` · ${instance.modLoader.kind}` : " · 原版"}
-                    {ok ? "" : "（不兼容）"}
+                    {instance.modLoader ? ` · ${instance.modLoader.kind}` : tr(" · 原版")}
+                    {ok ? "" : tr("（不兼容）")}
                   </option>
                 ))}
               </select>
@@ -956,45 +942,43 @@ function InstallDialog({ state, onClose }: { state: InstallState; onClose: () =>
               <div className="notice notice--warning">
                 <Icon name="alert" size={16} />
                 <p>
-                  没有加载器与 Minecraft 版本都匹配的实例。请创建{" "}
-                  {state.version.gameVersions.slice(-1)[0] ?? "对应版本"}{" "}
-                  {state.version.loaders.join(" / ") || ""} 实例，或改选“下载到本地”。
-                </p>
+                  {tr("没有加载器与 Minecraft 版本都匹配的实例。请创建")}{" "}
+                  {state.version.gameVersions.slice(-1)[0] ?? tr("对应版本")}{" "}
+                  {state.version.loaders.join(" / ") || ""} {tr("实例，或改选“下载到本地”。")}</p>
               </div>
             ) : null}
             {isModpack ? (
               <div className="notice notice--warning">
                 <Icon name="alert" size={16} />
                 <p>
-                  整合包会把文件写入所选实例目录，同名文件可能被覆盖。建议使用一个专门为该整合包新建的实例。
-                </p>
+                  {tr("整合包会把文件写入所选实例目录，同名文件可能被覆盖。建议使用一个专门为该整合包新建的实例。")}</p>
               </div>
             ) : isResourcepack ? (
               <div className="notice">
                 <Icon name="info" size={16} />
-                <p>材质包安装后会自动写入实例的 options.txt 并启用；下次启动生效。</p>
+                <p>{tr("材质包安装后会自动写入实例的 options.txt 并启用；下次启动生效。")}</p>
               </div>
             ) : isShader ? (
               <div className="notice">
                 <Icon name="info" size={16} />
-                <p>光影包会放入实例的 shaderpacks/；需要实例已安装 Iris 或 OptiFine。</p>
+                <p>{tr("光影包会放入实例的 shaderpacks/；需要实例已安装 Iris 或 OptiFine。")}</p>
               </div>
             ) : isMap ? (
               <div className="notice">
                 <Icon name="info" size={16} />
-                <p>地图会解压到实例 saves/ 下的新世界文件夹；同名存档会自动使用新名称，不会覆盖。</p>
+                <p>{tr("地图会解压到实例 saves/ 下的新世界文件夹；同名存档会自动使用新名称，不会覆盖。")}</p>
               </div>
             ) : (
               <div className="notice">
                 <Icon name="info" size={16} />
-                <p>模组会放入实例的 mods/，下次启动由对应加载器加载。</p>
+                <p>{tr("模组会放入实例的 mods/，下次启动由对应加载器加载。")}</p>
               </div>
             )}
           </>
         )
       ) : (
         <>
-          <Field label="下载目录" hint="只下载文件，不会安装到游戏。目录不存在时会自动创建。">
+          <Field label={tr("下载目录")} hint={tr("只下载文件，不会安装到游戏。目录不存在时会自动创建。")}>
             <input
               className="mono"
               value={dir}
@@ -1005,7 +989,7 @@ function InstallDialog({ state, onClose }: { state: InstallState; onClose: () =>
           {isModpack ? (
             <div className="notice">
               <Icon name="info" size={16} />
-              <p>整合包会下载为 .mrpack 文件，可稍后用“导入本地整合包”安装到实例。</p>
+              <p>{tr("整合包会下载为 .mrpack 文件，可稍后用“导入本地整合包”安装到实例。")}</p>
             </div>
           ) : null}
         </>
@@ -1022,8 +1006,7 @@ function InstallDialog({ state, onClose }: { state: InstallState; onClose: () =>
             setAccepted(null);
           }}
         >
-          重试
-        </Button>
+          {tr("重试")}</Button>
       ) : null}
     </Modal>
   );
@@ -1059,18 +1042,18 @@ function ImportModpackDialog({
   useEffect(() => {
     if (task?.status === "completed" && !completed.current) {
       completed.current = true;
-      pushToast("整合包安装完成", "success", task.title);
+      pushToast(tr("整合包安装完成"), "success", task.title);
     }
   }, [task?.status, task?.title, pushToast]);
 
   async function start() {
     setError(null);
     if (!instanceId) {
-      setError("请选择目标实例");
+      setError(tr("请选择目标实例"));
       return;
     }
     if (!file && !path.trim()) {
-      setError("请选择 .mrpack 文件或填写本地路径");
+      setError(tr("请选择 .mrpack 文件或填写本地路径"));
       return;
     }
     setStarting(true);
@@ -1078,7 +1061,7 @@ function ImportModpackDialog({
       let result: ResourceTaskAccepted;
       if (file) {
         if (file.size > MAX_UPLOAD_BYTES) {
-          throw new Error("文件超过 512MB，请改用拖拽或手动路径导入");
+          throw new Error(tr("文件超过 512MB，请改用拖拽或手动路径导入"));
         }
         const bytes = await readFileBytes(file);
         result = await api.importModpackBytes(instanceId, file.name, bytes, allowIncomplete);
@@ -1099,14 +1082,13 @@ function ImportModpackDialog({
     <Modal
       open
       onClose={onClose}
-      title="导入本地整合包"
-      subtitle="支持 Modrinth .mrpack、CurseForge manifest.zip 与普通整合 ZIP。"
+      title={tr("导入本地整合包")}
+      subtitle={tr("支持 Modrinth .mrpack、CurseForge manifest.zip 与普通整合 ZIP。")}
       wide
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            关闭
-          </Button>
+            {tr("关闭")}</Button>
           <Button
             variant="primary"
             icon="download"
@@ -1114,18 +1096,17 @@ function ImportModpackDialog({
             disabled={accepted !== null}
             onClick={() => void start()}
           >
-            开始导入
-          </Button>
+            {tr("开始导入")}</Button>
         </>
       }
     >
-      <Field label="目标实例" hint="实例的 Minecraft 版本与加载器必须和整合包一致。">
+      <Field label={tr("目标实例")} hint={tr("实例的 Minecraft 版本与加载器必须和整合包一致。")}>
         <select value={instanceId} onChange={(e) => setInstanceId(e.target.value)}>
-          <option value="">选择实例…</option>
+          <option value="">{tr("选择实例…")}</option>
           {instances.map((instance) => (
             <option key={instance.id} value={instance.id}>
               {instance.name} · {instance.versionId}
-              {instance.modLoader ? ` · ${instance.modLoader.kind}` : " · 原版"}
+              {instance.modLoader ? ` · ${instance.modLoader.kind}` : tr(" · 原版")}
             </option>
           ))}
         </select>
@@ -1137,8 +1118,8 @@ function ImportModpackDialog({
           setPath(paths[0] ?? "");
           setFile(null);
         }}
-        title="拖入 .zip / .mrpack 整合包"
-        hint="支持 Modrinth .mrpack、CurseForge manifest.zip 或普通整合 ZIP；只读取本地文件。"
+        title={tr("拖入 .zip / .mrpack 整合包")}
+        hint={tr("支持 Modrinth .mrpack、CurseForge manifest.zip 或普通整合 ZIP；只读取本地文件。")}
         disabled={starting}
       />
 
@@ -1153,14 +1134,13 @@ function ImportModpackDialog({
             }
           }}
         >
-          选择 .zip / .mrpack 文件
-        </Button>
+          {tr("选择 .zip / .mrpack 文件")}</Button>
         <span className="muted small">
-          {file ? `已选择：${file.name}` : path ? `路径：${path}` : "尚未选择文件"}
+          {file ? tr("已选择：{0}", [file.name]) : path ? tr("路径：{0}", [path]) : tr("尚未选择文件")}
         </span>
       </div>
 
-      <Field label="或从本地路径导入" hint="适合大文件或文件选择器不可用的环境。">
+      <Field label={tr("或从本地路径导入")} hint={tr("适合大文件或文件选择器不可用的环境。")}>
         <input
           className="mono"
           value={path}
@@ -1176,41 +1156,35 @@ function ImportModpackDialog({
         <div className="notice notice--warning">
           <Icon name="alert" size={16} />
           <div>
-            <strong>尚未配置 CurseForge API key</strong>
+            <strong>{tr("尚未配置 CurseForge API key")}</strong>
             <p>
-              普通 ZIP 和 Modrinth `.mrpack` 可直接导入；CurseForge `manifest.zip` 中由
-              manifest 引用的模组需要 API key 才能下载。你可以在设置中配置，或勾选下方选项只导入 ZIP
-              内已有文件。
-            </p>
+              {tr("普通 ZIP 和 Modrinth `.mrpack` 可直接导入；CurseForge `manifest.zip` 中由 manifest 引用的模组需要 API key 才能下载。你可以在设置中配置，或勾选下方选项只导入 ZIP 内已有文件。")}</p>
             <label className="inline-check">
               <input
                 type="checkbox"
                 checked={allowIncomplete}
                 onChange={(e) => setAllowIncomplete(e.target.checked)}
               />
-              仅导入 ZIP 内已有文件（不下载缺失的 CurseForge 模组）
-            </label>
+              {tr("仅导入 ZIP 内已有文件（不下载缺失的 CurseForge 模组）")}</label>
           </div>
         </div>
       ) : hasKey === true ? (
         <div className="notice notice--success">
           <Icon name="check" size={16} />
-          <p>CurseForge API key 已配置，manifest 引用的模组会下载并校验 SHA-1。</p>
+          <p>{tr("CurseForge API key 已配置，manifest 引用的模组会下载并校验 SHA-1。")}</p>
         </div>
       ) : null}
 
       <div className="notice notice--warning">
         <Icon name="alert" size={16} />
         <p>
-          安装会写入目标实例目录，同名文件可能被覆盖；`options.txt` 会先备份。CurseForge
-          key 只保存在系统凭据库，不写入配置文件或日志。
-        </p>
+          {tr("安装会写入目标实例目录，同名文件可能被覆盖；`options.txt` 会先备份。CurseForge key 只保存在系统凭据库，不写入配置文件或日志。")}</p>
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
       {accepted ? <TaskPanel taskId={accepted.taskId} /> : null}
       {instances.length === 0 ? (
-        <p className="form-error">还没有游戏实例，请先创建一个实例。</p>
+        <p className="form-error">{tr("还没有游戏实例，请先创建一个实例。")}</p>
       ) : null}
     </Modal>
   );

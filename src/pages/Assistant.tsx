@@ -17,6 +17,8 @@ import { Badge, Button } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { MarkdownText } from "../components/MarkdownText";
 import logo from "../assets/logo.png";
+import { t } from "../lib/i18n";
+
 
 interface ChatItem {
   id: number;
@@ -28,10 +30,10 @@ interface ChatItem {
 }
 
 const QUICK_PROMPTS = [
-  "分析当前实例最近一次崩溃，直接告诉我最可能的原因和怎么修。",
-  "当前实例启动就崩，帮我看看日志和崩溃报告。",
-  "搜索适合当前版本的性能优化模组，并告诉我推荐哪一个。",
-  "帮我配一个适合当前版本的轻量性能整合包，先给安装计划和依赖，不要直接安装。",
+  t("分析当前实例最近一次崩溃，直接告诉我最可能的原因和怎么修。"),
+  t("当前实例启动就崩，帮我看看日志和崩溃报告。"),
+  t("搜索适合当前版本的性能优化模组，并告诉我推荐哪一个。"),
+  t("帮我配一个适合当前版本的轻量性能整合包，先给安装计划和依赖，不要直接安装。"),
 ];
 
 export function AssistantPage() {
@@ -110,7 +112,7 @@ export function AssistantPage() {
       );
       nextId.current = conv.messages.length + 1;
     } catch (e) {
-      pushToast("读取聊天记录失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(t("读取聊天记录失败"), "error", e instanceof Error ? e.message : String(e));
     } finally {
       setLoadingHistory(false);
     }
@@ -127,9 +129,9 @@ export function AssistantPage() {
       await api.assistantDeleteConversation(id);
       if (id === conversationId) newChat();
       setConversations((prev) => prev.filter((item) => item.id !== id));
-      pushToast("聊天记录已删除", "success");
+      pushToast(t("聊天记录已删除"), "success");
     } catch (e) {
-      pushToast("删除聊天记录失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(t("删除聊天记录失败"), "error", e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -137,7 +139,7 @@ export function AssistantPage() {
     const content = (text ?? input).trim();
     if (!content || sending) return;
     if (!status?.configured) {
-      pushToast("尚未配置 DeepSeek API key", "warning", "请先在设置中配置");
+      pushToast(t("尚未配置 DeepSeek API key"), "warning", t("请先在设置中配置"));
       return;
     }
     setMessages((prev) => [
@@ -185,14 +187,14 @@ export function AssistantPage() {
     <div className="page assistant-page assistant-page--chat">
       <div className="assistant-chat-head">
         <div className="assistant-head">
-          <img className="assistant-avatar" src={logo} alt="鸦鸭" />
+          <img className="assistant-avatar" src={logo} alt={t("鸦鸭")} />
           <div>
             <div className="assistant-title-row">
-              <h2>鸦鸭</h2>
-              <Badge tone="warning">测试</Badge>
+              <h2>{t("鸦鸭")}</h2>
+              <Badge tone="warning">{t("测试")}</Badge>
             </div>
             <p className="muted">
-              {current ? `${current.name} · ${current.versionId}` : "不绑定实例"}
+              {current ? `${current.name} · ${current.versionId}` : t("不绑定实例")}
             </p>
           </div>
         </div>
@@ -200,9 +202,9 @@ export function AssistantPage() {
           <select
             value={instanceId}
             onChange={(e) => setInstanceId(e.target.value)}
-            aria-label="选择实例"
+            aria-label={t("选择实例")}
           >
-            <option value="">不绑定实例</option>
+            <option value="">{t("不绑定实例")}</option>
             {instances.map((instance) => (
               <option key={instance.id} value={instance.id}>
                 {instance.name} · {instance.versionId}
@@ -210,11 +212,10 @@ export function AssistantPage() {
             ))}
           </select>
           <Badge tone={status?.configured ? "success" : "warning"}>
-            {status?.configured ? status.model : "未配置 key"}
+            {status?.configured ? status.model : t("未配置 key")}
           </Badge>
           <Button size="sm" variant="ghost" icon="settings" onClick={() => setPage("settings")}>
-            设置
-          </Button>
+            {t("设置")}</Button>
         </div>
       </div>
 
@@ -222,26 +223,22 @@ export function AssistantPage() {
         <div className="notice notice--warning assistant-config-notice">
           <Icon name="alert" size={16} />
           <div>
-            <strong>配置 DeepSeek API key 后即可对话</strong>
+            <strong>{t("配置 DeepSeek API key 后即可对话")}</strong>
             <p>
-              鸦鸭会直接读取当前实例的崩溃报告和日志，用自然语言告诉你原因和修复方式。
-              本地诊断仍可在诊断中心使用。
-            </p>
+              {t("鸦鸭会直接读取当前实例的崩溃报告和日志，用自然语言告诉你原因和修复方式。 本地诊断仍可在诊断中心使用。")}</p>
           </div>
           <Button size="sm" onClick={() => setPage("settings")}>
-            去配置
-          </Button>
+            {t("去配置")}</Button>
         </div>
       ) : null}
 
       <div className="assistant-layout">
         <aside className="assistant-history">
           <Button icon="plus" onClick={newChat}>
-            新对话
-          </Button>
+            {t("新对话")}</Button>
           <div className="assistant-history__list">
             {conversations.length === 0 ? (
-              <p className="muted small">还没有历史对话</p>
+              <p className="muted small">{t("还没有历史对话")}</p>
             ) : (
               conversations.map((conv) => (
                 <div
@@ -257,13 +254,13 @@ export function AssistantPage() {
                     title={conv.title}
                   >
                     <span>{conv.title}</span>
-                    <small>{conv.messageCount} 条</small>
+                    <small>{conv.messageCount} {t("条")}</small>
                   </button>
                   <button
                     type="button"
                     className="assistant-history__delete"
-                    aria-label={`删除对话 ${conv.title}`}
-                    title="删除对话"
+                    aria-label={t("删除对话 {0}", [conv.title])}
+                    title={t("删除对话")}
                     onClick={() => void deleteConversation(conv.id)}
                   >
                     <Icon name="trash" size={14} />
@@ -277,14 +274,13 @@ export function AssistantPage() {
         <div className="assistant-chat-shell">
           <div className="chat-log chat-log--page" ref={logRef}>
             {loadingHistory ? (
-              <p className="muted small">正在读取聊天记录…</p>
+              <p className="muted small">{t("正在读取聊天记录…")}</p>
             ) : messages.length === 0 ? (
               <div className="assistant-welcome">
                 <img src={logo} alt="" className="assistant-welcome__logo" />
-                <h3>有什么可以帮你？</h3>
+                <h3>{t("有什么可以帮你？")}</h3>
                 <p className="muted">
-                  我不会让你自己看崩溃日志。直接描述现象，或者点下面的问题开始。
-                </p>
+                  {t("我不会让你自己看崩溃日志。直接描述现象，或者点下面的问题开始。")}</p>
                 <div className="quick-prompts quick-prompts--center">
                   {QUICK_PROMPTS.map((prompt) => (
                     <button
@@ -305,7 +301,7 @@ export function AssistantPage() {
                   key={item.id}
                   className={`chat-msg chat-msg--${item.role} ${item.error ? "chat-msg--error" : ""}`}
                 >
-                  <div className="chat-msg__role">{item.role === "user" ? "你" : "鸦鸭"}</div>
+                  <div className="chat-msg__role">{item.role === "user" ? t("你") : t("鸦鸭")}</div>
                   <div className="chat-msg__body">
                     <MarkdownText text={item.content} />
                     {item.traces && item.traces.length > 0 ? (
@@ -334,9 +330,9 @@ export function AssistantPage() {
             )}
             {sending ? (
               <div className="chat-msg chat-msg--assistant">
-                <div className="chat-msg__role">鸦鸭</div>
+                <div className="chat-msg__role">{t("鸦鸭")}</div>
                 <div className="chat-msg__body">
-                  <p className="muted">正在读取你的实例信息并分析…</p>
+                  <p className="muted">{t("正在读取你的实例信息并分析…")}</p>
                 </div>
               </div>
             ) : null}
@@ -348,8 +344,8 @@ export function AssistantPage() {
               onChange={(e) => setInput(e.target.value)}
               placeholder={
                 status?.configured
-                  ? "描述问题，或让我分析当前实例…（⌘/Ctrl + Enter 发送）"
-                  : "配置 DeepSeek API key 后即可对话"
+                  ? t("描述问题，或让我分析当前实例…（⌘/Ctrl + Enter 发送）")
+                  : t("配置 DeepSeek API key 后即可对话")
               }
               rows={2}
               maxLength={20000}
@@ -368,8 +364,7 @@ export function AssistantPage() {
               disabled={!input.trim() || !status?.configured}
               onClick={() => void send()}
             >
-              发送
-            </Button>
+              {t("发送")}</Button>
           </div>
         </div>
       </div>
@@ -404,11 +399,11 @@ function ProposalCard({
       if (repair) {
         const result = await api.assistantApplyRepair(repair.id);
         setRepairResult(result);
-        pushToast("修复已执行", "success", result.applied.join("；"));
+        pushToast(t("修复已执行"), "success", result.applied.join("；"));
       } else if (mod) {
         const result = await api.assistantApplyModPlan(mod.id);
         setModResult(result);
-        pushToast("模组安装完成", "success", result.installed.join("；"));
+        pushToast(t("模组安装完成"), "success", result.installed.join("；"));
       }
       await reload();
     } catch (e) {
@@ -425,11 +420,11 @@ function ProposalCard({
       if (repairResult) {
         await api.assistantRollbackRepair(instanceId, repairResult.token);
         setRepairResult(null);
-        pushToast("已回滚修复", "success");
+        pushToast(t("已回滚修复"), "success");
       } else if (modResult) {
         await api.assistantRollbackModInstall(instanceId, modResult.token);
         setModResult(null);
-        pushToast("已回滚模组安装", "success");
+        pushToast(t("已回滚模组安装"), "success");
       }
       setConfirmed(false);
       await reload();
@@ -449,7 +444,7 @@ function ProposalCard({
           <strong>{proposal.title}</strong>
           <span className="muted small">{proposal.summary}</span>
         </div>
-        <Badge tone="warning">{actionCount} 个操作</Badge>
+        <Badge tone="warning">{actionCount} {t("个操作")}</Badge>
       </div>
 
       {repair ? (
@@ -475,8 +470,8 @@ function ProposalCard({
               <span className="muted small">
                 {formatBytes(entry.size)}
                 {entry.requiredBy.length > 0
-                  ? ` · 依赖：${entry.requiredBy.join(", ")}`
-                  : " · 主模组"}
+                  ? t("· 依赖：{0}", [entry.requiredBy.join(", ")])
+                  : t(" · 主模组")}
               </span>
             </li>
           ))}
@@ -504,12 +499,11 @@ function ProposalCard({
         <div className="proposal-card__done">
           <span className="muted small">
             {repairResult
-              ? `已备份到 ${repairResult.backupDir}`
-              : `已安装：${modResult?.installed.join("；")}`}
+              ? t("已备份到 {0}", [repairResult.backupDir])
+              : t("已安装：{0}", [modResult?.installed.join("；")])}
           </span>
           <Button size="sm" icon="refresh" loading={busy} onClick={() => void rollback()}>
-            回滚本次操作
-          </Button>
+            {t("回滚本次操作")}</Button>
         </div>
       ) : actionCount > 0 ? (
         <>
@@ -521,11 +515,10 @@ function ProposalCard({
               disabled={busy}
             />
             <span>
-              我已核对上述内容，并了解备份与回滚方式
-              <small>
+              {t("我已核对上述内容，并了解备份与回滚方式")}<small>
                 {repair
-                  ? "只修改 instance.json 和 mods/ 文件名，不碰存档。"
-                  : "下载先进入临时目录并校验 SHA-1；同名文件会先备份。"}
+                  ? t("只修改 instance.json 和 mods/ 文件名，不碰存档。")
+                  : t("下载先进入临时目录并校验 SHA-1；同名文件会先备份。")}
               </small>
             </span>
           </label>
@@ -537,12 +530,12 @@ function ProposalCard({
               disabled={!confirmed}
               onClick={() => void apply()}
             >
-              {mod ? "安装模组" : "执行修复"}
+              {mod ? t("安装模组") : t("执行修复")}
             </Button>
           </div>
         </>
       ) : (
-        <p className="muted small">没有可执行操作。</p>
+        <p className="muted small">{t("没有可执行操作。")}</p>
       )}
     </div>
   );

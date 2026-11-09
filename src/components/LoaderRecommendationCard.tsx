@@ -5,6 +5,8 @@ import { Badge, Button, Card, EmptyState, ProgressBar } from "./ui";
 import { formatBytes, formatSpeed } from "../lib/format";
 import { isActive, taskProgress } from "../lib/task";
 import { Icon } from "./Icon";
+import { t as tr } from "../lib/i18n";
+
 
 const LOADER_IDS = ["fabric", "quilt", "forge", "neoforge"];
 const SHADER_IDS = ["iris", "optifine"];
@@ -17,10 +19,10 @@ function tone(status: LoaderRecommendation["status"]) {
 }
 
 function statusLabel(status: LoaderRecommendation["status"]) {
-  if (status === "recommended") return "推荐";
-  if (status === "available") return "可用";
-  if (status === "unavailable") return "不可用";
-  return "不支持";
+  if (status === "recommended") return tr("推荐");
+  if (status === "available") return tr("可用");
+  if (status === "unavailable") return tr("不可用");
+  return tr("不支持");
 }
 
 export function LoaderRecommendationCard() {
@@ -86,9 +88,9 @@ export function LoaderRecommendationCard() {
       } else {
         return;
       }
-      pushToast(`${item.name} 安装任务已开始`, "info", item.version);
+      pushToast(tr("{0} 安装任务已开始", [item.name]), "info", item.version);
     } catch (e) {
-      pushToast(`无法开始 ${item.name} 安装`, "error", e instanceof Error ? e.message : String(e));
+      pushToast(tr("无法开始 {0} 安装", [item.name]), "error", e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -99,7 +101,7 @@ export function LoaderRecommendationCard() {
     try {
       await api.openTrustedUrl(item.downloadUrl);
     } catch (e) {
-      pushToast("无法打开下载页", "error", e instanceof Error ? e.message : String(e));
+      pushToast(tr("无法打开下载页"), "error", e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -115,7 +117,7 @@ export function LoaderRecommendationCard() {
           <p>{item.note}</p>
           {(item.id === "forge" || item.id === "neoforge") && item.versions.length > 0 ? (
             <label className="reco-version">
-              <span>版本</span>
+              <span>{tr("版本")}</span>
               <select
                 value={picked[item.id] ?? item.version ?? item.versions[0]}
                 onChange={(e) =>
@@ -140,18 +142,15 @@ export function LoaderRecommendationCard() {
               loading={busy === item.id}
               onClick={() => void install(item)}
             >
-              安装
-            </Button>
+              {tr("安装")}</Button>
           ) : null}
           {item.downloadUrl && item.id === "optifine" ? (
             <Button size="sm" icon="download" onClick={() => void download(item)}>
-              下载安装器
-            </Button>
+              {tr("下载安装器")}</Button>
           ) : null}
           {item.id === "iris" ? (
             <Button size="sm" variant="ghost" onClick={() => setPage("instances")}>
-              去实例光影
-            </Button>
+              {tr("去实例光影")}</Button>
           ) : null}
         </div>
       </li>
@@ -172,14 +171,14 @@ export function LoaderRecommendationCard() {
     <Card className="reco-card">
       <div className="card-head">
         <div>
-          <h3>按版本推荐</h3>
-          <p>根据已安装的游戏版本检查 Fabric / Quilt / Forge / NeoForge 与光影方案。</p>
+          <h3>{tr("按版本推荐")}</h3>
+          <p>{tr("根据已安装的游戏版本检查 Fabric / Quilt / Forge / NeoForge 与光影方案。")}</p>
         </div>
         <div className="reco-toolbar">
           <select
             value={version}
             onChange={(e) => setVersion(e.target.value)}
-            aria-label="推荐使用的游戏版本"
+            aria-label={tr("推荐使用的游戏版本")}
           >
             {baseVersions.map((v) => (
               <option key={v.id} value={v.id}>
@@ -188,67 +187,62 @@ export function LoaderRecommendationCard() {
             ))}
           </select>
           <Button size="sm" icon="refresh" loading={loading} onClick={() => void load()}>
-            重新检测
-          </Button>
+            {tr("重新检测")}</Button>
         </div>
       </div>
 
       {baseVersions.length === 0 ? (
         <EmptyState
           icon="layers"
-          title="需要先安装原版版本"
-          description="安装一个正式版或快照后，才能按版本推荐加载器与光影。"
+          title={tr("需要先安装原版版本")}
+          description={tr("安装一个正式版或快照后，才能按版本推荐加载器与光影。")}
           action={
             <Button variant="primary" icon="download" onClick={() => setPage("versions")}>
-              前往版本管理
-            </Button>
+              {tr("前往版本管理")}</Button>
           }
         />
       ) : error ? (
         <div className="notice notice--warning">
           <Icon name="alert" size={16} />
           <div>
-            <strong>无法获取推荐</strong>
+            <strong>{tr("无法获取推荐")}</strong>
             <p>{error}</p>
           </div>
           <Button size="sm" onClick={() => void load()}>
-            重试
-          </Button>
+            {tr("重试")}</Button>
         </div>
       ) : loading && !data ? (
-        <p className="muted">正在检测兼容版本…（Quilt 官方源较慢时会等待最多 20 秒）</p>
+        <p className="muted">{tr("正在检测兼容版本…（Quilt 官方源较慢时会等待最多 20 秒）")}</p>
       ) : (
         <div className="reco-groups">
           <div>
-            <h4>模组加载器</h4>
+            <h4>{tr("模组加载器")}</h4>
             <ul className="reco-list">{loaders.map(row)}</ul>
           </div>
           {activeTask ? (
             <div className="fabric-task">
               <div className="fabric-task__head">
                 <strong>{activeTask.title}</strong>
-                <Badge tone="accent">安装中</Badge>
+                <Badge tone="accent">{tr("安装中")}</Badge>
               </div>
               <ProgressBar
                 value={taskProgress(activeTask)}
                 label={
                   activeTask.totalBytes <= 0
-                    ? `已下载 ${formatBytes(activeTask.doneBytes)}`
+                    ? tr("已下载 {0}", [formatBytes(activeTask.doneBytes)])
                     : taskProgress(activeTask) === null
-                      ? `下载中 · ${activeTask.doneFiles}/${activeTask.totalFiles} 个文件`
+                      ? tr("下载中 · {0}/{1} 个文件", [activeTask.doneFiles, activeTask.totalFiles])
                       : `${formatBytes(activeTask.doneBytes)} / ${formatBytes(activeTask.totalBytes)} · ${formatSpeed(activeTask.speedBps)}`
                 }
               />
-              <span className="muted small">{activeTask.currentFile ?? "准备中…"}</span>
+              <span className="muted small">{activeTask.currentFile ?? tr("准备中…")}</span>
             </div>
           ) : null}
           <div>
-            <h4>光影插件</h4>
+            <h4>{tr("光影插件")}</h4>
             <ul className="reco-list">{shaders.map(row)}</ul>
             <p className="muted small">
-              Iris 是 Fabric/Quilt 的推荐光影方案；OptiFine 需要运行官方安装器。安装 Iris
-              后，在实例的「光影管理」里导入 `.zip` 光影包。
-            </p>
+              {tr("Iris 是 Fabric/Quilt 的推荐光影方案；OptiFine 需要运行官方安装器。安装 Iris 后，在实例的「光影管理」里导入 `.zip` 光影包。")}</p>
           </div>
         </div>
       )}

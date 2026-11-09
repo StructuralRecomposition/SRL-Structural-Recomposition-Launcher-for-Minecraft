@@ -12,6 +12,8 @@ import { Badge, Button, EmptyState, Field, IconButton } from "./ui";
 import { Icon } from "./Icon";
 import { Modal } from "./Modal";
 import { DropZone } from "./DropZone";
+import { t } from "../lib/i18n";
+
 
 const MOD_ACCEPT = [".jar"];
 
@@ -32,7 +34,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
 
   const summary = useMemo(() => {
     const enabled = mods.filter((m) => m.enabled).length;
-    return `${mods.length} 个文件 · ${enabled} 个启用`;
+    return t("{0} 个文件 · {1} 个启用", [mods.length, enabled]);
   }, [mods]);
 
   async function load() {
@@ -58,13 +60,13 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
     setFailed(bad);
     if (ok.length > 0) {
       pushToast(
-        ok.length === 1 ? "模组已导入" : `已导入 ${ok.length} 个模组`,
+        ok.length === 1 ? t("模组已导入") : t("已导入 {0} 个模组", [ok.length]),
         "success",
         ok.map((o) => o.fileName).join("、"),
       );
     }
     if (bad.length > 0) {
-      setError(bad.map((o) => `${o.fileName}：${o.error ?? "导入失败"}`).join("；"));
+      setError(bad.map((o) => `${o.fileName}：${o.error ?? t("导入失败")}`).join("；"));
     } else {
       setError(null);
     }
@@ -95,7 +97,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
       setBusy(`file:${file.name}`);
       try {
         if (file.size > MAX_UPLOAD_BYTES) {
-          throw new Error("文件超过 512MB，请改用拖拽或手动路径导入");
+          throw new Error(t("文件超过 512MB，请改用拖拽或手动路径导入"));
         }
         const bytes = await readFileBytes(file);
         const entry = await api.importModBytes(instance.id, file.name, bytes, overwrite);
@@ -120,7 +122,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
     try {
       const entry = await api.importMod(instance.id, manualPath.trim(), overwrite);
       setManualPath("");
-      pushToast("模组已导入", "success", entry.fileName);
+      pushToast(t("模组已导入"), "success", entry.fileName);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -135,7 +137,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
     try {
       const updated = await api.toggleMod(instance.id, entry.fileName, !entry.enabled);
       setMods((prev) => prev.map((m) => (m.fileName === entry.fileName ? updated : m)));
-      pushToast(updated.enabled ? "模组已启用" : "模组已禁用", "info", updated.fileName);
+      pushToast(updated.enabled ? t("模组已启用") : t("模组已禁用"), "info", updated.fileName);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -149,7 +151,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
       await api.deleteMod(instance.id, entry.fileName);
       setDeleting(null);
       await load();
-      pushToast("模组已删除", "info", entry.fileName);
+      pushToast(t("模组已删除"), "info", entry.fileName);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -161,7 +163,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
     try {
       await api.openLauncherPath("instanceMods", instance.id);
     } catch (e) {
-      pushToast("无法打开文件夹", "error", e instanceof Error ? e.message : String(e));
+      pushToast(t("无法打开文件夹"), "error", e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -169,7 +171,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
     <Modal
       open
       onClose={onClose}
-      title="模组管理"
+      title={t("模组管理")}
       subtitle={`${instance.name} · ${instance.versionId}`}
       wide
     >
@@ -177,8 +179,8 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
         <div className="notice notice--warning">
           <Icon name="alert" size={16} />
           <div>
-            <strong>该实例没有记录模组加载器</strong>
-            <p>原版客户端不会加载 mods/ 中的模组。请使用 Fabric/Quilt 实例，或在加载器页安装。</p>
+            <strong>{t("该实例没有记录模组加载器")}</strong>
+            <p>{t("原版客户端不会加载 mods/ 中的模组。请使用 Fabric/Quilt 实例，或在加载器页安装。")}</p>
           </div>
         </div>
       ) : (
@@ -186,7 +188,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
           <Icon name="plug" size={16} />
           <div>
             <strong>{modLoader.kind} {modLoader.version}</strong>
-            <p>模组文件会立即生效于下次启动；切换启用状态只重命名文件，不移动内容。</p>
+            <p>{t("模组文件会立即生效于下次启动；切换启用状态只重命名文件，不移动内容。")}</p>
           </div>
         </div>
       )}
@@ -195,26 +197,23 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
         <DropZone
           accept={MOD_ACCEPT}
           onPaths={(paths) => void importPaths(paths)}
-          title="拖入 .jar 模组到这里"
-          hint="支持一次拖入多个文件；只会复制，不会移动原文件。"
+          title={t("拖入 .jar 模组到这里")}
+          hint={t("支持一次拖入多个文件；只会复制，不会移动原文件。")}
           disabled={importing}
         />
         <div className="file-toolbar__buttons">
           <Button variant="primary" icon="plus" onClick={() => void importPicked()} loading={importing}>
-            选择 .jar 文件
-          </Button>
+            {t("选择 .jar 文件")}</Button>
           <Button icon="folder" onClick={() => void openFolder()}>
-            打开文件夹
-          </Button>
+            {t("打开文件夹")}</Button>
           <Button variant="ghost" onClick={() => setManualOpen((v) => !v)}>
-            手动路径
-          </Button>
+            {t("手动路径")}</Button>
         </div>
       </div>
 
       {manualOpen ? (
         <div className="mod-import">
-          <Field label="从本地路径导入" hint="适用于拖拽不可用的环境；文件名会保留。">
+          <Field label={t("从本地路径导入")} hint={t("适用于拖拽不可用的环境；文件名会保留。")}>
             <input
               className="mono"
               value={manualPath}
@@ -228,8 +227,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
               checked={overwrite}
               onChange={(e) => setOverwrite(e.target.checked)}
             />
-            覆盖同名文件
-          </label>
+            {t("覆盖同名文件")}</label>
           <Button
             variant="primary"
             icon="plus"
@@ -237,8 +235,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
             loading={busy === "import"}
             disabled={!manualPath.trim()}
           >
-            导入
-          </Button>
+            {t("导入")}</Button>
         </div>
       ) : null}
 
@@ -250,8 +247,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
             checked={overwrite}
             onChange={(e) => setOverwrite(e.target.checked)}
           />
-          覆盖同名文件
-        </label>
+          {t("覆盖同名文件")}</label>
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
@@ -259,7 +255,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
         <ul className="issue-list">
           {failed.map((f) => (
             <li key={f.fileName + f.error}>
-              <Badge tone="danger">失败</Badge>
+              <Badge tone="danger">{t("失败")}</Badge>
               <div>
                 <strong>{f.fileName}</strong>
                 <span className="muted small">{f.error}</span>
@@ -270,12 +266,12 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
       ) : null}
 
       {loading ? (
-        <p className="muted">正在读取 mods/ 目录…</p>
+        <p className="muted">{t("正在读取 mods/ 目录…")}</p>
       ) : mods.length === 0 ? (
         <EmptyState
           icon="plug"
-          title="没有模组文件"
-          description="把 .jar 拖进上面的区域，或点击“选择 .jar 文件”。"
+          title={t("没有模组文件")}
+          description={t("把 .jar 拖进上面的区域，或点击“选择 .jar 文件”。")}
         />
       ) : (
         <ul className="mod-list">
@@ -285,7 +281,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
                 <strong className="mono">{entry.fileName}</strong>
                 <span className="muted small">
                   {formatBytes(entry.size)}
-                  {entry.enabled ? " · 已启用" : " · 已禁用"}
+                  {entry.enabled ? t(" · 已启用") : t(" · 已禁用")}
                 </span>
               </div>
               <label className="inline-check">
@@ -295,8 +291,7 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
                   disabled={busy === entry.fileName}
                   onChange={() => void toggle(entry)}
                 />
-                启用
-              </label>
+                {t("启用")}</label>
               {deleting === entry.fileName ? (
                 <span className="mod-confirm">
                   <Button
@@ -305,16 +300,14 @@ export function ModManager({ instance, onClose }: { instance: Instance; onClose:
                     loading={busy === entry.fileName}
                     onClick={() => void remove(entry)}
                   >
-                    确认删除
-                  </Button>
+                    {t("确认删除")}</Button>
                   <Button size="sm" variant="ghost" onClick={() => setDeleting(null)}>
-                    取消
-                  </Button>
+                    {t("取消")}</Button>
                 </span>
               ) : (
                 <IconButton
                   icon="trash"
-                  label={`删除 ${entry.fileName}`}
+                  label={t("删除 {0}", [entry.fileName])}
                   onClick={() => setDeleting(entry.fileName)}
                 />
               )}

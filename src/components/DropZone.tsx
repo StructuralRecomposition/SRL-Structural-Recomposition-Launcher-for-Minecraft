@@ -3,6 +3,8 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Icon } from "./Icon";
 import { isExtension } from "../lib/files";
 import { isTauri } from "../lib/api";
+import { t } from "../lib/i18n";
+
 
 interface Props {
   accept: string[];
@@ -64,7 +66,7 @@ export function DropZone({ accept, onPaths, title, hint, disabled }: Props) {
     <div className={`dropzone ${over ? "dropzone--over" : ""} ${disabled ? "dropzone--off" : ""}`}>
       <Icon name="download" size={22} />
       <div>
-        <strong>{over ? "松开以导入" : title}</strong>
+        <strong>{over ? t("松开以导入") : title}</strong>
         <p>{hint}</p>
       </div>
     </div>

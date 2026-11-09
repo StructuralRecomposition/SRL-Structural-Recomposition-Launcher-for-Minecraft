@@ -9,7 +9,7 @@ on:
       tag:
         description: "Existing tag to publish (e.g. v0.2.0)"
         required: true
-        default: "v0.2.0"
+        default: "v0.2.1"
 
 permissions:
   contents: write
@@ -116,8 +116,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          name: SRL ${{ env.TAG }} — Minecraft 联机中心
-          body_path: release/RELEASE_NOTES_v0.2.0.md
+          name: SRL ${{ env.TAG }} — Structural Recomposition Launcher for Minecraft
+          body_path: release/RELEASE_NOTES_v0.2.1.md
           files: release-assets/*
           make_latest: true
           draft: false

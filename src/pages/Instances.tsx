@@ -9,6 +9,8 @@ import { ModManager } from "../components/ModManager";
 import { ShaderManager } from "../components/ShaderManager";
 import { MapManager } from "../components/MapManager";
 import { ResourcePackManager } from "../components/ResourcePackManager";
+import { t } from "../lib/i18n";
+
 
 export function InstancesPage() {
   const { bootstrap, reload, running, markRunning, pushToast, setPage } = useApp();
@@ -79,18 +81,18 @@ export function InstancesPage() {
   async function create() {
     setFormError(null);
     if (!name.trim()) {
-      setFormError("请输入实例名称");
+      setFormError(t("请输入实例名称"));
       return;
     }
     if (!versionId) {
-      setFormError("请先安装一个游戏版本");
+      setFormError(t("请先安装一个游戏版本"));
       return;
     }
     setBusy("create");
     try {
       await api.createInstance({ name: name.trim(), versionId, memoryMb: memory });
       setCreateOpen(false);
-      pushToast("实例已创建", "success", `${name.trim()} · ${versionId}`);
+      pushToast(t("实例已创建"), "success", `${name.trim()} · ${versionId}`);
       await reload();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
@@ -115,7 +117,7 @@ export function InstancesPage() {
         resolutionHeight: Number(editHeight) || 0,
       });
       setEditing(null);
-      pushToast("实例设置已保存", "success");
+      pushToast(t("实例设置已保存"), "success");
       await reload();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
@@ -129,12 +131,12 @@ export function InstancesPage() {
     try {
       const result = await api.launchInstance(inst.id);
       markRunning(inst.id, true);
-      pushToast("游戏进程已启动", "success", `PID ${result.pid}`);
+      pushToast(t("游戏进程已启动"), "success", `PID ${result.pid}`);
       if (result.warnings.length > 0) {
-        pushToast("启动提示", "warning", result.warnings.join("；"));
+        pushToast(t("启动提示"), "warning", result.warnings.join("；"));
       }
     } catch (e) {
-      pushToast("启动失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(t("启动失败"), "error", e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -143,20 +145,20 @@ export function InstancesPage() {
   async function stop(inst: Instance) {
     try {
       await api.stopInstance(inst.id);
-      pushToast("正在终止游戏进程", "warning");
+      pushToast(t("正在终止游戏进程"), "warning");
     } catch (e) {
-      pushToast("无法终止进程", "error", e instanceof Error ? e.message : String(e));
+      pushToast(t("无法终止进程"), "error", e instanceof Error ? e.message : String(e));
     }
   }
 
   async function duplicate(inst: Instance) {
     setBusy(inst.id);
     try {
-      const copy = await api.duplicateInstance(inst.id, `${inst.name} 副本`);
-      pushToast("实例已复制", "success", copy.name);
+      const copy = await api.duplicateInstance(inst.id, t("{0} 副本", [inst.name]));
+      pushToast(t("实例已复制"), "success", copy.name);
       await reload();
     } catch (e) {
-      pushToast("复制失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(t("复制失败"), "error", e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -169,10 +171,10 @@ export function InstancesPage() {
       await api.deleteInstance(deleting.id, deleteFiles);
       setDeleting(null);
       setDeleteFiles(false);
-      pushToast("实例已删除", "info", deleteFiles ? "实例目录已一并删除" : "游戏文件已保留");
+      pushToast(t("实例已删除"), "info", deleteFiles ? t("实例目录已一并删除") : t("游戏文件已保留"));
       await reload();
     } catch (e) {
-      pushToast("删除失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(t("删除失败"), "error", e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -191,9 +193,9 @@ export function InstancesPage() {
       setExportPath("");
       setOverwrite(false);
       pushToast(
-        "实例已导出",
+        t("实例已导出"),
         "success",
-        `${summary.files} 个文件 · ${formatBytes(summary.bytes)}${summary.skipped ? ` · 跳过 ${summary.skipped} 个符号链接` : ""}`,
+        t("{0} 个文件 · {1}{2}", [summary.files, formatBytes(summary.bytes), summary.skipped ? t("· 跳过 {0} 个符号链接", [summary.skipped]) : ""]),
       );
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
@@ -220,9 +222,9 @@ export function InstancesPage() {
           : await api.exportInstanceCurseforgePack(...args);
       setPackFor(null);
       pushToast(
-        packFormat === "modrinth" ? "Modrinth 整合包已导出" : "CurseForge 整合包已导出",
+        packFormat === "modrinth" ? t("Modrinth 整合包已导出") : t("CurseForge 整合包已导出"),
         summary.warnings.length ? "warning" : "success",
-        `${summary.resolvedMods} 个模组写入索引 · ${summary.bundledMods} 个放入 overrides · ${formatBytes(summary.bytes)}`,
+        t("{0} 个模组写入索引 · {1} 个放入 overrides · {2}", [summary.resolvedMods, summary.bundledMods, formatBytes(summary.bytes)]),
       );
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
@@ -266,7 +268,7 @@ export function InstancesPage() {
       setImportOpen(false);
       setImportPath("");
       setImportCheck(null);
-      pushToast("实例已导入", "success", inst.name);
+      pushToast(t("实例已导入"), "success", inst.name);
       await reload();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
@@ -279,8 +281,8 @@ export function InstancesPage() {
     <div className="page">
       <div className="toolbar">
         <div>
-          <h2>游戏实例</h2>
-          <p className="muted">每个实例有独立的游戏目录与启动配置，互不影响。</p>
+          <h2>{t("游戏实例")}</h2>
+          <p className="muted">{t("每个实例有独立的游戏目录与启动配置，互不影响。")}</p>
         </div>
         <div className="toolbar__actions">
           <Button
@@ -293,11 +295,9 @@ export function InstancesPage() {
               setFormError(null);
             }}
           >
-            导入实例
-          </Button>
+            {t("导入实例")}</Button>
           <Button icon="plus" variant="primary" onClick={openCreate} disabled={versions.length === 0}>
-            新建实例
-          </Button>
+            {t("新建实例")}</Button>
         </div>
       </div>
 
@@ -305,12 +305,11 @@ export function InstancesPage() {
         <Card>
           <EmptyState
             icon="layers"
-            title="还没有已安装的版本"
-            description="创建实例前需要先安装一个 Minecraft 版本。安装过程会真实下载并校验文件。"
+            title={t("还没有已安装的版本")}
+            description={t("创建实例前需要先安装一个 Minecraft 版本。安装过程会真实下载并校验文件。")}
             action={
               <Button variant="primary" icon="download" onClick={() => setPage("versions")}>
-                前往版本管理
-              </Button>
+                {t("前往版本管理")}</Button>
             }
           />
         </Card>
@@ -318,12 +317,11 @@ export function InstancesPage() {
         <Card>
           <EmptyState
             icon="box"
-            title="还没有游戏实例"
-            description="新建一个实例，选择已安装的版本与内存配置。"
+            title={t("还没有游戏实例")}
+            description={t("新建一个实例，选择已安装的版本与内存配置。")}
             action={
               <Button variant="primary" icon="plus" onClick={openCreate}>
-                新建实例
-              </Button>
+                {t("新建实例")}</Button>
             }
           />
         </Card>
@@ -343,42 +341,42 @@ export function InstancesPage() {
                       <span className="mono muted">{inst.id}</span>
                     </div>
                   </div>
-                  <Badge tone={isRunning ? "success" : "neutral"}>{isRunning ? "运行中" : "空闲"}</Badge>
+                  <Badge tone={isRunning ? "success" : "neutral"}>{isRunning ? t("运行中") : t("空闲")}</Badge>
                 </div>
 
                 <dl className="instance-meta">
                   <div>
-                    <dt>版本</dt>
+                    <dt>{t("版本")}</dt>
                     <dd>{inst.versionId}</dd>
                   </div>
                   <div>
-                    <dt>加载器</dt>
+                    <dt>{t("加载器")}</dt>
                     <dd>
                       {inst.modLoader
                         ? `${inst.modLoader.kind} ${inst.modLoader.version}`
-                        : "原版"}
+                        : t("原版")}
                     </dd>
                   </div>
                   <div>
-                    <dt>内存</dt>
+                    <dt>{t("内存")}</dt>
                     <dd>{inst.memoryMb} MB</dd>
                   </div>
                   <div>
                     <dt>Java</dt>
-                    <dd className="ellipsis" title={inst.javaPath ?? "自动选择"}>
-                      {inst.javaPath ?? "自动选择"}
+                    <dd className="ellipsis" title={inst.javaPath ?? t("自动选择")}>
+                      {inst.javaPath ?? t("自动选择")}
                     </dd>
                   </div>
                   <div>
-                    <dt>分辨率</dt>
+                    <dt>{t("分辨率")}</dt>
                     <dd>
                       {inst.resolutionWidth && inst.resolutionHeight
                         ? `${inst.resolutionWidth} × ${inst.resolutionHeight}`
-                        : "默认"}
+                        : t("默认")}
                     </dd>
                   </div>
                   <div>
-                    <dt>上次启动</dt>
+                    <dt>{t("上次启动")}</dt>
                     <dd>{relativeTime(inst.lastLaunchedAt)}</dd>
                   </div>
                 </dl>
@@ -390,8 +388,7 @@ export function InstancesPage() {
                 <div className="instance-card__actions">
                   {isRunning ? (
                     <Button size="sm" variant="danger" icon="stop" onClick={() => stop(inst)}>
-                      终止
-                    </Button>
+                      {t("终止")}</Button>
                   ) : (
                     <Button
                       size="sm"
@@ -400,41 +397,39 @@ export function InstancesPage() {
                       loading={busy === inst.id}
                       onClick={() => launch(inst)}
                     >
-                      启动
-                    </Button>
+                      {t("启动")}</Button>
                   )}
                   <Button size="sm" icon="edit" onClick={() => openEdit(inst)}>
-                    设置
-                  </Button>
+                    {t("设置")}</Button>
                   <IconButton
                     icon="copy"
-                    label="复制实例"
+                    label={t("复制实例")}
                     onClick={() => duplicate(inst)}
                     disabled={busy === inst.id}
                   />
                   <IconButton
                     icon="map"
-                    label="地图"
+                    label={t("地图")}
                     onClick={() => setMapsFor(inst)}
                   />
                   <IconButton
                     icon="palette"
-                    label="材质"
+                    label={t("材质")}
                     onClick={() => setTexturesFor(inst)}
                   />
                   <IconButton
                     icon="plug"
-                    label="管理模组"
+                    label={t("管理模组")}
                     onClick={() => setModsFor(inst)}
                   />
                   <IconButton
                     icon="sun"
-                    label="光影管理"
+                    label={t("光影管理")}
                     onClick={() => setShadersFor(inst)}
                   />
                   <IconButton
                     icon="download"
-                    label="导出实例"
+                    label={t("导出实例")}
                     onClick={() => {
                       setExporting(inst);
                       setExportPath(`${inst.name}.zip`);
@@ -444,7 +439,7 @@ export function InstancesPage() {
                   />
                   <IconButton
                     icon="box"
-                    label="导出整合包"
+                    label={t("导出整合包")}
                     onClick={() => {
                       setPackFor(inst);
                       setPackFormat("modrinth");
@@ -457,14 +452,14 @@ export function InstancesPage() {
                   />
                   <IconButton
                     icon="trash"
-                    label="删除实例"
+                    label={t("删除实例")}
                     onClick={() => {
                       setDeleting(inst);
                       setDeleteFiles(false);
                     }}
                   />
                 </div>
-                <span className="instance-card__created muted">创建于 {formatDate(inst.createdAt)}</span>
+                <span className="instance-card__created muted">{t("创建于")}{formatDate(inst.createdAt)}</span>
               </Card>
             );
           })}
@@ -474,39 +469,37 @@ export function InstancesPage() {
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="新建实例"
-        subtitle="实例目录创建在游戏目录的 instances/ 下。"
+        title={t("新建实例")}
+        subtitle={t("实例目录创建在游戏目录的 instances/ 下。")}
         footer={
           <>
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>
-              取消
-            </Button>
+              {t("取消")}</Button>
             <Button variant="primary" loading={busy === "create"} onClick={create}>
-              创建
-            </Button>
+              {t("创建")}</Button>
           </>
         }
       >
-        <Field label="实例名称" htmlFor="inst-name">
+        <Field label={t("实例名称")} htmlFor="inst-name">
           <input
             id="inst-name"
             value={name}
             maxLength={64}
-            placeholder="例如：生存 1.20"
+            placeholder={t("例如：生存 1.20")}
             onChange={(e) => setName(e.target.value)}
           />
         </Field>
-        <Field label="Minecraft 版本" hint="仅列出本地已安装的版本">
+        <Field label={t("Minecraft 版本")} hint={t("仅列出本地已安装的版本")}>
           <select value={versionId} onChange={(e) => setVersionId(e.target.value)}>
             {versions.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.id} {v.versionType ? `(${v.versionType})` : ""}
-                {v.hasJar ? "" : " · 缺少 JAR"}
+                {v.hasJar ? "" : t(" · 缺少 JAR")}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="最大内存 (MB)" hint="范围 512 - 65536">
+        <Field label={t("最大内存 (MB)")} hint={t("范围 512 - 65536")}>
           <input
             type="number"
             min={512}
@@ -522,24 +515,22 @@ export function InstancesPage() {
       <Modal
         open={editing !== null}
         onClose={() => setEditing(null)}
-        title="实例设置"
+        title={t("实例设置")}
         subtitle={editing ? `${editing.name} · ${editing.versionId}` : ""}
         footer={
           <>
             <Button variant="ghost" onClick={() => setEditing(null)}>
-              取消
-            </Button>
+              {t("取消")}</Button>
             <Button variant="primary" loading={busy === "edit"} onClick={saveEdit}>
-              保存
-            </Button>
+              {t("保存")}</Button>
           </>
         }
       >
         <div className="form-grid">
-          <Field label="实例名称">
+          <Field label={t("实例名称")}>
             <input value={editName} maxLength={64} onChange={(e) => setEditName(e.target.value)} />
           </Field>
-          <Field label="最大内存 (MB)">
+          <Field label={t("最大内存 (MB)")}>
             <input
               type="number"
               min={512}
@@ -550,37 +541,37 @@ export function InstancesPage() {
             />
           </Field>
         </div>
-        <Field label="Java 可执行文件" hint="留空即可：启动器按版本自动匹配（1.12.2→Java 8，1.21.1→Java 21，26.3→Java 25），不会用 Java 25 硬跑旧版本">
+        <Field label={t("Java 可执行文件")} hint={t("留空即可：启动器按版本自动匹配（1.12.2→Java 8，1.21.1→Java 21，26.3→Java 25），不会用 Java 25 硬跑旧版本")}>
           <select value={editJava} onChange={(e) => setEditJava(e.target.value)}>
-            <option value="">自动选择</option>
+            <option value="">{t("自动选择")}</option>
             {javasSorted.map((j) => (
               <option key={j.path} value={j.path}>
                 Java {j.major} — {j.path}
               </option>
             ))}
             {editJava && !javas.some((j) => j.path === editJava) ? (
-              <option value={editJava}>{editJava}（未检测）</option>
+              <option value={editJava}>{editJava}{t("（未检测）")}</option>
             ) : null}
           </select>
         </Field>
         <div className="form-grid">
-          <Field label="账号" hint="留空则跟随当前账号">
+          <Field label={t("账号")} hint={t("留空则跟随当前账号")}>
             <select value={editAccount} onChange={(e) => setEditAccount(e.target.value)}>
-              <option value="">跟随当前账号</option>
+              <option value="">{t("跟随当前账号")}</option>
               {(bootstrap?.accounts ?? []).map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.username}（{a.kind === "offline" ? "离线" : "Microsoft"}）
+                  {a.username}（{a.kind === "offline" ? t("离线") : "Microsoft"}）
                 </option>
               ))}
             </select>
           </Field>
-          <Field label="窗口分辨率" hint="留空使用游戏默认；宽 320-7680，高 240-4320">
+          <Field label={t("窗口分辨率")} hint={t("留空使用游戏默认；宽 320-7680，高 240-4320")}>
             <div className="resolution-inputs">
               <input
                 type="number"
                 min={320}
                 max={7680}
-                placeholder="宽"
+                placeholder={t("宽")}
                 value={editWidth}
                 onChange={(e) => setEditWidth(e.target.value)}
               />
@@ -589,7 +580,7 @@ export function InstancesPage() {
                 type="number"
                 min={240}
                 max={4320}
-                placeholder="高"
+                placeholder={t("高")}
                 value={editHeight}
                 onChange={(e) => setEditHeight(e.target.value)}
               />
@@ -597,15 +588,15 @@ export function InstancesPage() {
           </Field>
         </div>
         <div className="form-grid">
-          <Field label="额外 JVM 参数" hint="每行一个，原样传给 Java">
+          <Field label={t("额外 JVM 参数")} hint={t("每行一个，原样传给 Java")}>
             <textarea rows={4} value={editJvm} onChange={(e) => setEditJvm(e.target.value)} placeholder="-Dfoo=bar" />
           </Field>
-          <Field label="额外游戏参数" hint="每行一个，追加到主类之后">
+          <Field label={t("额外游戏参数")} hint={t("每行一个，追加到主类之后")}>
             <textarea rows={4} value={editGame} onChange={(e) => setEditGame(e.target.value)} placeholder="--demo" />
           </Field>
         </div>
         <p className="muted small">
-          实例目录：<span className="mono">{editing?.gameDir}</span>
+          {t("实例目录：")}<span className="mono">{editing?.gameDir}</span>
         </p>
         {formError ? <p className="form-error">{formError}</p> : null}
       </Modal>
@@ -613,22 +604,19 @@ export function InstancesPage() {
       <Modal
         open={deleting !== null}
         onClose={() => setDeleting(null)}
-        title="删除实例"
+        title={t("删除实例")}
         subtitle={deleting?.name}
         footer={
           <>
             <Button variant="ghost" onClick={() => setDeleting(null)}>
-              取消
-            </Button>
+              {t("取消")}</Button>
             <Button variant="danger" loading={busy === deleting?.id} onClick={confirmDelete}>
-              确认删除
-            </Button>
+              {t("确认删除")}</Button>
           </>
         }
       >
         <p>
-          将删除实例配置 <span className="mono">{deleting?.id}</span>。此操作不可撤销。
-        </p>
+          {t("将删除实例配置")}<span className="mono">{deleting?.id}</span>{t("。此操作不可撤销。")}</p>
         <label className="checkbox-row">
           <input
             type="checkbox"
@@ -636,44 +624,40 @@ export function InstancesPage() {
             onChange={(e) => setDeleteFiles(e.target.checked)}
           />
           <span>
-            同时删除实例目录中的全部文件（存档、模组、配置）
-            <small className="mono">{deleting?.gameDir}</small>
+            {t("同时删除实例目录中的全部文件（存档、模组、配置）")}<small className="mono">{deleting?.gameDir}</small>
           </span>
         </label>
         {!deleteFiles ? (
           <p className="notice notice--warning">
             <Icon name="info" size={16} />
-            不勾选时，仅移除启动器中的实例记录，游戏文件会保留在磁盘上。
-          </p>
+            {t("不勾选时，仅移除启动器中的实例记录，游戏文件会保留在磁盘上。")}</p>
         ) : (
-          <p className="form-error">危险：该目录会被递归删除，且不会进入回收站。</p>
+          <p className="form-error">{t("危险：该目录会被递归删除，且不会进入回收站。")}</p>
         )}
       </Modal>
 
       <Modal
         open={exporting !== null}
         onClose={() => setExporting(null)}
-        title="导出实例"
+        title={t("导出实例")}
         subtitle={exporting ? `${exporting.name} · ${exporting.versionId}` : ""}
         footer={
           <>
             <Button variant="ghost" onClick={() => setExporting(null)}>
-              取消
-            </Button>
+              {t("取消")}</Button>
             <Button
               variant="primary"
               loading={busy === exporting?.id}
               onClick={doExport}
               disabled={!exportPath.trim()}
             >
-              导出
-            </Button>
+              {t("导出")}</Button>
           </>
         }
       >
         <Field
-          label="导出文件路径"
-          hint="必须为 .zip；不包含日志、崩溃报告或任何账号令牌。"
+          label={t("导出文件路径")}
+          hint={t("必须为 .zip；不包含日志、崩溃报告或任何账号令牌。")}
         >
           <input
             className="mono"
@@ -688,38 +672,36 @@ export function InstancesPage() {
             checked={overwrite}
             onChange={(e) => setOverwrite(e.target.checked)}
           />
-          <span>允许覆盖已存在的文件</span>
+          <span>{t("允许覆盖已存在的文件")}</span>
         </label>
         <p className="muted small">
-          默认包含存档、模组、配置、资源包与光影；排除 <span className="mono">logs/</span>、
-          <span className="mono">crash-reports/</span> 和启动器内部配置。
-        </p>
+          {t("默认包含存档、模组、配置、资源包与光影；排除")}<span className="mono">logs/</span>、
+          <span className="mono">crash-reports/</span> {t("和启动器内部配置。")}</p>
         {formError ? <p className="form-error">{formError}</p> : null}
       </Modal>
 
       <Modal
         open={packFor !== null}
         onClose={() => setPackFor(null)}
-        title="导出整合包"
+        title={t("导出整合包")}
         subtitle={packFor ? `${packFor.name} · ${packFor.versionId}` : ""}
         footer={
           <>
             <Button variant="ghost" onClick={() => setPackFor(null)}>
-              取消
-            </Button>
+              {t("取消")}</Button>
             <Button
               variant="primary"
               loading={busy === "modpack"}
               onClick={doPackExport}
               disabled={!packPath.trim()}
             >
-              {packFormat === "modrinth" ? "导出 .mrpack" : "导出 ZIP"}
+              {packFormat === "modrinth" ? t("导出 .mrpack") : t("导出 ZIP")}
             </Button>
           </>
         }
       >
-        <Field label="导出格式">
-          <div className="inline-form" role="radiogroup" aria-label="整合包格式">
+        <Field label={t("导出格式")}>
+          <div className="inline-form" role="radiogroup" aria-label={t("整合包格式")}>
             <Button
               size="sm"
               variant={packFormat === "modrinth" ? "primary" : "ghost"}
@@ -736,14 +718,14 @@ export function InstancesPage() {
             </Button>
           </div>
         </Field>
-        <Field label="整合包名称">
+        <Field label={t("整合包名称")}>
           <input
             value={packName}
             onChange={(e) => setPackName(e.target.value)}
-            placeholder={packFor?.name ?? "整合包名称"}
+            placeholder={packFor?.name ?? t("整合包名称")}
           />
         </Field>
-        <Field label="整合包版本" hint="用于区分同一整合包的不同发布版本。">
+        <Field label={t("整合包版本")} hint={t("用于区分同一整合包的不同发布版本。")}>
           <input
             value={packVersion}
             onChange={(e) => setPackVersion(e.target.value)}
@@ -751,11 +733,11 @@ export function InstancesPage() {
           />
         </Field>
         <Field
-          label="导出文件路径"
+          label={t("导出文件路径")}
           hint={
             packFormat === "modrinth"
-              ? "必须为 .mrpack；可在 Modrinth 客户端、Prism、ATLauncher 等启动器中导入。"
-              : "必须为 .zip；包含 manifest.json，可在 CurseForge App、Prism 等启动器中导入。"
+              ? t("必须为 .mrpack；可在 Modrinth 客户端、Prism、ATLauncher 等启动器中导入。")
+              : t("必须为 .zip；包含 manifest.json，可在 CurseForge App、Prism 等启动器中导入。")
           }
         >
           <input
@@ -775,50 +757,44 @@ export function InstancesPage() {
             checked={packOverwrite}
             onChange={(e) => setPackOverwrite(e.target.checked)}
           />
-          <span>允许覆盖已存在的文件</span>
+          <span>{t("允许覆盖已存在的文件")}</span>
         </label>
         <p className="muted small">
           {packFormat === "modrinth" ? (
             <>
-              能在 Modrinth 识别到的模组会写入{" "}
-              <span className="mono">modrinth.index.json</span>，由导入方重新下载；
-            </>
+              {t("能在 Modrinth 识别到的模组会写入")}{" "}
+              <span className="mono">modrinth.index.json</span>{t("，由导入方重新下载；")}</>
           ) : (
             <>
-              能通过 CurseForge 官方指纹识别的模组会写入{" "}
-              <span className="mono">manifest.json</span> 的 projectID / fileID；
-            </>
+              {t("能通过 CurseForge 官方指纹识别的模组会写入")}{" "}
+              <span className="mono">manifest.json</span> {t("的 projectID / fileID；")}</>
           )}
-          其余模组和配置、资源包、光影会打包进 <span className="mono">overrides/</span>。
-          不会包含存档、日志或账号令牌。
-        </p>
+          {t("其余模组和配置、资源包、光影会打包进")}<span className="mono">overrides/</span>{t("。 不会包含存档、日志或账号令牌。")}</p>
         {formError ? <p className="form-error">{formError}</p> : null}
       </Modal>
 
       <Modal
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        title="导入实例"
-        subtitle="导入前会检查压缩包路径、大小与版本依赖。"
+        title={t("导入实例")}
+        subtitle={t("导入前会检查压缩包路径、大小与版本依赖。")}
         wide
         footer={
           <>
             <Button variant="ghost" onClick={() => setImportOpen(false)}>
-              取消
-            </Button>
+              {t("取消")}</Button>
             <Button
               variant="primary"
               loading={busy === "import"}
               onClick={doImport}
               disabled={!importCheck || !importCheck.versionInstalled}
             >
-              导入为新实例
-            </Button>
+              {t("导入为新实例")}</Button>
           </>
         }
       >
         <div className="inline-form">
-          <Field label="实例归档路径">
+          <Field label={t("实例归档路径")}>
             <input
               className="mono"
               value={importPath}
@@ -830,14 +806,13 @@ export function InstancesPage() {
             />
           </Field>
           <Button onClick={checkImport} loading={checking} disabled={!importPath.trim()}>
-            检查归档
-          </Button>
+            {t("检查归档")}</Button>
         </div>
         {importCheck ? (
           <>
             <div className="detail-list import-preview">
               <div>
-                <span>实例名称</span>
+                <span>{t("实例名称")}</span>
                 <strong>{importCheck.manifest.name}</strong>
               </div>
               <div>
@@ -845,26 +820,26 @@ export function InstancesPage() {
                 <strong>{importCheck.manifest.versionId}</strong>
               </div>
               <div>
-                <span>文件</span>
+                <span>{t("文件")}</span>
                 <strong>
-                  {importCheck.fileCount} 个 · {formatBytes(importCheck.totalBytes)}
+                  {importCheck.fileCount} {t("个 ·")}{formatBytes(importCheck.totalBytes)}
                 </strong>
               </div>
               <div>
-                <span>导出时间</span>
+                <span>{t("导出时间")}</span>
                 <strong>{formatDate(importCheck.manifest.exportedAt)}</strong>
               </div>
               <div>
-                <span>版本状态</span>
+                <span>{t("版本状态")}</span>
                 <strong>
                   {importCheck.versionInstalled
-                    ? "已安装"
-                    : `未安装，请先安装 ${importCheck.manifest.versionId}`}
+                    ? t("已安装")
+                    : t("未安装，请先安装 {0}", [importCheck.manifest.versionId])}
                 </strong>
               </div>
               {importCheck.manifest.modLoader ? (
                 <div>
-                  <span>加载器</span>
+                  <span>{t("加载器")}</span>
                   <strong>
                     {importCheck.manifest.modLoader.kind}{" "}
                     {importCheck.manifest.modLoader.version}
@@ -877,7 +852,7 @@ export function InstancesPage() {
                 {w}
               </p>
             ))}
-            <Field label="新实例名称">
+            <Field label={t("新实例名称")}>
               <input
                 value={importName}
                 maxLength={64}

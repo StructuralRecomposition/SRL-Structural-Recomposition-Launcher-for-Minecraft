@@ -18,6 +18,8 @@ import { AccountsPage } from "./pages/Accounts";
 import { AssistantPage } from "./pages/Assistant";
 import { DiagnosticsPage } from "./pages/Diagnostics";
 import { SettingsPage } from "./pages/Settings";
+import { t } from "./lib/i18n";
+
 
 const PAGES = {
   home: HomePage,
@@ -41,7 +43,7 @@ function Shell() {
     return (
       <div className="boot-screen">
         <img className="boot-logo" src={logo} alt="SRL" />
-        <p>正在读取本地配置…</p>
+        <p>{t("正在读取本地配置…")}</p>
         <div className="boot-bar" aria-hidden="true" />
       </div>
     );
@@ -52,12 +54,11 @@ function Shell() {
       <div className="boot-screen">
         <div className="boot-error">
           <Icon name="alert" size={28} />
-          <h1>启动器初始化失败</h1>
-          <p>{error?.message ?? "无法读取应用状态"}</p>
+          <h1>{t("启动器初始化失败")}</h1>
+          <p>{error?.message ?? t("无法读取应用状态")}</p>
           {error?.detail ? <code>{error.detail}</code> : null}
           <Button variant="primary" onClick={() => void reload()}>
-            重试
-          </Button>
+            {t("重试")}</Button>
         </div>
       </div>
     );
@@ -82,13 +83,12 @@ function NotDesktop() {
     <div className="boot-screen">
       <Card className="not-desktop">
         <img className="boot-logo" src={logo} alt="SRL" />
-        <h1>SRL 需要在桌面应用中运行</h1>
+        <h1>{t("SRL 需要在桌面应用中运行")}</h1>
         <p>
-          当前页面没有连接 Tauri 后端，因此不会显示任何模拟数据。请从项目根目录启动桌面开发环境：
-        </p>
+          {t("当前页面没有连接 Tauri 后端，因此不会显示任何模拟数据。请从项目根目录启动桌面开发环境：")}</p>
         <code>npm run dev:desktop</code>
         <p className="muted small">
-          或先构建：<code>npm run build</code>，再执行 <code>npm run build:desktop</code>。
+          {t("或先构建：")}<code>npm run build</code>{t("，再执行")}<code>npm run build:desktop</code>。
         </p>
       </Card>
     </div>
@@ -111,11 +111,10 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
       return (
         <div className="boot-screen">
           <Card className="not-desktop">
-            <h1>界面渲染出错</h1>
+            <h1>{t("界面渲染出错")}</h1>
             <p>{this.state.error.message}</p>
             <Button variant="primary" onClick={() => window.location.reload()}>
-              重新加载
-            </Button>
+              {t("重新加载")}</Button>
           </Card>
         </div>
       );

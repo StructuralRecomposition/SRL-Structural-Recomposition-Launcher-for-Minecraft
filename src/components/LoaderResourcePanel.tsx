@@ -12,14 +12,16 @@ import { baseVersionOfInstance, instanceLoaderKind } from "../lib/resourceTags";
 import { useApp } from "../state/AppContext";
 import { Badge, Button, Field, ProgressBar } from "../components/ui";
 import { Modal } from "../components/Modal";
+import { t as tr } from "../lib/i18n";
+
 
 const LOADERS = [
-  { id: "fabric", label: "Fabric", hint: "轻量、更新快，适合大多数 Fabric 模组" },
-  { id: "quilt", label: "Quilt", hint: "Fabric 生态衍生加载器，兼容大部分 Fabric 模组" },
-  { id: "forge", label: "Forge", hint: "老牌加载器，适合大型整合包；安装时会运行官方安装器" },
-  { id: "neoforge", label: "NeoForge", hint: "Forge 分支，适合 1.20.2+ 的新整合包" },
-  { id: "iris", label: "Iris", hint: "Fabric/Quilt 光影模组，安装到实例 mods/" },
-  { id: "optifine", label: "OptiFine", hint: "仅支持 Forge 实例，作为模组安装到 mods/" },
+  { id: "fabric", label: "Fabric", hint: tr("轻量、更新快，适合大多数 Fabric 模组") },
+  { id: "quilt", label: "Quilt", hint: tr("Fabric 生态衍生加载器，兼容大部分 Fabric 模组") },
+  { id: "forge", label: "Forge", hint: tr("老牌加载器，适合大型整合包；安装时会运行官方安装器") },
+  { id: "neoforge", label: "NeoForge", hint: tr("Forge 分支，适合 1.20.2+ 的新整合包") },
+  { id: "iris", label: "Iris", hint: tr("Fabric/Quilt 光影模组，安装到实例 mods/") },
+  { id: "optifine", label: "OptiFine", hint: tr("仅支持 Forge 实例，作为模组安装到 mods/") },
 ] as const;
 
 type LoaderId = (typeof LOADERS)[number]["id"];
@@ -75,7 +77,7 @@ export function LoaderResourcePanel() {
         setVersions(next);
         const first = next.find((v) => v.stable) ?? next[0];
         setSelected(first ? optionKey(first) : "");
-        if (next.length === 0) setError("该 Minecraft 版本没有可用版本");
+        if (next.length === 0) setError(tr("该 Minecraft 版本没有可用版本"));
       })
       .catch((e) => {
         if (id !== sequence.current) return;
@@ -93,7 +95,7 @@ export function LoaderResourcePanel() {
 
   return (
     <div className="loader-resource">
-      <div className="resource-tag-row" aria-label="加载器类型">
+      <div className="resource-tag-row" aria-label={tr("加载器类型")}>
         {LOADERS.map((item) => (
           <button
             key={item.id}
@@ -107,11 +109,11 @@ export function LoaderResourcePanel() {
       </div>
 
       <div className="loader-resource__form">
-        <Field label="Minecraft 版本" hint="可自由选择，不需要先安装原版客户端。">
+        <Field label={tr("Minecraft 版本")} hint={tr("可自由选择，不需要先安装原版客户端。")}>
           <select value={gameVersion} onChange={(e) => setGameVersion(e.target.value)}>
-            <option value="">选择 Minecraft 版本</option>
+            <option value="">{tr("选择 Minecraft 版本")}</option>
             {releases.length > 0 ? (
-              <optgroup label="正式版">
+              <optgroup label={tr("正式版")}>
                 {releases.map((v) => (
                   <option key={`r-${v.version}`} value={v.version}>
                     {v.version}
@@ -120,7 +122,7 @@ export function LoaderResourcePanel() {
               </optgroup>
             ) : null}
             {snapshots.length > 0 ? (
-              <optgroup label="快照 / 旧版">
+              <optgroup label={tr("快照 / 旧版")}>
                 {snapshots.map((v) => (
                   <option key={`s-${v.version}`} value={v.version}>
                     {v.version}
@@ -132,8 +134,8 @@ export function LoaderResourcePanel() {
         </Field>
 
         <Field
-          label={`${loaderLabel(loader)} 版本`}
-          hint={loading ? "正在获取版本…" : `${versions.length} 个可用版本`}
+          label={tr("{0} 版本", [loaderLabel(loader)])}
+          hint={loading ? tr("正在获取版本…") : tr("{0} 个可用版本", [versions.length])}
         >
           <select
             value={selected}
@@ -143,7 +145,7 @@ export function LoaderResourcePanel() {
             {versions.map((v) => (
               <option key={optionKey(v)} value={optionKey(v)}>
                 {v.label}
-                {v.stable === false ? "（测试）" : ""}
+                {v.stable === false ? tr("（测试）") : ""}
               </option>
             ))}
           </select>
@@ -153,12 +155,12 @@ export function LoaderResourcePanel() {
       <p className="muted small">
         {loaderHint}
         {loader === "fabric" || loader === "quilt"
-          ? " 下载到本地会保存官方 profile JSON；安装到实例会先安装该加载器版本并切换实例。"
+          ? tr(" 下载到本地会保存官方 profile JSON；安装到实例会先安装该加载器版本并切换实例。")
           : loader === "forge" || loader === "neoforge"
-            ? " 下载到本地会保存官方安装器 JAR；安装到实例会运行官方安装器并把实例切换到该版本。"
+            ? tr(" 下载到本地会保存官方安装器 JAR；安装到实例会运行官方安装器并把实例切换到该版本。")
             : loader === "iris"
-              ? " 需要 Fabric/Quilt 实例；只会把对应 Iris JAR 放进 mods/。"
-              : " 需要 Forge 实例；只会把 OptiFine 文件放进 mods/，不运行 GUI 安装器。"}
+              ? tr(" 需要 Fabric/Quilt 实例；只会把对应 Iris JAR 放进 mods/。")
+              : tr(" 需要 Forge 实例；只会把 OptiFine 文件放进 mods/，不运行 GUI 安装器。")}
       </p>
 
       <div className="loader-resource__actions">
@@ -168,15 +170,13 @@ export function LoaderResourcePanel() {
           disabled={!current || loading}
           onClick={() => setTarget("instance")}
         >
-          安装到实例
-        </Button>
+          {tr("安装到实例")}</Button>
         <Button
           icon="download"
           disabled={!current || loading}
           onClick={() => setTarget("directory")}
         >
-          下载到本地
-        </Button>
+          {tr("下载到本地")}</Button>
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
@@ -265,14 +265,14 @@ function LoaderTargetDialog({
     if (task?.status === "completed" && !done.current) {
       done.current = true;
       pushToast(
-        mode === "instance" ? `${loaderLabel} 已安装` : `${loaderLabel} 已下载`,
+        mode === "instance" ? tr("{0} 已安装", [loaderLabel]) : tr("{0} 已下载", [loaderLabel]),
         "success",
         `${option.label} · ${gameVersion}`,
       );
       void onFinished();
     } else if (task?.status === "failed" && !done.current) {
       done.current = true;
-      setError(task.error?.message ?? "安装失败");
+      setError(task.error?.message ?? tr("安装失败"));
     }
   }, [
     task?.status,
@@ -291,7 +291,7 @@ function LoaderTargetDialog({
     setStarting(true);
     try {
       if (mode === "instance") {
-        if (!instanceId) throw new Error("请选择目标实例");
+        if (!instanceId) throw new Error(tr("请选择目标实例"));
         const result = await api.installLoaderResource(
           loader,
           gameVersion,
@@ -301,7 +301,7 @@ function LoaderTargetDialog({
         );
         setAccepted(result);
       } else {
-        if (!dir.trim()) throw new Error("请选择下载目录");
+        if (!dir.trim()) throw new Error(tr("请选择下载目录"));
         const result = await api.downloadLoaderResource(
           loader,
           gameVersion,
@@ -310,7 +310,7 @@ function LoaderTargetDialog({
           dir.trim(),
         );
         setAccepted(result);
-        pushToast("下载任务已开始", "info", option.label);
+        pushToast(tr("下载任务已开始"), "info", option.label);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -323,13 +323,12 @@ function LoaderTargetDialog({
     <Modal
       open
       onClose={accepted && isActive(task?.status ?? "queued") ? () => undefined : onClose}
-      title={mode === "instance" ? `安装 ${loaderLabel}` : `下载 ${loaderLabel}`}
+      title={mode === "instance" ? tr("安装 {0}", [loaderLabel]) : tr("下载 {0}", [loaderLabel])}
       subtitle={`${option.label} · Minecraft ${gameVersion}`}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={Boolean(accepted)}>
-            关闭
-          </Button>
+            {tr("关闭")}</Button>
           <Button
             variant="primary"
             icon="download"
@@ -337,7 +336,7 @@ function LoaderTargetDialog({
             disabled={accepted !== null}
             onClick={() => void start()}
           >
-            {mode === "instance" ? "开始安装" : "开始下载"}
+            {mode === "instance" ? tr("开始安装") : tr("开始下载")}
           </Button>
         </>
       }
@@ -346,29 +345,27 @@ function LoaderTargetDialog({
         <>
           <div className="notice notice--warning">
             <p>
-              安装会把目标实例切换到 <span className="mono">{loaderLabel}</span>{" "}
-              版本，mods/ 与存档不会被删除。实例的基础版本必须与所选 Minecraft 一致。
-            </p>
+              {tr("安装会把目标实例切换到")}<span className="mono">{loaderLabel}</span>{" "}
+              {tr("版本，mods/ 与存档不会被删除。实例的基础版本必须与所选 Minecraft 一致。")}</p>
           </div>
-          <Field label="目标实例">
+          <Field label={tr("目标实例")}>
             <select value={instanceId} onChange={(e) => setInstanceId(e.target.value)}>
-              <option value="">选择实例</option>
+              <option value="">{tr("选择实例")}</option>
               {eligible.map(({ instance, ok }) => (
                 <option key={instance.id} value={instance.id} disabled={!ok}>
                   {instance.name} · {instance.versionId}
-                  {ok ? "" : "（版本不匹配）"}
+                  {ok ? "" : tr("（版本不匹配）")}
                 </option>
               ))}
             </select>
           </Field>
           {eligible.every((row) => !row.ok) ? (
             <p className="form-error">
-              没有基础版本为 {gameVersion} 的可用实例。请先在版本管理中安装并创建实例，或改为下载到本地。
-            </p>
+              {tr("没有基础版本为")}{gameVersion} {tr("的可用实例。请先在版本管理中安装并创建实例，或改为下载到本地。")}</p>
           ) : null}
         </>
       ) : (
-        <Field label="下载目录" hint="会保存官方加载器文件；不会自动安装到游戏。">
+        <Field label={tr("下载目录")} hint={tr("会保存官方加载器文件；不会自动安装到游戏。")}>
           <input
             value={dir}
             onChange={(e) => setDir(e.target.value)}
@@ -395,15 +392,14 @@ function LoaderTargetDialog({
                 label={
                   task.totalBytes > 0
                     ? `${formatBytes(task.doneBytes)} / ${formatBytes(task.totalBytes)}`
-                    : `已处理 ${formatBytes(task.doneBytes)}`
+                    : tr("已处理 {0}", [formatBytes(task.doneBytes)])
                 }
               />
               <span className="muted small">
-                {task.doneFiles}/{task.totalFiles} 个文件
-              </span>
+                {task.doneFiles}/{task.totalFiles} {tr("个文件")}</span>
             </>
           ) : (
-            <p className="muted small">正在创建任务…</p>
+            <p className="muted small">{tr("正在创建任务…")}</p>
           )}
         </div>
       ) : null}

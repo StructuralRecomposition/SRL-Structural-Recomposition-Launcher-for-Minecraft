@@ -12,6 +12,8 @@ import { Badge, Button, EmptyState, Field, IconButton } from "./ui";
 import { Icon } from "./Icon";
 import { Modal } from "./Modal";
 import { DropZone } from "./DropZone";
+import { t } from "../lib/i18n";
+
 
 const PACK_ACCEPT = [".zip"];
 
@@ -57,14 +59,14 @@ export function ResourcePackManager({
     const bad = outcomes.filter((o) => !o.ok);
     if (ok.length > 0) {
       pushToast(
-        ok.length === 1 ? "材质包已导入" : `已导入 ${ok.length} 个材质包`,
+        ok.length === 1 ? t("材质包已导入") : t("已导入 {0} 个材质包", [ok.length]),
         "success",
         ok.map((o) => o.fileName).join("、"),
       );
     }
     setError(
       bad.length > 0
-        ? bad.map((o) => `${o.fileName}：${o.error ?? "导入失败"}`).join("；")
+        ? bad.map((o) => `${o.fileName}：${o.error ?? t("导入失败")}`).join("；")
         : null,
     );
   }
@@ -93,7 +95,7 @@ export function ResourcePackManager({
       setBusy(`file:${file.name}`);
       try {
         if (file.size > MAX_UPLOAD_BYTES) {
-          throw new Error("文件超过 512MB，请改用拖拽或手动路径导入");
+          throw new Error(t("文件超过 512MB，请改用拖拽或手动路径导入"));
         }
         const bytes = await readFileBytes(file);
         const entry = await api.importResourcepackBytes(
@@ -128,10 +130,10 @@ export function ResourcePackManager({
       );
       const outcome = outcomes[0];
       if (!outcome || !outcome.ok) {
-        throw new Error(outcome?.error ?? "导入失败");
+        throw new Error(outcome?.error ?? t("导入失败"));
       }
       setManualPath("");
-      pushToast("材质包已导入", "success", outcome.fileName);
+      pushToast(t("材质包已导入"), "success", outcome.fileName);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -153,7 +155,7 @@ export function ResourcePackManager({
         prev.map((p) => (p.fileName === entry.fileName ? updated : p)),
       );
       pushToast(
-        updated.enabled ? "材质包已启用" : "材质包已禁用",
+        updated.enabled ? t("材质包已启用") : t("材质包已禁用"),
         "info",
         updated.fileName,
       );
@@ -170,7 +172,7 @@ export function ResourcePackManager({
       await api.deleteResourcepack(instance.id, entry.fileName);
       setDeleting(null);
       await load();
-      pushToast("材质包已删除", "info", entry.fileName);
+      pushToast(t("材质包已删除"), "info", entry.fileName);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -182,7 +184,7 @@ export function ResourcePackManager({
     try {
       await api.openLauncherPath("instanceResourcepacks", instance.id);
     } catch (e) {
-      pushToast("无法打开文件夹", "error", e instanceof Error ? e.message : undefined);
+      pushToast(t("无法打开文件夹"), "error", e instanceof Error ? e.message : undefined);
     }
   }
 
@@ -190,26 +192,25 @@ export function ResourcePackManager({
     <Modal
       open
       onClose={onClose}
-      title="材质"
+      title={t("材质")}
       subtitle={`${instance.name} · resourcepacks/`}
       footer={
         <Button variant="ghost" onClick={onClose}>
-          关闭
-        </Button>
+          {t("关闭")}</Button>
       }
     >
       <div className="notice">
         <Icon name="palette" size={16} />
         <p>
-          材质包会复制到实例的 <code className="mono">resourcepacks/</code>；启用状态写入{" "}
-          <code className="mono">options.txt</code>。ZIP 根目录必须包含{" "}
+          {t("材质包会复制到实例的")}<code className="mono">resourcepacks/</code>{t("；启用状态写入")}{" "}
+          <code className="mono">options.txt</code>{t("。ZIP 根目录必须包含")}{" "}
           <code className="mono">pack.mcmeta</code>。
         </p>
       </div>
       {isRunning ? (
         <div className="notice notice--warning">
           <Icon name="alert" size={16} />
-          <p>游戏正在运行：修改启用状态可能在退出时被游戏覆盖，建议退出游戏后调整。</p>
+          <p>{t("游戏正在运行：修改启用状态可能在退出时被游戏覆盖，建议退出游戏后调整。")}</p>
         </div>
       ) : null}
 
@@ -217,8 +218,8 @@ export function ResourcePackManager({
         <DropZone
           accept={PACK_ACCEPT}
           onPaths={(paths) => void importPaths(paths)}
-          title="拖入 .zip 材质包到这里"
-          hint="支持一次拖入多个文件；只复制，不会修改源文件。"
+          title={t("拖入 .zip 材质包到这里")}
+          hint={t("支持一次拖入多个文件；只复制，不会修改源文件。")}
           disabled={importing}
         />
         <div className="file-toolbar__buttons">
@@ -228,20 +229,17 @@ export function ResourcePackManager({
             onClick={() => void importPicked()}
             loading={importing}
           >
-            选择 .zip 材质包
-          </Button>
+            {t("选择 .zip 材质包")}</Button>
           <Button icon="folder" onClick={() => void openFolder()}>
-            打开文件夹
-          </Button>
+            {t("打开文件夹")}</Button>
           <Button variant="ghost" onClick={() => setManualOpen((v) => !v)}>
-            手动路径
-          </Button>
+            {t("手动路径")}</Button>
         </div>
       </div>
 
       {manualOpen ? (
         <div className="mod-import">
-          <Field label="从本地路径导入" hint="只接受 .zip；文件名会保留。">
+          <Field label={t("从本地路径导入")} hint={t("只接受 .zip；文件名会保留。")}>
             <input
               className="mono"
               value={manualPath}
@@ -255,8 +253,7 @@ export function ResourcePackManager({
               checked={overwrite}
               onChange={(e) => setOverwrite(e.target.checked)}
             />
-            覆盖同名文件
-          </label>
+            {t("覆盖同名文件")}</label>
           <Button
             variant="primary"
             icon="plus"
@@ -264,34 +261,31 @@ export function ResourcePackManager({
             loading={busy === "import"}
             disabled={!manualPath.trim()}
           >
-            导入
-          </Button>
+            {t("导入")}</Button>
         </div>
       ) : null}
 
       <div className="file-summary">
         <span className="muted small">
-          {packs.length} 个材质包 · {packs.filter((p) => p.enabled).length} 个启用
-        </span>
+          {packs.length} {t("个材质包 ·")}{packs.filter((p) => p.enabled).length} {t("个启用")}</span>
         <label className="inline-check">
           <input
             type="checkbox"
             checked={overwrite}
             onChange={(e) => setOverwrite(e.target.checked)}
           />
-          覆盖同名文件
-        </label>
+          {t("覆盖同名文件")}</label>
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
 
       {loading ? (
-        <p className="muted">正在读取 resourcepacks/ 目录…</p>
+        <p className="muted">{t("正在读取 resourcepacks/ 目录…")}</p>
       ) : packs.length === 0 ? (
         <EmptyState
           icon="palette"
-          title="没有材质包"
-          description="把 .zip 材质包拖进上面的区域，或点击“选择 .zip 材质包”。"
+          title={t("没有材质包")}
+          description={t("把 .zip 材质包拖进上面的区域，或点击“选择 .zip 材质包”。")}
         />
       ) : (
         <ul className="mod-list">
@@ -305,27 +299,26 @@ export function ResourcePackManager({
                   {entry.fileName}
                   {entry.managed ? (
                     <span className="rp-badge">
-                      <Badge tone="accent">皮肤自动管理</Badge>
+                      <Badge tone="accent">{t("皮肤自动管理")}</Badge>
                     </span>
                   ) : null}
                 </strong>
                 <span className="muted small">
-                  {entry.isDir ? "文件夹" : formatBytes(entry.size)}
-                  {entry.enabled ? " · 已启用" : " · 已禁用"}
+                  {entry.isDir ? t("文件夹") : formatBytes(entry.size)}
+                  {entry.enabled ? t(" · 已启用") : t(" · 已禁用")}
                   {entry.modifiedAt ? ` · ${relativeTime(entry.modifiedAt)}` : ""}
                 </span>
               </div>
-              <label className="inline-check" title={entry.managed ? "由账号皮肤自动管理" : undefined}>
+              <label className="inline-check" title={entry.managed ? t("由账号皮肤自动管理") : undefined}>
                 <input
                   type="checkbox"
                   checked={entry.enabled}
                   disabled={entry.managed || busy === entry.fileName}
                   onChange={() => void toggle(entry)}
                 />
-                启用
-              </label>
+                {t("启用")}</label>
               {entry.managed ? (
-                <span className="rp-lock" title="由账号皮肤自动管理">
+                <span className="rp-lock" title={t("由账号皮肤自动管理")}>
                   <Icon name="shield" size={16} />
                 </span>
               ) : deleting === entry.fileName ? (
@@ -336,16 +329,14 @@ export function ResourcePackManager({
                     loading={busy === entry.fileName}
                     onClick={() => void remove(entry)}
                   >
-                    确认删除
-                  </Button>
+                    {t("确认删除")}</Button>
                   <Button size="sm" variant="ghost" onClick={() => setDeleting(null)}>
-                    取消
-                  </Button>
+                    {t("取消")}</Button>
                 </span>
               ) : (
                 <IconButton
                   icon="trash"
-                  label={`删除材质包 ${entry.fileName}`}
+                  label={t("删除材质包 {0}", [entry.fileName])}
                   onClick={() => setDeleting(entry.fileName)}
                 />
               )}

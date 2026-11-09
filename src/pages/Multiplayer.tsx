@@ -14,18 +14,20 @@ import { Badge, Button, Card, Field, InfoHint, Notice } from "../components/ui";
 import { Modal } from "../components/Modal";
 import { MultiplayerHelp } from "../components/MultiplayerHelp";
 import { Icon } from "../components/Icon";
+import { t } from "../lib/i18n";
+
 
 const CREATE_STEPS: { step: string; label: string }[] = [
-  { step: "auth", label: "检查 52FRP 账户" },
-  { step: "local", label: "检查本地 Minecraft 服务" },
-  { step: "nodes", label: "获取可用节点" },
-  { step: "node", label: "选择合适节点" },
-  { step: "quota", label: "检查隧道额度" },
-  { step: "port", label: "获取远程端口" },
-  { step: "tunnel", label: "创建隧道" },
-  { step: "config", label: "获取隧道配置" },
-  { step: "frpc", label: "下载并启动 FRPC" },
-  { step: "verify", label: "等待 52FRP 云端确认" },
+  { step: "auth", label: t("检查 52FRP 账户") },
+  { step: "local", label: t("检查本地 Minecraft 服务") },
+  { step: "nodes", label: t("获取可用节点") },
+  { step: "node", label: t("选择合适节点") },
+  { step: "quota", label: t("检查隧道额度") },
+  { step: "port", label: t("获取远程端口") },
+  { step: "tunnel", label: t("创建隧道") },
+  { step: "config", label: t("获取隧道配置") },
+  { step: "frpc", label: t("下载并启动 FRPC") },
+  { step: "verify", label: t("等待 52FRP 云端确认") },
 ];
 
 function editionLabel(edition: MultiplayerEdition) {
@@ -47,10 +49,10 @@ function stateTone(room: MultiplayerRoom): "success" | "warning" | "neutral" {
 }
 
 function roomStateLabel(room: MultiplayerRoom) {
-  if (room.state === "online") return "联机在线";
-  if (room.state === "retained") return "隧道保留";
-  if (room.state === "local_stopped") return "本地游戏已退出";
-  return "FRPC 离线";
+  if (room.state === "online") return t("联机在线");
+  if (room.state === "retained") return t("隧道保留");
+  if (room.state === "local_stopped") return t("本地游戏已退出");
+  return t("FRPC 离线");
 }
 
 type ConfirmAction = {
@@ -207,7 +209,7 @@ export function MultiplayerPage() {
     try {
       await api.multiplayerConnect(token.trim());
       setToken("");
-      pushToast("已连接 52FRP", "success");
+      pushToast(t("已连接 52FRP"), "success");
       await loadStatus();
       await loadOrphans();
     } catch (e) {
@@ -221,7 +223,7 @@ export function MultiplayerPage() {
     setBusy("logout");
     try {
       await api.multiplayerLogout();
-      pushToast("已退出 52FRP 账户", "info");
+      pushToast(t("已退出 52FRP 账户"), "info");
       await loadStatus();
       setOrphans([]);
     } catch (e) {
@@ -240,7 +242,7 @@ export function MultiplayerPage() {
       if (result.detectedPort) setLocalPort(String(result.detectedPort));
       pushToast(result.message, result.found ? "success" : "warning");
     } catch (e) {
-      pushToast("检测本地服务失败", "error", e instanceof Error ? e.message : undefined);
+      pushToast(t("检测本地服务失败"), "error", e instanceof Error ? e.message : undefined);
     } finally {
       setDetecting(false);
     }
@@ -248,7 +250,7 @@ export function MultiplayerPage() {
 
   async function createRoom() {
     if (!instance) {
-      pushToast("请先选择一个游戏实例", "warning");
+      pushToast(t("请先选择一个游戏实例"), "warning");
       setPage("instances");
       return;
     }
@@ -269,7 +271,7 @@ export function MultiplayerPage() {
           step.step === "verify" ? { ...step, status: "ok", detail: null } : step,
         ),
       );
-      pushToast("联机房间已创建", "success", address(room));
+      pushToast(t("联机房间已创建"), "success", address(room));
       await loadStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -288,7 +290,7 @@ export function MultiplayerPage() {
     try {
       const result = await api.multiplayerStopRoom(deleteTunnel);
       pushToast(
-        result.tunnelDeleted ? "联机已停止，隧道已删除" : "联机已停止",
+        result.tunnelDeleted ? t("联机已停止，隧道已删除") : t("联机已停止"),
         result.tunnelDeleted ? "success" : "info",
         result.message,
       );
@@ -305,7 +307,7 @@ export function MultiplayerPage() {
     setBusy("restart");
     try {
       await api.multiplayerRestartFrpc();
-      pushToast("FRPC 已重新启动", "success");
+      pushToast(t("FRPC 已重新启动"), "success");
       await loadStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -320,16 +322,16 @@ export function MultiplayerPage() {
       await navigator.clipboard.writeText(address(room));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
-      pushToast("联机地址已复制", "success", address(room));
+      pushToast(t("联机地址已复制"), "success", address(room));
     } catch {
-      pushToast("复制失败", "warning", "当前环境不允许访问剪贴板");
+      pushToast(t("复制失败"), "warning", t("当前环境不允许访问剪贴板"));
     }
   }
 
   async function deleteOrphan(tunnelId: number) {
     try {
       await api.multiplayerDeleteOrphan(tunnelId);
-      pushToast("临时隧道已删除", "success");
+      pushToast(t("临时隧道已删除"), "success");
       await loadOrphans();
       await loadStatus();
     } catch (e) {
@@ -339,9 +341,9 @@ export function MultiplayerPage() {
 
   function askLogout() {
     setConfirmAction({
-      title: "退出 52FRP 账户",
-      message: "会清除本机保存的 API 访问令牌。当前房间需要先清理。",
-      action: "退出账户",
+      title: t("退出 52FRP 账户"),
+      message: t("会清除本机保存的 API 访问令牌。当前房间需要先清理。"),
+      action: t("退出账户"),
       danger: true,
       run: logout,
     });
@@ -349,11 +351,11 @@ export function MultiplayerPage() {
 
   function askStop(deleteTunnel: boolean) {
     setConfirmAction({
-      title: deleteTunnel ? "停止并删除临时隧道" : "停止联机",
+      title: deleteTunnel ? t("停止并删除临时隧道") : t("停止联机"),
       message: deleteTunnel
-        ? "停止 FRPC 并删除这次创建的 SRL 临时隧道。不会删除账户中的其他隧道。"
-        : "停止 FRPC？云端隧道会保留，下次进入联机中心时可以删除。",
-      action: deleteTunnel ? "停止并删除" : "停止联机",
+        ? t("停止 FRPC 并删除这次创建的 SRL 临时隧道。不会删除账户中的其他隧道。")
+        : t("停止 FRPC？云端隧道会保留，下次进入联机中心时可以删除。"),
+      action: deleteTunnel ? t("停止并删除") : t("停止联机"),
       danger: deleteTunnel,
       run: () => stopRoom(deleteTunnel),
     });
@@ -361,9 +363,9 @@ export function MultiplayerPage() {
 
   function askDeleteOrphan(tunnelId: number) {
     setConfirmAction({
-      title: "删除 SRL 临时隧道",
-      message: "只删除这条由 SRL 创建的临时隧道，其他隧道不会受影响。",
-      action: "删除",
+      title: t("删除 SRL 临时隧道"),
+      message: t("只删除这条由 SRL 创建的临时隧道，其他隧道不会受影响。"),
+      action: t("删除"),
       danger: true,
       run: () => deleteOrphan(tunnelId),
     });
@@ -373,7 +375,7 @@ export function MultiplayerPage() {
     void api
       .openTrustedUrl("https://www.52frp.com/user/#/user-center")
       .catch((e) =>
-        pushToast("无法打开 52FRP 个人中心", "warning", e instanceof Error ? e.message : undefined),
+        pushToast(t("无法打开 52FRP 个人中心"), "warning", e instanceof Error ? e.message : undefined),
       );
   }
 
@@ -381,7 +383,7 @@ export function MultiplayerPage() {
     return (
       <div className="page">
         <Card>
-          <p className="muted">正在读取联机状态…</p>
+          <p className="muted">{t("正在读取联机状态…")}</p>
         </Card>
       </div>
     );
@@ -391,15 +393,13 @@ export function MultiplayerPage() {
     return (
       <div className="page">
         <Card>
-          <h3>无法读取联机状态</h3>
-          <p className="muted">{error ?? "请稍后重试。"}</p>
+          <h3>{t("无法读取联机状态")}</h3>
+          <p className="muted">{error ?? t("请稍后重试。")}</p>
           <div className="toolbar__actions">
             <Button size="sm" variant="primary" onClick={() => void loadStatus()}>
-              重试
-            </Button>
+              {t("重试")}</Button>
             <Button size="sm" variant="ghost" onClick={() => setPage("settings")}>
-              打开设置
-            </Button>
+              {t("打开设置")}</Button>
           </div>
         </Card>
       </div>
@@ -410,26 +410,25 @@ export function MultiplayerPage() {
     <div className="page multiplayer-page">
       <div className="mp-toolbar">
         <div className="mp-toolbar__title">
-          <h2>Minecraft 联机</h2>
+          <h2>{t("Minecraft 联机")}</h2>
         </div>
         <div className="mp-toolbar__status">
           <Badge tone={status.loggedIn ? "success" : "neutral"}>
             {status.providerName ?? "52FRP"}
           </Badge>
           <Badge tone={online ? "success" : "neutral"}>
-            {online ? "联机在线" : status.loggedIn ? "未建房" : "未连接"}
+            {online ? t("联机在线") : status.loggedIn ? t("未建房") : t("未连接")}
           </Badge>
         </div>
       </div>
 
-      {error ? <Notice tone="danger" title="操作失败">{error}</Notice> : null}
+      {error ? <Notice tone="danger" title={t("操作失败")}>{error}</Notice> : null}
       {status.lastError && status.lastError !== error ? (
-        <Notice tone="warning" title="最近一次连接状态">{status.lastError}</Notice>
+        <Notice tone="warning" title={t("最近一次连接状态")}>{status.lastError}</Notice>
       ) : null}
       {!status.tokenConfigured ? (
-        <Notice tone="warning" title="先连接 52FRP">
-          还没有连接 52FRP，先在下方粘贴 API 令牌。
-        </Notice>
+        <Notice tone="warning" title={t("先连接 52FRP")}>
+          {t("还没有连接 52FRP，先在下方粘贴 API 令牌。")}</Notice>
       ) : null}
 
       <div className="mp-layout">
@@ -442,25 +441,24 @@ export function MultiplayerPage() {
                 </span>
                 <div>
                   <div className="mp-account__name">
-                    <strong>{status.account?.displayName ?? "52FRP 账户"}</strong>
+                    <strong>{status.account?.displayName ?? t("52FRP 账户")}</strong>
                   </div>
                   <span className="muted small">
                     {status.account?.tunnelLimit != null
-                      ? `隧道 ${status.account.tunnelCount ?? 0}/${status.account.tunnelLimit}`
-                      : "已连接"}
+                      ? t("隧道 {0}/{1}", [status.account.tunnelCount ?? 0, status.account.tunnelLimit])
+                      : t("已连接")}
                   </span>
                 </div>
               </div>
               <div className="mp-account__actions">
-                <Badge tone="success">已连接</Badge>
+                <Badge tone="success">{t("已连接")}</Badge>
                 <Button
                   size="sm"
                   variant="ghost"
                   loading={busy === "logout"}
                   onClick={askLogout}
                 >
-                  退出
-                </Button>
+                  {t("退出")}</Button>
               </div>
             </Card>
           ) : null}
@@ -481,18 +479,18 @@ export function MultiplayerPage() {
             <Card className="mp-create">
               <div className="card-head">
                 <div className="mp-card-title">
-                  <h3>创建房间</h3>
+                  <h3>{t("创建房间")}</h3>
                 </div>
                 <Badge tone={status.loggedIn ? "success" : "warning"}>
-                  {status.loggedIn ? "可以开始" : "需要令牌"}
+                  {status.loggedIn ? t("可以开始") : t("需要令牌")}
                 </Badge>
               </div>
 
               {!status.loggedIn ? (
                 <div className="mp-login-block">
                   <div className="mp-label-row">
-                    <span className="field__label">52FRP API 令牌</span>
-                    <InfoHint text="在 52FRP 头像 → API 访问里创建，权限要勾选“创建和修改隧道与客户端”。令牌只存系统凭据库。" />
+                    <span className="field__label">{t("52FRP API 令牌")}</span>
+                    <InfoHint text={t("在 52FRP 头像 → API 访问里创建，权限要勾选“创建和修改隧道与客户端”。令牌只存系统凭据库。")} />
                   </div>
                   <div className="mp-token-row">
                     <input
@@ -512,16 +510,13 @@ export function MultiplayerPage() {
                       disabled={!token.trim()}
                       onClick={() => void connect()}
                     >
-                      连接
-                    </Button>
+                      {t("连接")}</Button>
                   </div>
                   <div className="mp-login-links">
                     <Button size="sm" variant="ghost" onClick={openFrp}>
-                      打开 52FRP
-                    </Button>
+                      {t("打开 52FRP")}</Button>
                     <Button size="sm" variant="ghost" onClick={() => setHelpOpen(true)}>
-                      怎么获取令牌？
-                    </Button>
+                      {t("怎么获取令牌？")}</Button>
                   </div>
                 </div>
               ) : (
@@ -532,26 +527,24 @@ export function MultiplayerPage() {
                       className={`segmented__item ${edition === "java" ? "segmented__item--active" : ""}`}
                       onClick={() => setEdition("java")}
                     >
-                      Java 版
-                    </button>
+                      {t("Java 版")}</button>
                     <button
                       type="button"
                       className={`segmented__item ${edition === "bedrock" ? "segmented__item--active" : ""}`}
                       onClick={() => setEdition("bedrock")}
                     >
-                      基岩版
-                    </button>
+                      {t("基岩版")}</button>
 
                   </div>
 
                   <div className="form-grid">
-                    <Field label="游戏实例">
+                    <Field label={t("游戏实例")}>
                       <select
                         value={instance?.id ?? ""}
                         onChange={(event) => setInstanceId(event.target.value)}
                         disabled={instances.length === 0 || creating}
                       >
-                        {instances.length === 0 ? <option value="">还没有游戏实例</option> : null}
+                        {instances.length === 0 ? <option value="">{t("还没有游戏实例")}</option> : null}
                         {instances.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.name} · {item.versionId}
@@ -560,8 +553,8 @@ export function MultiplayerPage() {
                       </select>
                     </Field>
                     <Field
-                      label="节点"
-                      info="节点是 52FRP 的中转服务器。自动选择会挑延迟低、负载低的可用节点。"
+                      label={t("节点")}
+                      info={t("节点是 52FRP 的中转服务器。自动选择会挑延迟低、负载低的可用节点。")}
                     >
                       <select
                         value={nodeId}
@@ -570,12 +563,12 @@ export function MultiplayerPage() {
                         }
                         disabled={nodesLoading || creating}
                       >
-                        <option value="auto">自动选择</option>
+                        <option value="auto">{t("自动选择")}</option>
                         {nodes.map((node) => (
                           <option key={node.id} value={node.id} disabled={!node.available}>
                             {node.name}
                             {node.latencyMs != null ? ` · ${node.latencyMs} ms` : ""}
-                            {!node.available ? ` · ${node.reason ?? "不可用"}` : ""}
+                            {!node.available ? ` · ${node.reason ?? t("不可用")}` : ""}
                           </option>
                         ))}
                       </select>
@@ -583,7 +576,7 @@ export function MultiplayerPage() {
                   </div>
 
                   <div className="mp-local-row">
-                    <Field label="本地 IP">
+                    <Field label={t("本地 IP")}>
                       <input
                         className="mono"
                         value={localIp}
@@ -592,8 +585,8 @@ export function MultiplayerPage() {
                       />
                     </Field>
                     <Field
-                      label={`本地 ${edition === "java" ? "TCP" : "UDP"} 端口`}
-                      info={localService?.message ?? "Minecraft 实际监听的端口；开放局域网后一般能自动检测。"}
+                      label={t("本地 {0} 端口", [edition === "java" ? "TCP" : "UDP"])}
+                      info={localService?.message ?? t("Minecraft 实际监听的端口；开放局域网后一般能自动检测。")}
                     >
                       <div className="mp-port-row">
                         <input
@@ -601,7 +594,7 @@ export function MultiplayerPage() {
                           inputMode="numeric"
                           value={localPort}
                           onChange={(event) => setLocalPort(event.target.value.replace(/[^0-9]/g, ""))}
-                          placeholder={edition === "java" ? "25565 或局域网动态端口" : "19132"}
+                          placeholder={edition === "java" ? t("25565 或局域网动态端口") : "19132"}
                           disabled={creating}
                         />
                         <Button
@@ -610,8 +603,7 @@ export function MultiplayerPage() {
                           loading={detecting}
                           onClick={() => void detect()}
                         >
-                          检测
-                        </Button>
+                          {t("检测")}</Button>
                       </div>
                     </Field>
                   </div>
@@ -624,10 +616,9 @@ export function MultiplayerPage() {
                       disabled={!status.loggedIn || !instance || creating || !localPort.trim()}
                       onClick={() => void createRoom()}
                     >
-                      创建房间
-                    </Button>
+                      {t("创建房间")}</Button>
                     <span className="muted small">
-                      {instance ? `${instance.name} · ${instance.versionId}` : "请先创建游戏实例"}
+                      {instance ? `${instance.name} · ${instance.versionId}` : t("请先创建游戏实例")}
                     </span>
                   </div>
                 </>
@@ -643,9 +634,9 @@ export function MultiplayerPage() {
             <Card>
               <div className="card-head">
                 <div className="mp-card-title">
-                  <h3>待清理隧道</h3>
+                  <h3>{t("待清理隧道")}</h3>
                 </div>
-                <Badge tone="warning">{visibleOrphans.length} 条</Badge>
+                <Badge tone="warning">{visibleOrphans.length} {t("条")}</Badge>
               </div>
               <div className="mp-orphans">
                 {visibleOrphans.map((orphan) => (
@@ -653,13 +644,12 @@ export function MultiplayerPage() {
                     <div>
                       <strong>{orphan.name}</strong>
                       <span className="muted small">
-                        {orphan.tunnelType} · 本地端口 {orphan.localPort}
+                        {orphan.tunnelType} {t("· 本地端口")}{orphan.localPort}
                         {orphan.nodeName ? ` · ${orphan.nodeName}` : ""}
                       </span>
                     </div>
                     <Button size="sm" variant="ghost" onClick={() => askDeleteOrphan(orphan.tunnelId)}>
-                      删除
-                    </Button>
+                      {t("删除")}</Button>
                   </div>
                 ))}
               </div>
@@ -671,41 +661,34 @@ export function MultiplayerPage() {
           <Card>
             <div className="card-head">
               <div className="mp-card-title">
-                <h3>当前状态</h3>
+                <h3>{t("当前状态")}</h3>
               </div>
               <Button size="sm" variant="ghost" icon="info" onClick={() => setHelpOpen(true)}>
-                帮助
-              </Button>
+                {t("帮助")}</Button>
             </div>
             <dl className="mp-facts">
               <div>
                 <dt>
-                  账户
-                  
-                </dt>
+                  {t("账户")}</dt>
                 <dd>
                   {status.account?.displayName ??
-                    (status.loggedIn ? "已连接" : "未连接")}
+                    (status.loggedIn ? t("已连接") : t("未连接"))}
                 </dd>
               </div>
               <div>
                 <dt>
-                  游戏
-                  
-                </dt>
-                <dd>{instance ? instance.versionId : "未选择"}</dd>
+                  {t("游戏")}</dt>
+                <dd>{instance ? instance.versionId : t("未选择")}</dd>
               </div>
               <div>
                 <dt>
-                  本机端口
-                  
-                </dt>
+                  {t("本机端口")}</dt>
                 <dd>
                   {detecting
-                    ? "检测中…"
+                    ? t("检测中…")
                     : localService?.found
                       ? `${localService.detectedPort ?? "—"}`
-                      : "未检测到"}
+                      : t("未检测到")}
                 </dd>
               </div>
               <div>
@@ -713,24 +696,20 @@ export function MultiplayerPage() {
                   FRPC
                   
                 </dt>
-                <dd>{status.frpc.running ? "运行中" : "未运行"}</dd>
+                <dd>{status.frpc.running ? t("运行中") : t("未运行")}</dd>
               </div>
               <div>
                 <dt>
-                  联机
-                  
-                </dt>
-                <dd>{online ? "在线" : room?.state === "retained" ? "隧道保留" : "未联机"}</dd>
+                  {t("联机")}</dt>
+                <dd>{online ? t("在线") : room?.state === "retained" ? t("隧道保留") : t("未联机")}</dd>
               </div>
             </dl>
             {status.loggedIn ? (
               <div className="mp-side-actions">
                 <Button size="sm" variant="ghost" onClick={() => void loadStatus()}>
-                  刷新
-                </Button>
+                  {t("刷新")}</Button>
                 <Button size="sm" variant="ghost" loading={busy === "logout"} onClick={askLogout}>
-                  退出账户
-                </Button>
+                  {t("退出账户")}</Button>
               </div>
             ) : null}
           </Card>
@@ -745,8 +724,7 @@ export function MultiplayerPage() {
           confirmAction ? (
             <>
               <Button variant="ghost" onClick={() => setConfirmAction(null)}>
-                取消
-              </Button>
+                {t("取消")}</Button>
               <Button
                 variant={confirmAction.danger ? "danger" : "primary"}
                 onClick={() => {
@@ -771,7 +749,7 @@ export function MultiplayerPage() {
           void api
             .openTrustedUrl(url)
             .catch((e) =>
-              pushToast(`无法打开${label}`, "warning", e instanceof Error ? e.message : undefined),
+              pushToast(t("无法打开{0}", [label]), "warning", e instanceof Error ? e.message : undefined),
             )
         }
       />
@@ -817,9 +795,7 @@ function RoomCard({
       <div className={`mp-address ${online ? "mp-address--online" : ""}`}>
         <div>
           <span>
-            公网地址
-            
-          </span>
+            {t("公网地址")}</span>
           <strong className="mono">{address(room)}</strong>
         </div>
         <Button
@@ -828,56 +804,50 @@ function RoomCard({
           icon={copied ? "check" : "copy"}
           onClick={onCopy}
         >
-          {copied ? "已复制" : "复制"}
+          {copied ? t("已复制") : t("复制")}
         </Button>
       </div>
-      <p className="mp-room__hint">朋友在“多人游戏 → 直接连接”里填这个地址。</p>
+      <p className="mp-room__hint">{t("朋友在“多人游戏 → 直接连接”里填这个地址。")}</p>
 
       <dl className="mp-room__stats">
         <div>
           <dt>
-            节点
-
-          </dt>
+            {t("节点")}</dt>
           <dd>{room.nodeName}</dd>
         </div>
         <div>
           <dt>
-            本地端口
-            
-          </dt>
+            {t("本地端口")}</dt>
           <dd className="mono">{room.localPort}</dd>
         </div>
         <div>
           <dt>
-            延迟
-            
-          </dt>
-          <dd>{room.latencyMs != null ? `${room.latencyMs} ms` : "未测速"}</dd>
+            {t("延迟")}</dt>
+          <dd>{room.latencyMs != null ? `${room.latencyMs} ms` : t("未测速")}</dd>
         </div>
       </dl>
 
       {room.message ? <p className="mp-room__message">{room.message}</p> : null}
 
       <details className="mp-room__advanced">
-        <summary>技术信息</summary>
+        <summary>{t("技术信息")}</summary>
         <dl className="mp-room__advanced-grid">
           <div>
-            <dt>公网端口</dt>
+            <dt>{t("公网端口")}</dt>
             <dd className="mono">{room.publicPort}</dd>
           </div>
           <div>
             <dt>FRPC</dt>
-            <dd>{room.frpcRunning ? "运行中" : "已停止"}</dd>
+            <dd>{room.frpcRunning ? t("运行中") : t("已停止")}</dd>
           </div>
           <div>
-            <dt>本地进程</dt>
-            <dd>{room.localPid ? `PID ${room.localPid}` : "未记录"}</dd>
+            <dt>{t("本地进程")}</dt>
+            <dd>{room.localPid ? `PID ${room.localPid}` : t("未记录")}</dd>
           </div>
         </dl>
         {frpcLog.length > 0 ? (
           <details className="mp-log">
-            <summary>FRPC 日志</summary>
+            <summary>{t("FRPC 日志")}</summary>
             <pre>{frpcLog.join("\n")}</pre>
           </details>
         ) : null}
@@ -886,17 +856,14 @@ function RoomCard({
       <div className="mp-room__actions">
         {room.state !== "retained" ? (
           <Button variant="secondary" icon="refresh" loading={busy === "restart"} onClick={onRestart}>
-            重启
-          </Button>
+            {t("重启")}</Button>
         ) : null}
         {room.state !== "retained" ? (
           <Button variant="ghost" loading={busy === "stop"} onClick={onStop}>
-            停止
-          </Button>
+            {t("停止")}</Button>
         ) : null}
         <Button variant="danger" icon="trash" loading={busy === "stop-delete"} onClick={onStopDelete}>
-          停止并删除隧道
-        </Button>
+          {t("停止并删除隧道")}</Button>
       </div>
     </Card>
   );
@@ -907,8 +874,8 @@ function StepList({ steps }: { steps: MultiplayerProgress[] }) {
     <Card>
       <div className="card-head">
         <div>
-          <h3>创建过程</h3>
-          <p>每一步都对应真实的检查、API 调用或进程启动结果。</p>
+          <h3>{t("创建过程")}</h3>
+          <p>{t("每一步都对应真实的检查、API 调用或进程启动结果。")}</p>
         </div>
       </div>
       <ol className="mp-steps">
@@ -929,7 +896,7 @@ function StepList({ steps }: { steps: MultiplayerProgress[] }) {
               <strong>{step.label}</strong>
               {step.detail ? <span className="muted small">{step.detail}</span> : null}
             </div>
-            <span className="mp-step__state">{step.status === "ok" ? "完成" : step.status === "error" ? "失败" : step.status === "running" ? "进行中" : "等待"}</span>
+            <span className="mp-step__state">{step.status === "ok" ? t("完成") : step.status === "error" ? t("失败") : step.status === "running" ? t("进行中") : t("等待")}</span>
           </li>
         ))}
       </ol>

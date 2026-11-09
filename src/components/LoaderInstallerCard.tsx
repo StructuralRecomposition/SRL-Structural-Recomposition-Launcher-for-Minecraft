@@ -8,6 +8,8 @@ import { formatBytes, formatSpeed } from "../lib/format";
 import { TASK_LABELS, isActive, taskProgress, taskTone } from "../lib/task";
 import { useApp } from "../state/AppContext";
 import { Badge, Button, Card, EmptyState, ProgressBar } from "./ui";
+import { t as tr } from "../lib/i18n";
+
 
 interface Props {
   kind: "fabric" | "quilt";
@@ -67,7 +69,7 @@ export function LoaderInstallerCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameVersion]);
 
-  const taskTitlePrefix = `安装 ${title}`;
+  const taskTitlePrefix = tr("安装 {0}", [title]);
   const activeTask = tasks.find(
     (t) =>
       t.kind === "install" &&
@@ -87,7 +89,7 @@ export function LoaderInstallerCard({
       const firstStable = list.find((l) => l.stable) ?? list[0];
       setLoaderVersion(firstStable?.version ?? "");
       if (list.length === 0) {
-        setError("该 Minecraft 版本没有可用的加载器");
+        setError(tr("该 Minecraft 版本没有可用的加载器"));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -104,11 +106,11 @@ export function LoaderInstallerCard({
     setError(null);
     try {
       const accepted = await install(gameVersion, loaderVersion);
-      pushToast(`${title} 安装任务已开始`, "info", accepted.versionId);
+      pushToast(tr("{0} 安装任务已开始", [title]), "info", accepted.versionId);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);
-      pushToast(`无法开始 ${title} 安装`, "error", message);
+      pushToast(tr("无法开始 {0} 安装", [title]), "error", message);
     } finally {
       setInstalling(false);
     }
@@ -118,17 +120,17 @@ export function LoaderInstallerCard({
     const meta = splitLoaderId(versionId, installedPrefix, baseVersions.map((v) => v.id));
     try {
       const inst = await api.createInstance({
-        name: `${versionId} 实例`,
+        name: tr("{0} 实例", [versionId]),
         versionId,
         modLoader: meta.loader
           ? { kind, version: meta.loader, installed: true }
           : undefined,
       });
-      pushToast("实例已创建", "success", inst.name);
+      pushToast(tr("实例已创建"), "success", inst.name);
       await reload();
       setPage("instances");
     } catch (e) {
-      pushToast("创建实例失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(tr("创建实例失败"), "error", e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -138,11 +140,11 @@ export function LoaderInstallerCard({
         <div>
           <h3>{title}</h3>
           <p>
-            {description} · 官方 meta：<span className="mono">{metaHost}</span>
+            {description} {tr("· 官方 meta：")}<span className="mono">{metaHost}</span>
           </p>
         </div>
         <Badge tone={verified ? "success" : "warning"}>
-          {verified ? "已实现并测试" : "已实现 · 未完整验证"}
+          {verified ? tr("已实现并测试") : tr("已实现 · 未完整验证")}
         </Badge>
       </div>
       {note ? <p className="muted small">{note}</p> : null}
@@ -150,19 +152,18 @@ export function LoaderInstallerCard({
       {baseVersions.length === 0 ? (
         <EmptyState
           icon="layers"
-          title="需要先安装原版版本"
-          description={`${title} 安装在已安装的原版版本之上，并共享客户端 JAR。`}
+          title={tr("需要先安装原版版本")}
+          description={tr("{0} 安装在已安装的原版版本之上，并共享客户端 JAR。", [title])}
           action={
             <Button variant="primary" icon="download" onClick={() => setPage("versions")}>
-              前往版本管理
-            </Button>
+              {tr("前往版本管理")}</Button>
           }
         />
       ) : (
         <>
           <div className="fabric-form">
             <label>
-              <span>基础版本</span>
+              <span>{tr("基础版本")}</span>
               <select
                 value={gameVersion}
                 onChange={(e) => {
@@ -180,12 +181,11 @@ export function LoaderInstallerCard({
               </select>
             </label>
             <Button icon="refresh" onClick={fetchLoaders} loading={loading}>
-              获取加载器版本
-            </Button>
+              {tr("获取加载器版本")}</Button>
             {loaders.length > 0 ? (
               <>
                 <label className="fabric-form__loader">
-                  <span>{title} 加载器</span>
+                  <span>{title} {tr("加载器")}</span>
                   <select
                     value={loaderVersion}
                     onChange={(e) => setLoaderVersion(e.target.value)}
@@ -193,7 +193,7 @@ export function LoaderInstallerCard({
                     {loaders.slice(0, 80).map((l) => (
                       <option key={l.version} value={l.version}>
                         {l.version}
-                        {stableKnown ? (l.stable ? "（稳定）" : "（测试）") : ""}
+                        {stableKnown ? (l.stable ? tr("（稳定）") : tr("（测试）")) : ""}
                       </option>
                     ))}
                   </select>
@@ -205,16 +205,14 @@ export function LoaderInstallerCard({
                   loading={installing}
                   disabled={Boolean(activeTask)}
                 >
-                  安装 {title}
+                  {tr("安装")}{title}
                 </Button>
               </>
             ) : null}
           </div>
 
           <p className="muted small">
-            安装仅下载加载器库文件；原版 JAR、库与资源沿用已安装的基础版本。无哈希的
-            Maven 构件会先读取官方 <span className="mono">.sha1</span> sidecar 再校验。
-          </p>
+            {tr("安装仅下载加载器库文件；原版 JAR、库与资源沿用已安装的基础版本。无哈希的 Maven 构件会先读取官方")}<span className="mono">.sha1</span> {tr("sidecar 再校验。")}</p>
 
           {error ? <p className="form-error">{error}</p> : null}
 
@@ -228,19 +226,19 @@ export function LoaderInstallerCard({
                 value={taskProgress(activeTask)}
                 label={
                   activeTask.totalBytes <= 0
-                    ? `已下载 ${formatBytes(activeTask.doneBytes)} · 总量未知`
+                    ? tr("已下载 {0} · 总量未知", [formatBytes(activeTask.doneBytes)])
                     : taskProgress(activeTask) === null
-                      ? `下载中 · ${activeTask.doneFiles}/${activeTask.totalFiles} 个文件`
+                      ? tr("下载中 · {0}/{1} 个文件", [activeTask.doneFiles, activeTask.totalFiles])
                       : `${formatBytes(activeTask.doneBytes)} / ${formatBytes(activeTask.totalBytes)} · ${formatSpeed(activeTask.speedBps)}`
                 }
               />
-              <span className="muted small">{activeTask.currentFile ?? "准备中…"}</span>
+              <span className="muted small">{activeTask.currentFile ?? tr("准备中…")}</span>
             </div>
           ) : null}
 
           {loaderVersions.length > 0 ? (
             <div className="installed-loaders">
-              <h4>已安装的 {title} 版本</h4>
+              <h4>{tr("已安装的")}{title} {tr("版本")}</h4>
               <ul>
                 {loaderVersions.map((v) => {
                   const meta = splitLoaderId(
@@ -257,11 +255,10 @@ export function LoaderInstallerCard({
                         </span>
                       </div>
                       <Badge tone={v.hasJar ? "neutral" : "warning"}>
-                        {v.hasJar ? "共享原版 JAR" : "JAR 缺失"}
+                        {v.hasJar ? tr("共享原版 JAR") : tr("JAR 缺失")}
                       </Badge>
                       <Button size="sm" onClick={() => createInstance(v.id)}>
-                        创建实例
-                      </Button>
+                        {tr("创建实例")}</Button>
                     </li>
                   );
                 })}

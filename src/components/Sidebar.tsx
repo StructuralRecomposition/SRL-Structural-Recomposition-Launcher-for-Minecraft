@@ -2,11 +2,13 @@ import { Icon } from "./Icon";
 import { NAV } from "./nav";
 import { useApp } from "../state/AppContext";
 import logo from "../assets/logo.png";
+import { t as tr } from "../lib/i18n";
+
 
 const GROUPS: { label: string; ids: string[] }[] = [
-  { label: "游戏", ids: ["home", "instances", "versions", "resources", "multiplayer"] },
-  { label: "工具", ids: ["java", "tasks", "assistant"] },
-  { label: "系统", ids: ["accounts", "diagnostics", "settings"] },
+  { label: tr("游戏"), ids: ["home", "instances", "versions", "resources", "multiplayer"] },
+  { label: tr("工具"), ids: ["java", "tasks", "assistant"] },
+  { label: tr("系统"), ids: ["accounts", "diagnostics", "settings"] },
 ];
 
 export function Sidebar() {
@@ -28,7 +30,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      <nav className="nav" aria-label="主导航">
+      <nav className="nav" aria-label={tr("主导航")}>
         {GROUPS.map((group) => {
           const items = group.ids
             .map((id) => NAV.find((n) => n.id === id))
@@ -70,14 +72,14 @@ export function Sidebar() {
           type="button"
           className="theme-toggle"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          aria-label="切换明暗主题"
+          aria-label={tr("切换明暗主题")}
         >
           <Icon name={theme === "dark" ? "moon" : "sun"} size={16} />
-          <span>{theme === "dark" ? "深色主题" : "浅色主题"}</span>
+          <span>{theme === "dark" ? tr("深色主题") : tr("浅色主题")}</span>
         </button>
         <div className="sidebar__meta">
           <span>v{bootstrap?.appVersion ?? "0.1.1"}</span>
-          <span>本地优先</span>
+          <span>{tr("本地优先")}</span>
         </div>
       </div>
     </aside>

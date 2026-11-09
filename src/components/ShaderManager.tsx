@@ -13,6 +13,8 @@ import { Button, EmptyState, Field, IconButton } from "./ui";
 import { Icon } from "./Icon";
 import { Modal } from "./Modal";
 import { DropZone } from "./DropZone";
+import { t } from "../lib/i18n";
+
 
 const SHADER_ACCEPT = [".zip"];
 
@@ -71,14 +73,14 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
     const bad = outcomes.filter((o) => !o.ok);
     if (ok.length > 0) {
       pushToast(
-        ok.length === 1 ? "光影包已导入" : `已导入 ${ok.length} 个光影包`,
+        ok.length === 1 ? t("光影包已导入") : t("已导入 {0} 个光影包", [ok.length]),
         "success",
         ok.map((o) => o.fileName).join("、"),
       );
     }
     setError(
       bad.length > 0
-        ? bad.map((o) => `${o.fileName}：${o.error ?? "导入失败"}`).join("；")
+        ? bad.map((o) => `${o.fileName}：${o.error ?? t("导入失败")}`).join("；")
         : null,
     );
   }
@@ -107,7 +109,7 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
       setBusy(`file:${file.name}`);
       try {
         if (file.size > MAX_UPLOAD_BYTES) {
-          throw new Error("文件超过 512MB，请改用拖拽或手动路径导入");
+          throw new Error(t("文件超过 512MB，请改用拖拽或手动路径导入"));
         }
         const bytes = await readFileBytes(file);
         const entry = await api.importShaderBytes(instance.id, file.name, bytes, overwrite);
@@ -133,10 +135,10 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
       const outcomes = await api.importShaders(instance.id, [manualPath.trim()], overwrite);
       const outcome = outcomes[0];
       if (!outcome || !outcome.ok) {
-        throw new Error(outcome?.error ?? "导入失败");
+        throw new Error(outcome?.error ?? t("导入失败"));
       }
       setManualPath("");
-      pushToast("光影包已导入", "success", outcome.fileName);
+      pushToast(t("光影包已导入"), "success", outcome.fileName);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -151,7 +153,7 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
     try {
       const updated = await api.toggleShader(instance.id, entry.fileName, !entry.enabled);
       setPacks((prev) => prev.map((p) => (p.fileName === entry.fileName ? updated : p)));
-      pushToast(updated.enabled ? "光影包已启用" : "光影包已禁用", "info", updated.fileName);
+      pushToast(updated.enabled ? t("光影包已启用") : t("光影包已禁用"), "info", updated.fileName);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -165,7 +167,7 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
       await api.deleteShader(instance.id, entry.fileName);
       setDeleting(null);
       await load();
-      pushToast("光影包已删除", "info", entry.fileName);
+      pushToast(t("光影包已删除"), "info", entry.fileName);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -178,7 +180,7 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
     setError(null);
     try {
       const entry = await api.installIris(instance.id);
-      pushToast("Iris 已安装", "success", entry.fileName);
+      pushToast(t("Iris 已安装"), "success", entry.fileName);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -192,7 +194,7 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
     setError(null);
     try {
       const entry = await api.installOptiFine(instance.id);
-      pushToast("OptiFine 已安装到 mods/", "success", entry.fileName);
+      pushToast(t("OptiFine 已安装到 mods/"), "success", entry.fileName);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -205,7 +207,7 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
     try {
       await api.openLauncherPath("instanceShaderpacks", instance.id);
     } catch (e) {
-      pushToast("无法打开文件夹", "error", e instanceof Error ? e.message : String(e));
+      pushToast(t("无法打开文件夹"), "error", e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -213,7 +215,7 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
     <Modal
       open
       onClose={onClose}
-      title="光影管理"
+      title={t("光影管理")}
       subtitle={`${instance.name} · ${instance.versionId}`}
       wide
     >
@@ -221,17 +223,16 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
         <div className="notice notice--warning">
           <Icon name="alert" size={16} />
           <div>
-            <strong>原版客户端无法加载光影</strong>
+            <strong>{t("原版客户端无法加载光影")}</strong>
             <p>
-              光影包需要 Iris（Fabric/Quilt）或 OptiFine。请先在加载器页安装 Fabric/Quilt 并创建实例。
-            </p>
+              {t("光影包需要 Iris（Fabric/Quilt）或 OptiFine。请先在加载器页安装 Fabric/Quilt 并创建实例。")}</p>
           </div>
         </div>
       ) : supported ? (
         <div className="notice notice--success">
           <Icon name="sun" size={16} />
           <div>
-            <strong>已检测到光影支持</strong>
+            <strong>{t("已检测到光影支持")}</strong>
             <p>
               {support?.iris ? `Iris：${support.iris}` : null}
               {support?.iris && support?.optifine ? " · " : null}
@@ -243,11 +244,9 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
         <div className="notice notice--warning">
           <Icon name="alert" size={16} />
           <div>
-            <strong>当前实例还没有 Iris / OptiFine</strong>
+            <strong>{t("当前实例还没有 Iris / OptiFine")}</strong>
             <p>
-              Fabric/Quilt 可一键安装 Iris；Forge 可把 OptiFine 作为模组直接装入 mods/。
-              安装后重启游戏即可在视频设置中选择光影。
-            </p>
+              {t("Fabric/Quilt 可一键安装 Iris；Forge 可把 OptiFine 作为模组直接装入 mods/。 安装后重启游戏即可在视频设置中选择光影。")}</p>
           </div>
           {(loaderKind === "fabric" || loaderKind === "quilt") ? (
             <Button
@@ -256,8 +255,7 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
               loading={busy === "iris"}
               onClick={() => void installIris()}
             >
-              安装 Iris
-            </Button>
+              {t("安装 Iris")}</Button>
           ) : loaderKind === "forge" ? (
             <div className="shader-install">
               <Button
@@ -266,14 +264,12 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
                 loading={busy === "optifine"}
                 onClick={() => void installOptiFine()}
               >
-                安装 OptiFine
-              </Button>
+                {t("安装 OptiFine")}</Button>
               <span className="muted small">
-                OptiFine 与 Forge 版本强绑定，启动器会按 OptiFine 元数据校验；不兼容时拒绝安装。
-              </span>
+                {t("OptiFine 与 Forge 版本强绑定，启动器会按 OptiFine 元数据校验；不兼容时拒绝安装。")}</span>
             </div>
           ) : (
-            <span className="muted small">NeoForge 光影需 Oculus，暂未接入</span>
+            <span className="muted small">{t("NeoForge 光影需 Oculus，暂未接入")}</span>
           )}
         </div>
       )}
@@ -282,26 +278,23 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
         <DropZone
           accept={SHADER_ACCEPT}
           onPaths={(paths) => void importPaths(paths)}
-          title="拖入 .zip 光影包到这里"
-          hint="支持一次拖入多个文件；光影包会放入 shaderpacks/。"
+          title={t("拖入 .zip 光影包到这里")}
+          hint={t("支持一次拖入多个文件；光影包会放入 shaderpacks/。")}
           disabled={importing}
         />
         <div className="file-toolbar__buttons">
           <Button variant="primary" icon="plus" onClick={() => void importPicked()} loading={importing}>
-            选择 .zip 光影包
-          </Button>
+            {t("选择 .zip 光影包")}</Button>
           <Button icon="folder" onClick={() => void openFolder()}>
-            打开文件夹
-          </Button>
+            {t("打开文件夹")}</Button>
           <Button variant="ghost" onClick={() => setManualOpen((v) => !v)}>
-            手动路径
-          </Button>
+            {t("手动路径")}</Button>
         </div>
       </div>
 
       {manualOpen ? (
         <div className="mod-import">
-          <Field label="从本地路径导入" hint="只接受 .zip；文件名会保留。">
+          <Field label={t("从本地路径导入")} hint={t("只接受 .zip；文件名会保留。")}>
             <input
               className="mono"
               value={manualPath}
@@ -315,8 +308,7 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
               checked={overwrite}
               onChange={(e) => setOverwrite(e.target.checked)}
             />
-            覆盖同名文件
-          </label>
+            {t("覆盖同名文件")}</label>
           <Button
             variant="primary"
             icon="plus"
@@ -324,34 +316,31 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
             loading={busy === "import"}
             disabled={!manualPath.trim()}
           >
-            导入
-          </Button>
+            {t("导入")}</Button>
         </div>
       ) : null}
 
       <div className="file-summary">
         <span className="muted small">
-          {packs.length} 个光影包 · {packs.filter((p) => p.enabled).length} 个启用
-        </span>
+          {packs.length} {t("个光影包 ·")}{packs.filter((p) => p.enabled).length} {t("个启用")}</span>
         <label className="inline-check">
           <input
             type="checkbox"
             checked={overwrite}
             onChange={(e) => setOverwrite(e.target.checked)}
           />
-          覆盖同名文件
-        </label>
+          {t("覆盖同名文件")}</label>
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
 
       {loading ? (
-        <p className="muted">正在读取 shaderpacks/ 目录…</p>
+        <p className="muted">{t("正在读取 shaderpacks/ 目录…")}</p>
       ) : packs.length === 0 ? (
         <EmptyState
           icon="sun"
-          title="没有光影包"
-          description="把 .zip 光影包拖进上面的区域，或点击“选择 .zip 光影包”。"
+          title={t("没有光影包")}
+          description={t("把 .zip 光影包拖进上面的区域，或点击“选择 .zip 光影包”。")}
         />
       ) : (
         <ul className="mod-list">
@@ -361,7 +350,7 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
                 <strong className="mono">{entry.fileName}</strong>
                 <span className="muted small">
                   {formatBytes(entry.size)}
-                  {entry.enabled ? " · 已启用" : " · 已禁用"}
+                  {entry.enabled ? t(" · 已启用") : t(" · 已禁用")}
                 </span>
               </div>
               <label className="inline-check">
@@ -371,8 +360,7 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
                   disabled={busy === entry.fileName}
                   onChange={() => void toggle(entry)}
                 />
-                启用
-              </label>
+                {t("启用")}</label>
               {deleting === entry.fileName ? (
                 <span className="mod-confirm">
                   <Button
@@ -381,16 +369,14 @@ export function ShaderManager({ instance, onClose }: { instance: Instance; onClo
                     loading={busy === entry.fileName}
                     onClick={() => void remove(entry)}
                   >
-                    确认删除
-                  </Button>
+                    {t("确认删除")}</Button>
                   <Button size="sm" variant="ghost" onClick={() => setDeleting(null)}>
-                    取消
-                  </Button>
+                    {t("取消")}</Button>
                 </span>
               ) : (
                 <IconButton
                   icon="trash"
-                  label={`删除 ${entry.fileName}`}
+                  label={t("删除 {0}", [entry.fileName])}
                   onClick={() => setDeleting(entry.fileName)}
                 />
               )}

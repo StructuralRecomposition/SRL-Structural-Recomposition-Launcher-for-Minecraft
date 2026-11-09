@@ -5,6 +5,8 @@ import { Badge, Button, Card, EmptyState, Field, ProgressBar } from "../componen
 import { Icon } from "../components/Icon";
 import { formatBytes } from "../lib/format";
 import { isActive, taskProgress, taskTone, TASK_LABELS } from "../lib/task";
+import { t as tr } from "../lib/i18n";
+
 
 export function JavaPage() {
   const { bootstrap, updateBootstrap, pushToast, reload, tasks } = useApp();
@@ -54,8 +56,8 @@ export function JavaPage() {
       }));
       pushToast(
         bootstrap?.settings.javaPath
-          ? `Java ${info.major} 已安装`
-          : `Java ${info.major} 已安装并设为默认`,
+          ? tr("Java {0} 已安装", [info.major])
+          : tr("Java {0} 已安装并设为默认", [info.major]),
         "success",
         `${info.versionString} · ${info.path}`,
       );
@@ -76,9 +78,9 @@ export function JavaPage() {
         javaPath: null,
       });
       updateBootstrap((b) => ({ ...b, settings }));
-      pushToast("已改为自动选择", "success", "每个版本会使用最接近目标版本的 Java");
+      pushToast(tr("已改为自动选择"), "success", tr("每个版本会使用最接近目标版本的 Java"));
     } catch (e) {
-      pushToast("设置失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(tr("设置失败"), "error", e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -89,9 +91,9 @@ export function JavaPage() {
     try {
       const list = await api.listJava(true);
       updateBootstrap((b) => ({ ...b, java: list }));
-      pushToast("Java 扫描完成", "success", `发现 ${list.length} 个可用环境`);
+      pushToast(tr("Java 扫描完成"), "success", tr("发现 {0} 个可用环境", [list.length]));
     } catch (e) {
-      pushToast("扫描 Java 失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(tr("扫描 Java 失败"), "error", e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -100,7 +102,7 @@ export function JavaPage() {
   async function add() {
     setError(null);
     if (!path.trim()) {
-      setError("请输入 java 可执行文件的完整路径");
+      setError(tr("请输入 java 可执行文件的完整路径"));
       return;
     }
     setBusy(true);
@@ -110,7 +112,7 @@ export function JavaPage() {
         ...b,
         java: [...b.java.filter((j) => j.path !== info.path), info].sort((a, b) => b.major - a.major),
       }));
-      pushToast("Java 已添加并设为默认", "success", `Java ${info.major} · ${info.path}`);
+      pushToast(tr("Java 已添加并设为默认"), "success", `Java ${info.major} · ${info.path}`);
       setPath("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -124,9 +126,9 @@ export function JavaPage() {
     try {
       await api.addJavaPath(javaPath);
       await reload();
-      pushToast("默认 Java 已更新", "success", javaPath);
+      pushToast(tr("默认 Java 已更新"), "success", javaPath);
     } catch (e) {
-      pushToast("设置失败", "error", e instanceof Error ? e.message : String(e));
+      pushToast(tr("设置失败"), "error", e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -166,39 +168,34 @@ export function JavaPage() {
     <div className="page">
       <div className="toolbar">
         <div>
-          <h2>Java 环境</h2>
+          <h2>{tr("Java 环境")}</h2>
           <p className="muted">
-            自动扫描本机 Java；也可一键下载安装 Temurin，只写入启动器数据目录，不修改系统 Java。
-          </p>
+            {tr("自动扫描本机 Java；也可一键下载安装 Temurin，只写入启动器数据目录，不修改系统 Java。")}</p>
         </div>
         <div className="toolbar__actions">
           {defaultJava ? (
             <Button icon="settings" onClick={clearDefault} disabled={busy}>
-              自动选择
-            </Button>
+              {tr("自动选择")}</Button>
           ) : null}
           <Button icon="refresh" onClick={refresh} loading={busy}>
-            重新扫描
-          </Button>
+            {tr("重新扫描")}</Button>
         </div>
       </div>
 
       <Card>
         <div className="card-head">
           <div>
-            <h3>下载并安装 Java</h3>
+            <h3>{tr("下载并安装 Java")}</h3>
             <p>
-              来源 Eclipse Temurin (Adoptium)。下载后校验 SHA-256，解压安装到启动器数据目录，不影响系统
-              Java。设置中开启“国内镜像”时优先走清华 TUNA，失败自动回退官方源。
-            </p>
+              {tr("来源 Eclipse Temurin (Adoptium)。下载后校验 SHA-256，解压安装到启动器数据目录，不影响系统 Java。设置中开启“国内镜像”时优先走清华 TUNA，失败自动回退官方源。")}</p>
           </div>
-          <Badge tone="info">一键安装</Badge>
+          <Badge tone="info">{tr("一键安装")}</Badge>
         </div>
         {installError ? <p className="form-error">{installError}</p> : null}
         <div className="inline-form">
           <Field
-            label="Java 版本"
-            hint="LTS：8 / 11 / 17 / 21 / 25。新版本通常需要 21 或 25，老整合包可能需要 8/17。"
+            label={tr("Java 版本")}
+            hint={tr("LTS：8 / 11 / 17 / 21 / 25。新版本通常需要 21 或 25，老整合包可能需要 8/17。")}
           >
             <select
               value={targetMajor}
@@ -209,14 +206,13 @@ export function JavaPage() {
                 <option key={major} value={major}>
                   Java {major}
                   {lts.includes(major) ? " (LTS)" : ""}
-                  {runtimeOptions?.recommended === major ? " · 推荐" : ""}
+                  {runtimeOptions?.recommended === major ? tr(" · 推荐") : ""}
                 </option>
               ))}
             </select>
           </Field>
           <Button variant="primary" icon="download" loading={installing} onClick={installRuntime}>
-            下载并安装
-          </Button>
+            {tr("下载并安装")}</Button>
         </div>
         {installing && javaTask && isActive(javaTask.status) ? (
           <div className="java-install-task">
@@ -235,12 +231,12 @@ export function JavaPage() {
       <Card>
         <div className="card-head">
           <div>
-            <h3>手动指定 Java</h3>
-            <p>适用于自动扫描未覆盖的安装路径，例如自编译 JDK。</p>
+            <h3>{tr("手动指定 Java")}</h3>
+            <p>{tr("适用于自动扫描未覆盖的安装路径，例如自编译 JDK。")}</p>
           </div>
         </div>
         <div className="inline-form">
-          <Field label="java 可执行文件路径" error={error} hint="Linux/macOS 通常为 .../bin/java，Windows 为 ...\\bin\\java.exe">
+          <Field label={tr("java 可执行文件路径")} error={error} hint={tr("Linux/macOS 通常为 .../bin/java，Windows 为 ...\\\\bin\\\\java.exe")}>
             <input
               value={path}
               onChange={(e) => setPath(e.target.value)}
@@ -249,8 +245,7 @@ export function JavaPage() {
             />
           </Field>
           <Button variant="primary" onClick={add} loading={busy}>
-            检测并添加
-          </Button>
+            {tr("检测并添加")}</Button>
         </div>
       </Card>
 
@@ -258,12 +253,11 @@ export function JavaPage() {
         <Card>
           <EmptyState
             icon="coffee"
-            title="未发现 Java"
-            description="安装 Java 21+（较新版本可能需要 Java 25），然后点击重新扫描，或手动指定路径。"
+            title={tr("未发现 Java")}
+            description={tr("安装 Java 21+（较新版本可能需要 Java 25），然后点击重新扫描，或手动指定路径。")}
             action={
               <Button icon="refresh" onClick={refresh} loading={busy}>
-                重新扫描
-              </Button>
+                {tr("重新扫描")}</Button>
             }
           />
         </Card>
@@ -279,14 +273,14 @@ export function JavaPage() {
                 <div className="java-card__info">
                   <div className="java-card__title">
                     <strong>{j.versionString}</strong>
-                    {defaultJava === j.path ? <Badge tone="success">默认</Badge> : null}
+                    {defaultJava === j.path ? <Badge tone="success">{tr("默认")}</Badge> : null}
                     <Badge>{j.source}</Badge>
                   </div>
                   <code className="ellipsis" title={j.path}>
                     {j.path}
                   </code>
                   <span className="muted small">
-                    {j.vendor ?? "未知供应商"}
+                    {j.vendor ?? tr("未知供应商")}
                     {j.arch ? ` · ${j.arch}` : ""}
                   </span>
                 </div>
@@ -296,7 +290,7 @@ export function JavaPage() {
                 onClick={() => setDefault(j.path)}
                 disabled={defaultJava === j.path || busy}
               >
-                {defaultJava === j.path ? "当前默认" : "设为默认"}
+                {defaultJava === j.path ? tr("当前默认") : tr("设为默认")}
               </Button>
             </Card>
           ))}
@@ -307,8 +301,8 @@ export function JavaPage() {
         <Card>
           <div className="card-head">
             <div>
-              <h3>版本兼容性</h3>
-              <p>基于版本元数据中的 javaVersion.majorVersion 计算。</p>
+              <h3>{tr("版本兼容性")}</h3>
+              <p>{tr("基于版本元数据中的 javaVersion.majorVersion 计算。")}</p>
             </div>
           </div>
           <ul className="compat-list">
@@ -318,7 +312,7 @@ export function JavaPage() {
                 <li key={v.id}>
                   <div>
                     <strong>{v.id}</strong>
-                    <span className="muted small">要求 Java {check?.requiredMajor ?? "—"}+</span>
+                    <span className="muted small">{tr("要求 Java")}{check?.requiredMajor ?? "—"}+</span>
                   </div>
                   {check ? (
                     <div className="compat-list__right">
@@ -336,7 +330,7 @@ export function JavaPage() {
                       <span className="muted small">{check.message}</span>
                     </div>
                   ) : (
-                    <span className="muted small">检查中…</span>
+                    <span className="muted small">{tr("检查中…")}</span>
                   )}
                 </li>
               );
@@ -348,11 +342,9 @@ export function JavaPage() {
       <div className="notice">
         <Icon name="info" size={17} />
         <div>
-          <strong>关于自动下载 Java</strong>
+          <strong>{tr("关于自动下载 Java")}</strong>
           <p>
-            安装包取自 Eclipse Adoptium（Temurin）公开 API，按接口提供的 SHA-256 校验后解压；只写入启动器
-            java/ 目录，不修改 JAVA_HOME。Temurin 使用 GPLv2 + Classpath Exception，可再分发。
-          </p>
+            {tr("安装包取自 Eclipse Adoptium（Temurin）公开 API，按接口提供的 SHA-256 校验后解压；只写入启动器 java/ 目录，不修改 JAVA_HOME。Temurin 使用 GPLv2 + Classpath Exception，可再分发。")}</p>
         </div>
       </div>
     </div>

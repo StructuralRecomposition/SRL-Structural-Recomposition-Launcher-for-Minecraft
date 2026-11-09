@@ -1,4 +1,6 @@
 import { Icon } from "./Icon";
+import { t as tr } from "../lib/i18n";
+
 
 export type ToastTone = "info" | "success" | "warning" | "error";
 
@@ -33,7 +35,7 @@ export function ToastHost({
             <strong>{t.message}</strong>
             {t.detail ? <span>{t.detail}</span> : null}
           </div>
-          <button className="toast__close" aria-label="关闭提示" onClick={() => onDismiss(t.id)}>
+          <button className="toast__close" aria-label={tr("关闭提示")} onClick={() => onDismiss(t.id)}>
             <Icon name="close" size={14} />
           </button>
         </div>

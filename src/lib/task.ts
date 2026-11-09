@@ -1,14 +1,16 @@
 import type { TaskStatus } from "./api";
 import { percent } from "./format";
+import { t } from "./i18n";
+
 
 export const TASK_LABELS: Record<TaskStatus, string> = {
-  queued: "等待中",
-  running: "下载中",
-  verifying: "校验中",
-  completed: "已完成",
-  cancelled: "已取消",
-  retrying: "等待重试",
-  failed: "失败",
+  queued: t("等待中"),
+  running: t("下载中"),
+  verifying: t("校验中"),
+  completed: t("已完成"),
+  cancelled: t("已取消"),
+  retrying: t("等待重试"),
+  failed: t("失败"),
 };
 
 export function taskTone(status: TaskStatus): "neutral" | "success" | "warning" | "danger" | "accent" {
