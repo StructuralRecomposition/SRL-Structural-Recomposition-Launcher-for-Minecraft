@@ -32,7 +32,7 @@
     "active": true,
     "targets": "all",
     "category": "Game",
-    "shortDescription": "SRL - a modern, local-first Minecraft launcher",
+    "shortDescription": "SRL - Structural Recomposition Launcher for Minecraft",
     "longDescription": "SRL (Structural Recomposition Launcher) is an independent, cross-platform Minecraft Java Edition launcher focused on reliable installs, clear diagnostics and local-first operation.",
     "icon": [
       "icons/32x32.png",

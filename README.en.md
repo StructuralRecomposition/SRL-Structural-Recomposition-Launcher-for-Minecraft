@@ -1,7 +1,7 @@
 <div align="center">
   <img src="icon.png" width="112" alt="SRL" />
   <h1>SRL</h1>
-  <p><strong>Structural Recomposition Launcher</strong></p>
+  <p><strong>Structural Recomposition Launcher for Minecraft</strong></p>
   <p>Local-first · Verifiable downloads · Real launches · Honest diagnostics</p>
 
   [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
