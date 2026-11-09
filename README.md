@@ -21,7 +21,7 @@
 
 **English:** SRL (Structural Recomposition Launcher) is an independent, local-first Minecraft: Java Edition launcher built with Rust, Tauri 2, React and TypeScript. It focuses on verifiable downloads, real process launching, clear diagnostics, and honest capability boundaries. No telemetry, no proprietary game files, MIT licensed.
 
-> **当前版本：`v0.2.1`（中英双语 · 内置 FRPC · 整合包导出）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/sry8n5rjz5-debug/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.1)。
+> **当前版本：`v0.2.1`（中英双语 · 内置 FRPC · 整合包导出）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.1)。
 
 ### v0.2.1 更新摘要
 
@@ -215,7 +215,7 @@
 
 已构建好的安装包直接放在 GitHub Release，点开即可下载：
 
-**https://github.com/sry8n5rjz5-debug/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.1**
+**https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.1**
 
 | 平台 | 文件 | 说明 |
 |---|---|---|

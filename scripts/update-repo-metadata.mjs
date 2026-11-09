@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const API = "https://api.github.com";
-const REPO = "sry8n5rjz5-debug/SRL-Structural-Recomposition-Launcher-for-Minecraft";
+const REPO = "StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft";
 const RENAME = process.argv.find((arg) => arg.startsWith("--rename="))?.slice("--rename=".length);
 const OWNER = REPO.split("/")[0];
 

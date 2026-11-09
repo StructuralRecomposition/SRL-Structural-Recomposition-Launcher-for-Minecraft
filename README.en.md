@@ -19,7 +19,7 @@
 
 > **Microsoft login:** due to current development constraints, SRL cannot yet offer out-of-the-box Microsoft sign-in. You currently need to register your own Azure application, obtain a `client id` and enter it in Settings; the login entry is explicitly disabled until then.
 
-> **Current version: `v0.2.1` (bilingual UI · bundled FRPC · modpack export)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/sry8n5rjz5-debug/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.1).
+> **Current version: `v0.2.1` (bilingual UI · bundled FRPC · modpack export)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.1).
 
 ---
 
