@@ -62,7 +62,7 @@
 - 放入 `overrides/` 的模组会随整合包分发，分享前请确认模组许可。
 - CurseForge 使用公共 key，频繁导出可能触发限流；此时会回退为 overrides 并提示。
 
-完整变更：见 [`CHANGELOG.md`](../CHANGELOG.md)。
+完整变更：见 [`CHANGELOG.md`](https://github.com/sry8n5rjz5-debug/SRL-Structural-Recomposition-Launcher-for-Minecraft/blob/v0.2.1/CHANGELOG.md)。
 
 ---
 
@@ -130,4 +130,4 @@ See `SHA256SUMS` in the release assets.
 - Mods placed in `overrides/` are redistributed with the pack; verify their licenses before sharing.
 - CurseForge uses a public key; frequent exports may be rate-limited, in which case SRL falls back to overrides and warns.
 
-Full changelog: [`CHANGELOG.md`](../CHANGELOG.md).
+Full changelog: [`CHANGELOG.md`](https://github.com/sry8n5rjz5-debug/SRL-Structural-Recomposition-Launcher-for-Minecraft/blob/v0.2.1/CHANGELOG.md).

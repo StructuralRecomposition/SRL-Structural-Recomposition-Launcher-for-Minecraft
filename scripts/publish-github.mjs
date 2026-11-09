@@ -25,7 +25,7 @@ const RELEASE_NAME = "SRL v0.1.0 — 首个公开发布";
 const ASSET_DIR = join(ROOT, "dist/release-v0.1.0");
 const NOTES = join(ROOT, "release/RELEASE_NOTES_v0.1.0.md");
 const DRY_RUN = process.argv.includes("--dry-run");
-const repoName = process.argv.slice(2).find((a) => !a.startsWith("-")) || "SRL";
+const repoName = process.argv.slice(2).find((a) => !a.startsWith("-")) || "SRL-Structural-Recomposition-Launcher-for-Minecraft";
 
 function token() {
   if (process.env.GH_TOKEN) return process.env.GH_TOKEN.trim();
