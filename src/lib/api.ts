@@ -682,6 +682,7 @@ export interface ExportSummary {
 
 export interface ModpackExportSummary {
   path: string;
+  format: "modrinth" | "curseforge" | string;
   name: string;
   versionId: string;
   minecraftVersion: string;
@@ -944,6 +945,20 @@ export const api = {
     versionId?: string,
   ) =>
     command<ModpackExportSummary>("export_instance_modpack", {
+      instanceId,
+      destPath,
+      overwrite,
+      name,
+      versionId,
+    }),
+  exportInstanceCurseforgePack: (
+    instanceId: string,
+    destPath: string,
+    overwrite: boolean,
+    name?: string,
+    versionId?: string,
+  ) =>
+    command<ModpackExportSummary>("export_instance_curseforge_pack", {
       instanceId,
       destPath,
       overwrite,

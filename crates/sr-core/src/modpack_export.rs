@@ -13,6 +13,7 @@
 //!   and the mod falls back to `overrides/`.
 //! * Symlinks are skipped everywhere.
 
+use crate::curseforge::CurseForgeService;
 use crate::download::ensure_trusted_url;
 use crate::error::{AppError, ErrorCode, Result};
 use crate::instance::{Instance, ModLoaderInfo};
@@ -20,7 +21,7 @@ use crate::paths::GamePaths;
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sha2::{Digest, Sha512};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
@@ -49,6 +50,8 @@ const OVERRIDE_FILES: &[&str] = &["options.txt", "optionsof.txt", "servers.dat",
 #[serde(rename_all = "camelCase")]
 pub struct ModpackExportSummary {
     pub path: PathBuf,
+    /// `modrinth` or `curseforge`.
+    pub format: String,
     pub name: String,
     pub version_id: String,
     pub minecraft_version: String,
@@ -66,6 +69,7 @@ struct HashedMod {
     size: u64,
     sha1: String,
     sha512: String,
+    fingerprint: u32,
     enabled: bool,
 }
 
@@ -164,7 +168,7 @@ pub async fn export_mrpack(
     let minecraft_version = base_minecraft_version(game, &instance.version_id).await?;
 
     let mods_dir = instance.game_dir.join("mods");
-    let hashed = hash_mods(mods_dir).await?;
+    let hashed = hash_mods(mods_dir, false).await?;
     let mut warnings = Vec::new();
 
     let (resolved, bundled) = resolve_mods(http, &hashed, &mut warnings).await;
@@ -217,6 +221,7 @@ pub async fn export_mrpack(
 
     let summary = ModpackExportSummary {
         path: dest.to_path_buf(),
+        format: "modrinth".into(),
         name: pack_name,
         version_id: pack_version,
         minecraft_version,
@@ -233,6 +238,224 @@ pub async fn export_mrpack(
         "modpack exported"
     );
     Ok(summary)
+}
+
+/// Export `instance` as a CurseForge `manifest.json` modpack ZIP.
+///
+/// Mods are matched by CurseForge fingerprint. Anything the API cannot match
+/// (or that is disabled) is copied into `overrides/`, so the pack still
+/// reconstructs the instance even when the API is unreachable.
+pub async fn export_curseforge_pack(
+    game: &GamePaths,
+    instance: &Instance,
+    dest: &Path,
+    overwrite: bool,
+    name: Option<String>,
+    version_id: Option<String>,
+    curseforge: &CurseForgeService,
+) -> Result<ModpackExportSummary> {
+    if dest.extension().and_then(|e| e.to_str()) != Some("zip") {
+        return Err(AppError::invalid_input("CurseForge 整合包必须以 .zip 结尾"));
+    }
+    if dest.starts_with(&instance.game_dir) {
+        return Err(AppError::invalid_input("导出文件不能放在实例目录内部"));
+    }
+    if tokio::fs::try_exists(dest).await.unwrap_or(false) && !overwrite {
+        return Err(AppError::new(
+            ErrorCode::AlreadyExists,
+            "导出文件已存在，请更换路径或确认覆盖",
+        ));
+    }
+    if !tokio::fs::try_exists(&instance.game_dir)
+        .await
+        .unwrap_or(false)
+    {
+        return Err(AppError::not_found("实例目录不存在"));
+    }
+
+    let pack_name = name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&instance.name)
+        .to_string();
+    let pack_version = version_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("1.0.0")
+        .to_string();
+    if pack_name.len() > 128 || pack_version.len() > 64 {
+        return Err(AppError::invalid_input("整合包名称或版本号过长"));
+    }
+    let minecraft_version = base_minecraft_version(game, &instance.version_id).await?;
+
+    let mods_dir = instance.game_dir.join("mods");
+    let hashed = hash_mods(mods_dir, true).await?;
+    let mut warnings = Vec::new();
+    let enabled: Vec<&HashedMod> = hashed.iter().filter(|m| m.enabled).collect();
+    let mut bundled: Vec<HashedMod> = hashed.iter().filter(|m| !m.enabled).cloned().collect();
+    let mut manifest_files = Vec::new();
+    let mut seen_projects = HashSet::new();
+
+    if !enabled.is_empty() {
+        let fingerprints: Vec<u32> = enabled.iter().map(|m| m.fingerprint).collect();
+        let mut matches = HashMap::new();
+        let mut lookup_failed = false;
+        for batch in fingerprints.chunks(HASH_BATCH) {
+            match curseforge.fingerprint_matches(batch).await {
+                Ok(found) => matches.extend(found),
+                Err(error) => {
+                    lookup_failed = true;
+                    tracing::warn!(%error, "curseforge fingerprint lookup failed");
+                    break;
+                }
+            }
+        }
+        if lookup_failed {
+            warnings.push(
+                "无法连接 CurseForge，所有模组已放入 overrides/；整合包仍然完整，但体积会更大"
+                    .into(),
+            );
+        }
+        let mut duplicates = 0u32;
+        for item in enabled {
+            let matched = matches.get(&item.fingerprint);
+            let usable = matched.is_some_and(|m| {
+                m.available
+                    && m.project_id > 0
+                    && m.file_id > 0
+                    && seen_projects.insert(m.project_id)
+            });
+            if usable {
+                let matched = matched.expect("checked above");
+                manifest_files.push(CfManifestFile {
+                    project_id: matched.project_id,
+                    file_id: matched.file_id,
+                    required: true,
+                });
+            } else {
+                if matched.is_some_and(|m| m.available && seen_projects.contains(&m.project_id)) {
+                    duplicates += 1;
+                }
+                bundled.push(item.clone());
+            }
+        }
+        if duplicates > 0 {
+            warnings.push(format!(
+                "有 {duplicates} 个模组与同项目其他版本重复，已放入 overrides/"
+            ));
+        }
+    }
+
+    let loader = curseforge_loader_id(instance.mod_loader.as_ref());
+    if instance.mod_loader.is_some() && loader.is_none() {
+        warnings.push("无法识别模组加载器版本，manifest 只声明了 Minecraft 版本".into());
+    }
+    let manifest = CurseForgeManifest {
+        minecraft: CfMinecraft {
+            version: minecraft_version.clone(),
+            mod_loaders: loader
+                .into_iter()
+                .map(|id| CfLoader { id, primary: true })
+                .collect(),
+        },
+        manifest_type: "minecraftModpack".into(),
+        manifest_version: 1,
+        name: pack_name.clone(),
+        version: pack_version.clone(),
+        author: "SRL".into(),
+        files: manifest_files,
+        overrides: "overrides".into(),
+    };
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
+
+    let dir = instance.game_dir.clone();
+    let dest_buf = dest.to_path_buf();
+    let bundled_for_task = bundled.clone();
+    let (entries_count, bytes) = tokio::task::spawn_blocking(move || {
+        let entries = collect_entries(&dir, &bundled_for_task)?;
+        write_pack(
+            &dest_buf,
+            "manifest.json",
+            &manifest_bytes,
+            &entries,
+            overwrite,
+        )?;
+        Ok::<_, AppError>((entries.len() as u32, entries_size(&entries)))
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("整合包导出任务失败：{e}")))??;
+
+    let summary = ModpackExportSummary {
+        path: dest.to_path_buf(),
+        format: "curseforge".into(),
+        name: pack_name,
+        version_id: pack_version,
+        minecraft_version,
+        resolved_mods: manifest.files.len() as u32,
+        bundled_mods: bundled.len() as u32,
+        overrides: entries_count,
+        bytes,
+        warnings,
+    };
+    tracing::info!(
+        instance = %instance.id,
+        resolved = summary.resolved_mods,
+        bundled = summary.bundled_mods,
+        "curseforge modpack exported"
+    );
+    Ok(summary)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CurseForgeManifest {
+    minecraft: CfMinecraft,
+    manifest_type: String,
+    manifest_version: u32,
+    name: String,
+    version: String,
+    author: String,
+    files: Vec<CfManifestFile>,
+    overrides: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CfMinecraft {
+    version: String,
+    mod_loaders: Vec<CfLoader>,
+}
+
+#[derive(Debug, Serialize)]
+struct CfLoader {
+    id: String,
+    primary: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct CfManifestFile {
+    #[serde(rename = "projectID")]
+    project_id: u64,
+    #[serde(rename = "fileID")]
+    file_id: u64,
+    required: bool,
+}
+
+fn curseforge_loader_id(loader: Option<&ModLoaderInfo>) -> Option<String> {
+    let loader = loader?;
+    if loader.version.trim().is_empty() {
+        return None;
+    }
+    let prefix = match loader.kind.to_ascii_lowercase().as_str() {
+        "fabric" => "fabric",
+        "quilt" => "quilt",
+        "forge" => "forge",
+        "neoforge" => "neoforge",
+        _ => return None,
+    };
+    Some(format!("{prefix}-{}", loader.version.trim()))
 }
 
 /// Walk `inheritsFrom`/`jar` until the vanilla version id is reached. Falls
@@ -304,13 +527,13 @@ fn loader_dependency(loader: Option<&ModLoaderInfo>) -> Option<(String, String)>
     Some((key.to_string(), loader.version.clone()))
 }
 
-async fn hash_mods(mods_dir: PathBuf) -> Result<Vec<HashedMod>> {
-    tokio::task::spawn_blocking(move || hash_mods_blocking(&mods_dir))
+async fn hash_mods(mods_dir: PathBuf, with_fingerprint: bool) -> Result<Vec<HashedMod>> {
+    tokio::task::spawn_blocking(move || hash_mods_blocking(&mods_dir, with_fingerprint))
         .await
         .map_err(|e| AppError::internal(format!("读取模组目录失败：{e}")))?
 }
 
-fn hash_mods_blocking(mods_dir: &Path) -> Result<Vec<HashedMod>> {
+fn hash_mods_blocking(mods_dir: &Path, with_fingerprint: bool) -> Result<Vec<HashedMod>> {
     let mut out = Vec::new();
     if let Ok(meta) = std::fs::symlink_metadata(mods_dir) {
         if meta.file_type().is_symlink() {
@@ -352,12 +575,18 @@ fn hash_mods_blocking(mods_dir: &Path) -> Result<Vec<HashedMod>> {
             ));
         }
         let (sha1, sha512) = hash_file(&path)?;
+        let fingerprint = if with_fingerprint {
+            crate::curseforge::fingerprint_file(&path)?
+        } else {
+            0
+        };
         out.push(HashedMod {
             relative: format!("mods/{file_name}"),
             file_name,
             size: meta.len(),
             sha1,
             sha512,
+            fingerprint,
             enabled,
         });
     }
@@ -492,9 +721,26 @@ fn write_mrpack(
     bundled: &[HashedMod],
     overwrite: bool,
 ) -> Result<(u32, u64)> {
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    let entries = collect_entries(instance_dir, bundled)?;
+    write_pack(
+        dest,
+        "modrinth.index.json",
+        index_bytes,
+        &entries,
+        overwrite,
+    )?;
+    Ok((entries.len() as u32, entries_size(&entries)))
+}
+
+fn entries_size(entries: &[(String, PathBuf)]) -> u64 {
+    entries
+        .iter()
+        .filter_map(|(_, path)| std::fs::metadata(path).ok())
+        .map(|meta| meta.len())
+        .sum()
+}
+
+fn collect_entries(instance_dir: &Path, bundled: &[HashedMod]) -> Result<Vec<(String, PathBuf)>> {
     let mut entries: Vec<(String, PathBuf)> = Vec::new();
     for mod_info in bundled {
         let path = instance_dir.join("mods").join(&mod_info.file_name);
@@ -540,7 +786,19 @@ fn write_mrpack(
             ));
         }
     }
+    Ok(entries)
+}
 
+fn write_pack(
+    dest: &Path,
+    manifest_name: &str,
+    manifest_bytes: &[u8],
+    entries: &[(String, PathBuf)],
+    overwrite: bool,
+) -> Result<()> {
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let tmp = dest.with_file_name(format!(
         ".{}.tmp-{}",
         dest.file_name().unwrap_or_default().to_string_lossy(),
@@ -552,10 +810,10 @@ fn write_mrpack(
         let options = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
             .unix_permissions(0o644);
-        zip.start_file("modrinth.index.json", options)
+        zip.start_file(manifest_name, options)
             .map_err(|e| AppError::internal(format!("写入整合包失败：{e}")))?;
-        zip.write_all(index_bytes)?;
-        for (rel, path) in &entries {
+        zip.write_all(manifest_bytes)?;
+        for (rel, path) in entries {
             let name = format!("overrides/{rel}");
             zip.start_file(name, options)
                 .map_err(|e| AppError::internal(format!("写入整合包失败：{e}")))?;
@@ -576,8 +834,7 @@ fn write_mrpack(
     if result.is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
-    result?;
-    Ok((entries.len() as u32, total))
+    result
 }
 
 fn collect_tree(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) -> Result<()> {
@@ -697,6 +954,7 @@ mod tests {
             size: 3,
             sha1: "a".into(),
             sha512: "b".into(),
+            fingerprint: 1,
             enabled: true,
         }];
         let dest = dir.path().join("pack.mrpack");

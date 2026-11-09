@@ -38,6 +38,7 @@ export function InstancesPage() {
   const [exportPath, setExportPath] = useState("");
   const [overwrite, setOverwrite] = useState(false);
   const [packFor, setPackFor] = useState<Instance | null>(null);
+  const [packFormat, setPackFormat] = useState<"modrinth" | "curseforge">("modrinth");
   const [packPath, setPackPath] = useState("");
   const [packName, setPackName] = useState("");
   const [packVersion, setPackVersion] = useState("1.0.0");
@@ -206,24 +207,37 @@ export function InstancesPage() {
     setBusy("modpack");
     setFormError(null);
     try {
-      const summary = await api.exportInstanceModpack(
+      const args = [
         packFor.id,
         packPath.trim(),
         packOverwrite,
         packName.trim() || undefined,
         packVersion.trim() || undefined,
-      );
+      ] as const;
+      const summary =
+        packFormat === "modrinth"
+          ? await api.exportInstanceModpack(...args)
+          : await api.exportInstanceCurseforgePack(...args);
       setPackFor(null);
       pushToast(
-        "整合包已导出",
+        packFormat === "modrinth" ? "Modrinth 整合包已导出" : "CurseForge 整合包已导出",
         summary.warnings.length ? "warning" : "success",
-        `${summary.resolvedMods} 个模组走 Modrinth 下载 · ${summary.bundledMods} 个放入 overrides · ${formatBytes(summary.bytes)}`,
+        `${summary.resolvedMods} 个模组写入索引 · ${summary.bundledMods} 个放入 overrides · ${formatBytes(summary.bytes)}`,
       );
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
+  }
+
+  function choosePackFormat(next: "modrinth" | "curseforge") {
+    setPackFormat(next);
+    setPackPath((prev) => {
+      const stem = prev.replace(/\.(mrpack|zip)$/i, "").trim();
+      return `${stem || packFor?.name || "modpack"}.${next === "modrinth" ? "mrpack" : "zip"}`;
+    });
+    setFormError(null);
   }
 
   async function checkImport() {
@@ -433,6 +447,7 @@ export function InstancesPage() {
                     label="导出整合包"
                     onClick={() => {
                       setPackFor(inst);
+                      setPackFormat("modrinth");
                       setPackPath(`${inst.name}.mrpack`);
                       setPackName(inst.name);
                       setPackVersion("1.0.0");
@@ -698,11 +713,29 @@ export function InstancesPage() {
               onClick={doPackExport}
               disabled={!packPath.trim()}
             >
-              导出 .mrpack
+              {packFormat === "modrinth" ? "导出 .mrpack" : "导出 ZIP"}
             </Button>
           </>
         }
       >
+        <Field label="导出格式">
+          <div className="inline-form" role="radiogroup" aria-label="整合包格式">
+            <Button
+              size="sm"
+              variant={packFormat === "modrinth" ? "primary" : "ghost"}
+              onClick={() => choosePackFormat("modrinth")}
+            >
+              Modrinth .mrpack
+            </Button>
+            <Button
+              size="sm"
+              variant={packFormat === "curseforge" ? "primary" : "ghost"}
+              onClick={() => choosePackFormat("curseforge")}
+            >
+              CurseForge ZIP
+            </Button>
+          </div>
+        </Field>
         <Field label="整合包名称">
           <input
             value={packName}
@@ -719,13 +752,21 @@ export function InstancesPage() {
         </Field>
         <Field
           label="导出文件路径"
-          hint="必须为 .mrpack；可在 Modrinth 客户端、Prism、ATLauncher 等启动器中导入。"
+          hint={
+            packFormat === "modrinth"
+              ? "必须为 .mrpack；可在 Modrinth 客户端、Prism、ATLauncher 等启动器中导入。"
+              : "必须为 .zip；包含 manifest.json，可在 CurseForge App、Prism 等启动器中导入。"
+          }
         >
           <input
             className="mono"
             value={packPath}
             onChange={(e) => setPackPath(e.target.value)}
-            placeholder="/Users/you/Desktop/modpack.mrpack"
+            placeholder={
+              packFormat === "modrinth"
+                ? "/Users/you/Desktop/modpack.mrpack"
+                : "/Users/you/Desktop/modpack.zip"
+            }
           />
         </Field>
         <label className="checkbox-row">
@@ -737,9 +778,19 @@ export function InstancesPage() {
           <span>允许覆盖已存在的文件</span>
         </label>
         <p className="muted small">
-          能在 Modrinth 识别到的模组会写入 <span className="mono">modrinth.index.json</span>，
-          由导入方重新下载；其余模组和配置、资源包、光影会打包进
-          <span className="mono">overrides/</span>。不会包含存档、日志或账号令牌。
+          {packFormat === "modrinth" ? (
+            <>
+              能在 Modrinth 识别到的模组会写入{" "}
+              <span className="mono">modrinth.index.json</span>，由导入方重新下载；
+            </>
+          ) : (
+            <>
+              能通过 CurseForge 官方指纹识别的模组会写入{" "}
+              <span className="mono">manifest.json</span> 的 projectID / fileID；
+            </>
+          )}
+          其余模组和配置、资源包、光影会打包进 <span className="mono">overrides/</span>。
+          不会包含存档、日志或账号令牌。
         </p>
         {formError ? <p className="form-error">{formError}</p> : null}
       </Modal>

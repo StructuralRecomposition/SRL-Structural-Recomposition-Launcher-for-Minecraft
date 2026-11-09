@@ -184,6 +184,7 @@ pub fn run() {
             commands::duplicate_instance,
             commands::export_instance_archive,
             commands::export_instance_modpack,
+            commands::export_instance_curseforge_pack,
             commands::inspect_instance_archive,
             commands::import_instance_archive,
             commands::list_mods,

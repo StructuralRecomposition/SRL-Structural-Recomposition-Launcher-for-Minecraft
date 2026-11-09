@@ -8,6 +8,9 @@
 use crate::account::SecretStore;
 use crate::error::{AppError, ErrorCode, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::io::Read;
+use std::path::Path;
 use std::time::Duration;
 
 const API: &str = "https://api.curseforge.com/v1";
@@ -116,6 +119,83 @@ pub fn clear_key(store: &dyn SecretStore) -> Result<()> {
     store.delete(KEY_ENTRY)
 }
 
+/// CurseForge file fingerprint: MurmurHash2 (seed `1`) over the file with ASCII
+/// whitespace bytes `0x09`, `0x0A`, `0x0D` and `0x20` removed.
+///
+/// CurseForge's exact parameters are a length seed of `1`, a final multiply for
+/// the last partial word, and the usual `>> 13` / `>> 15` finalisation.
+pub fn fingerprint_file(path: &Path) -> Result<u32> {
+    const M: u32 = 0x5b_d1_e9_95;
+    const R: u32 = 24;
+    let mut file = std::fs::File::open(path)?;
+    let mut buffer = [0u8; 64 * 1024];
+
+    // Pass 1: count bytes after whitespace removal (the hash length seed).
+    let mut filtered_len: u64 = 0;
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        filtered_len += buffer[..read]
+            .iter()
+            .filter(|b| !is_fingerprint_whitespace(**b))
+            .count() as u64;
+    }
+    if filtered_len > u32::MAX as u64 {
+        return Err(AppError::invalid_input(
+            "文件超过 4GB，无法生成 CurseForge 指纹",
+        ));
+    }
+
+    // Pass 2: hash the filtered stream.
+    use std::io::Seek;
+    file.seek(std::io::SeekFrom::Start(0))?;
+    let mut h = 1u32 ^ filtered_len as u32;
+    let mut word = [0u8; 4];
+    let mut word_len = 0usize;
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        for &byte in &buffer[..read] {
+            if is_fingerprint_whitespace(byte) {
+                continue;
+            }
+            word[word_len] = byte;
+            word_len += 1;
+            if word_len == 4 {
+                let mut k = u32::from_le_bytes(word);
+                k = k.wrapping_mul(M);
+                k ^= k >> R;
+                k = k.wrapping_mul(M);
+                h = h.wrapping_mul(M);
+                h ^= k;
+                word_len = 0;
+            }
+        }
+    }
+    if word_len >= 3 {
+        h ^= (word[2] as u32) << 16;
+    }
+    if word_len >= 2 {
+        h ^= (word[1] as u32) << 8;
+    }
+    if word_len >= 1 {
+        h ^= word[0] as u32;
+        h = h.wrapping_mul(M);
+    }
+    h ^= h >> 13;
+    h = h.wrapping_mul(M);
+    h ^= h >> 15;
+    Ok(h)
+}
+
+fn is_fingerprint_whitespace(byte: u8) -> bool {
+    matches!(byte, 0x09 | 0x0a | 0x0d | 0x20)
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CurseForgeFile {
@@ -127,6 +207,51 @@ pub struct CurseForgeFile {
     pub game_versions: Vec<String>,
     pub file_date: Option<String>,
     pub release_type: u32,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct CfFingerprintResponse {
+    #[serde(default)]
+    data: CfFingerprintData,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct CfFingerprintData {
+    #[serde(default)]
+    exact_matches: Vec<CfFingerprintEntry>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct CfFingerprintEntry {
+    #[serde(default)]
+    file: CfFingerprintFile,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct CfFingerprintFile {
+    #[serde(default)]
+    id: u64,
+    #[serde(default)]
+    mod_id: u64,
+    #[serde(default)]
+    file_name: String,
+    #[serde(default)]
+    file_fingerprint: u32,
+    #[serde(default)]
+    is_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurseForgeMatch {
+    pub project_id: u64,
+    pub file_id: u64,
+    pub file_name: String,
+    pub fingerprint: u32,
+    pub available: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -222,6 +347,73 @@ impl CurseForgeService {
             .map_err(|e| AppError::internal(format!("CurseForge URL 无效：{e}")))?;
         let _: serde_json::Value = self.get_json(url).await?;
         Ok(())
+    }
+
+    /// Resolve local mod fingerprints to exact CurseForge project/file IDs.
+    /// Unknown hashes are simply absent from the returned map.
+    pub async fn fingerprint_matches(
+        &self,
+        fingerprints: &[u32],
+    ) -> Result<HashMap<u32, CurseForgeMatch>> {
+        if fingerprints.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let url = reqwest::Url::parse(&format!("{API}/fingerprints"))
+            .map_err(|e| AppError::internal(format!("CurseForge URL 无效：{e}")))?;
+        let response = self
+            .http
+            .post(url)
+            .timeout(Duration::from_secs(25))
+            .header("x-api-key", &self.key)
+            .header(reqwest::header::USER_AGENT, crate::USER_AGENT)
+            .json(&serde_json::json!({ "fingerprints": fingerprints }))
+            .send()
+            .await?;
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Err(AppError::new(
+                ErrorCode::AuthenticationRequired,
+                "CurseForge API key 无效或无权限",
+            ));
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(AppError::new(ErrorCode::Http, "CurseForge 请求过于频繁").retryable(true));
+        }
+        if !status.is_success() {
+            return Err(AppError::new(
+                ErrorCode::Http,
+                format!("CurseForge 返回 HTTP {}", status.as_u16()),
+            ));
+        }
+        let bytes = response.bytes().await?;
+        if bytes.len() > 8 * 1024 * 1024 {
+            return Err(AppError::new(
+                ErrorCode::VersionInvalid,
+                "CurseForge 指纹返回数据异常过大",
+            ));
+        }
+        let raw: CfFingerprintResponse = serde_json::from_slice(&bytes).map_err(|e| {
+            AppError::new(ErrorCode::InvalidInput, "CurseForge 指纹数据格式无效")
+                .with_detail(e.to_string())
+        })?;
+        let mut out = HashMap::new();
+        for entry in raw.data.exact_matches {
+            let file = entry.file;
+            if file.mod_id == 0 || file.id == 0 || file.file_fingerprint == 0 {
+                continue;
+            }
+            out.insert(
+                file.file_fingerprint,
+                CurseForgeMatch {
+                    project_id: file.mod_id,
+                    file_id: file.id,
+                    file_name: file.file_name,
+                    fingerprint: file.file_fingerprint,
+                    available: file.is_available,
+                },
+            );
+        }
+        Ok(out)
     }
 
     pub async fn categories(&self, class_id: u64) -> Result<Vec<CurseForgeCategory>> {
@@ -568,6 +760,18 @@ mod tests {
         clear_key(&store).unwrap();
         assert!(load_key(&store).unwrap().is_none());
         assert!(save_key(&store, "").is_err());
+    }
+
+    #[test]
+    #[ignore = "requires a real CurseForge jar in SRL_TEST_JAR"]
+    fn fingerprint_matches_known_curseforge_file() {
+        let path = std::env::var("SRL_TEST_JAR").unwrap_or_else(|_| "/tmp/geckolib.jar".into());
+        let path = std::path::Path::new(&path);
+        if !path.is_file() {
+            return;
+        }
+        // GeckoLib file 8945638 (geckolib-neoforge-26.3-5.5.7.jar).
+        assert_eq!(fingerprint_file(path).unwrap(), 1_550_434_642);
     }
 
     #[test]

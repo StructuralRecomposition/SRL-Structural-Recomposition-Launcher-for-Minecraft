@@ -106,7 +106,7 @@
 | 材质包管理 | ✅ | 列表、ZIP 导入、启停（同步 `options.txt`）、删除；校验 `pack.mcmeta` 与压缩包安全 |
 | 光影包管理 | ✅ | `shaderpacks/` 列表、导入、启停、删除；离线皮肤包只读 |
 | 整合包安装 | ✅ | Modrinth `.mrpack`、CurseForge `manifest.zip`、普通整合 ZIP；解析依赖并校验 SHA-1 |
-| 整合包导出 | ✅ | 导出 Modrinth `.mrpack`：可识别的模组写入索引，其余模组与配置/资源包/光影进入 `overrides/`；排除存档、日志与令牌 |
+| 整合包导出 | ✅ | 支持 Modrinth `.mrpack` 与 CurseForge `manifest.json` ZIP：可识别的模组写入索引（CurseForge 走官方指纹），其余模组与配置/资源包/光影进入 `overrides/`；排除存档、日志与令牌 |
 
 ### 账号与皮肤
 

@@ -11,7 +11,8 @@
 
 - 新增 Modrinth `.mrpack` 整合包导出：本地模组按 SHA-1 在 Modrinth 识别，命中项写入 `modrinth.index.json`，其余模组与 `config`、`defaultconfigs`、`kubejs`、`scripts`、资源包、光影进入 `overrides/`。
 - 导出会读取实例版本元数据确定 Minecraft 版本与加载器依赖；不包含存档、日志、截图或账号令牌。
-- 实例卡片新增「导出整合包」入口，可设置整合包名称、版本与导出路径。
+- 新增 CurseForge 整合包导出：按官方 Murmur2 指纹解析 `projectID` / `fileID` 并生成 `manifest.json`；识别不到或已禁用的模组进入 `overrides/`。
+- 实例卡片新增「导出整合包」入口，可选择 Modrinth 或 CurseForge 格式，并设置名称、版本与导出路径。
 
 ## 0.2.0 — 2026-11-07
 

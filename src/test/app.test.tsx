@@ -692,6 +692,8 @@ describe("SR Launcher UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "导出整合包" }));
     expect(await screen.findByText("整合包版本")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "导出 .mrpack" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "CurseForge ZIP" }));
+    expect(screen.getByRole("button", { name: "导出 ZIP" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     fireEvent.click(screen.getByRole("button", { name: "管理模组" }));
     expect(await screen.findByText("没有模组文件")).toBeInTheDocument();

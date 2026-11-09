@@ -735,6 +735,33 @@ pub async fn export_instance_modpack(
 }
 
 #[tauri::command]
+pub async fn export_instance_curseforge_pack(
+    state: State<'_, AppState>,
+    instance_id: String,
+    dest_path: String,
+    overwrite: bool,
+    name: Option<String>,
+    version_id: Option<String>,
+) -> Result<ModpackExportSummary> {
+    if dest_path.trim().is_empty() {
+        return Err(AppError::invalid_input("请选择导出文件路径"));
+    }
+    let game = state.game_snapshot().await;
+    let instance = InstanceManager::new(game.clone()).get(&instance_id).await?;
+    let curseforge = curseforge_client(&state)?;
+    modpack_export::export_curseforge_pack(
+        &game,
+        &instance,
+        &PathBuf::from(dest_path),
+        overwrite,
+        name,
+        version_id,
+        &curseforge,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn inspect_instance_archive(
     state: State<'_, AppState>,
     path: String,
