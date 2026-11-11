@@ -8,10 +8,10 @@ GitHub Releases is authoritative; this directory only keeps local verification a
 
 | Platform | File |
 |---|---|
-| macOS (Intel + Apple Silicon) | `SRL_0.2.1_universal.dmg` |
-| Windows 10/11 x64 | `SRL_0.2.1_windows-x64-portable.zip` |
-| Linux x64 (Debian / Ubuntu) | `SRL_0.2.1_amd64.deb` |
-| Linux x64 (universal) | `SRL_0.2.1_amd64.AppImage` |
+| macOS (Intel + Apple Silicon) | `SRL_0.2.2_universal.dmg` |
+| Windows 10/11 x64 | `SRL_0.2.2_windows-x64-portable.zip` |
+| Linux x64 (Debian / Ubuntu) | `SRL_0.2.2_amd64.deb` |
+| Linux x64 (universal) | `SRL_0.2.2_amd64.AppImage` |
 
 Checksums are in `SHA256SUMS`.
 
@@ -32,7 +32,7 @@ Extract the whole ZIP and run `Install.cmd` (no administrator rights needed), or
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.2.1_amd64.deb
+sudo apt install ./SRL_0.2.2_amd64.deb
 ```
 
 or run the AppImage. WebKitGTK 4.1 and GTK 3 are required.
@@ -42,7 +42,7 @@ or run the AppImage. WebKitGTK 4.1 and GTK 3 are required.
 - Multiplayer management center with host/guest modes, separated status, player events, room log, Server List Ping and a stoppable monitor.
 - Mod dependency visualization with recursive Modrinth/CurseForge resolution, SVG graph, installed detection and safe installs.
 - Java auto-completion installs Temurin when missing and continues launching without overwriting the global default.
-- This workspace build contains the macOS universal DMG only; Windows/Linux installers require the GitHub Actions matrix.
+- All four installers were built locally; no GitHub Release has been published yet.
 
 ## What's new in v0.2.1
 

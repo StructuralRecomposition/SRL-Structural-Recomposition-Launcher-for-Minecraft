@@ -37,18 +37,22 @@
 
 - Rust：241 项通过（239 库测试 + 2 启动集成），19 项真实网络 / 下载测试默认忽略。
 - 前端：50 项测试通过（Vitest + Testing Library），含依赖图分层布局与空图。
-- `cargo fmt --check`、`tsc -b`、`npm run build` 通过；macOS universal DMG 构建成功。
+- `cargo fmt --check`、`tsc -b`、`npm run build` 通过；macOS universal DMG、Windows x64 便携包、Linux deb / AppImage 均本地构建成功。
+- Linux AppImage 在 Xvfb 下启动 smoke 通过；macOS universal DMG 挂载启动 smoke 通过。
 - 真实网络验证：Modrinth Iris → Sodium required（2 节点 / 2 文件 / 4,264,786 字节）；`mc.hypixel.net:25565` Server List Ping 返回协议 47、26854/200000、355 ms。
 
 ## 安装包
 
-当前本地已生成：
+本地构建完成：
 
 | 平台 | 文件 |
 |---|---|
 | macOS 10.15+ | `SRL_0.2.2_universal.dmg`（Intel + Apple Silicon） |
+| Windows 10/11 x64 | `SRL_0.2.2_windows-x64-portable.zip` |
+| Linux x64（Debian / Ubuntu） | `SRL_0.2.2_amd64.deb` |
+| Linux x64（通用） | `SRL_0.2.2_amd64.AppImage` |
 
-Windows 便携 ZIP、Linux deb / AppImage 需由 GitHub Actions 三平台矩阵构建；本次为本地测试版，未发布 Release。
+校验值见 `SHA256SUMS`。本次为本地测试版，未发布 GitHub Release。
 
 ## 已知限制
 

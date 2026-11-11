@@ -37,3 +37,4 @@ src-tauri/resources/frpc/*/*/
 
 # Local v0.2.0 test builds (not published yet)
 release/v0.2.0/*
+release/v0.2.2/*

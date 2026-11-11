@@ -8,10 +8,10 @@
 
 | 平台 | 文件 |
 |---|---|
-| macOS（Intel + Apple Silicon） | `SRL_0.2.1_universal.dmg` |
-| Windows 10/11 x64 | `SRL_0.2.1_windows-x64-portable.zip` |
-| Linux x64（Debian / Ubuntu） | `SRL_0.2.1_amd64.deb` |
-| Linux x64（通用） | `SRL_0.2.1_amd64.AppImage` |
+| macOS（Intel + Apple Silicon） | `SRL_0.2.2_universal.dmg` |
+| Windows 10/11 x64 | `SRL_0.2.2_windows-x64-portable.zip` |
+| Linux x64（Debian / Ubuntu） | `SRL_0.2.2_amd64.deb` |
+| Linux x64（通用） | `SRL_0.2.2_amd64.AppImage` |
 
 校验值见 `SHA256SUMS`。
 
@@ -32,7 +32,7 @@ xattr -dr com.apple.quarantine /Applications/SRL.app
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.2.1_amd64.deb
+sudo apt install ./SRL_0.2.2_amd64.deb
 ```
 
 或运行 AppImage；需要 WebKitGTK 4.1 与 GTK 3。
@@ -42,7 +42,7 @@ sudo apt install ./SRL_0.2.1_amd64.deb
 - 联机管理中心：房主/游客分段、四类状态分离、玩家事件、房间日志、Server List Ping 与可停止监测。
 - 模组依赖可视化：Modrinth/CurseForge 递归解析、SVG 关系图、已安装检测与安全安装。
 - Java 自动补全：缺失时安装 Temurin 并继续启动，不覆盖全局默认 Java。
-- 本次工作区仅包含 macOS universal DMG；Windows / Linux 安装包需由 GitHub Actions 构建。
+- 四个安装包均已在本地构建；尚未发布 GitHub Release。
 
 ## v0.2.1 更新
 
