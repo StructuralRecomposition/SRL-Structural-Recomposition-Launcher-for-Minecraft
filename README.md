@@ -21,20 +21,20 @@
 
 **English:** SRL (Structural Recomposition Launcher) is an independent, local-first Minecraft: Java Edition launcher built with Rust, Tauri 2, React and TypeScript. It focuses on verifiable downloads, real process launching, clear diagnostics, and honest capability boundaries. No telemetry, no proprietary game files, MIT licensed.
 
-> **当前版本：`v0.2.1`（中英双语 · 内置 FRPC · 整合包导出）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.1)。
+> **当前版本：`v0.2.2`（联机管理中心 · 依赖可视化 · Java 自动补全）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.2)。
 
-### v0.2.1 更新摘要
+### v0.2.2 更新摘要
+
+- **联机管理中心。** 联机页新增房主/游客模式；房主端分开显示本地服务、52FRP 隧道、FRPC 与玩家日志状态，新增可确认的玩家加入/离开、IP 类型区分、房间历史与统一日志。游客端使用 Rust 实现 Minecraft Server List Ping，展示 DNS、TCP、协议、MOTD、延迟与真实错误；连接诊断还会通过一次不发送账号凭据的登录握手探测服务器是否要求正版验证（离线账号能否加入）；监测在诊断完成后才显示、可随时停止。游客仍需在 Minecraft 内手动加入。
+- **模组依赖可视化。** 资源详情新增“依赖”：按具体版本、目标 Minecraft 版本和加载器递归解析 Modrinth/CurseForge 官方依赖，生成 SVG 关系图与列表，识别已安装模组，展示安装计划；安装复用 SHA-1 校验、备份、原子替换与回滚。
+- **Java 自动补全。** 启动前读取真实 `javaVersion.majorVersion`；缺失 Java 时提示具体版本并一键安装 Temurin，安装后重新扫描；自动安装不覆盖用户全局默认 Java，实例固定 Java 不会被静默替换。
+
+### v0.2.1 更新摘要（上一版）
 
 - **中英双语界面。** 设置中新增语言切换，默认简体中文；切换后界面重新加载。
 - **FRPC 安装包内置。** 按平台/架构携带官方 frp 客户端并锁定 SHA-256，创建房间不再等待 GitHub；网络下载仅作为内置缺失时的回退。
 - **整合包导出。** 支持 Modrinth `.mrpack` 与 CurseForge `manifest.json` ZIP；Modrinth 走 SHA-1，CurseForge 走官方 Murmur2 指纹，未识别模组进入 `overrides/`。
 - **三平台安装包。** macOS DMG、Windows x64 便携 ZIP、Linux deb / AppImage。
-
-### v0.2.2 更新摘要（测试版）
-
-- **联机管理中心。** 联机页新增房主/游客模式；房主端分开显示本地服务、52FRP 隧道、FRPC 与玩家日志状态，新增可确认的玩家加入/离开、IP 类型区分、房间历史与统一日志。游客端使用 Rust 实现 Minecraft Server List Ping，展示 DNS、TCP、协议、MOTD、延迟与真实错误；监测可停止。游客仍需在 Minecraft 内手动加入。
-- **模组依赖可视化。** 资源详情新增“依赖”：按具体版本、目标 Minecraft 版本和加载器递归解析 Modrinth/CurseForge 官方依赖，生成 SVG 关系图与列表，识别已安装模组，展示安装计划；安装复用 SHA-1 校验、备份、原子替换与回滚。
-- **Java 自动补全。** 启动前读取真实 `javaVersion.majorVersion`；缺失 Java 时提示具体版本并一键安装 Temurin，安装后重新扫描；自动安装不覆盖用户全局默认 Java，实例固定 Java 不会被静默替换。
 
 ---
 
@@ -229,18 +229,18 @@
 
 ## 下载与安装
 
-### v0.2.1 下载
+### v0.2.2 下载
 
 已构建好的安装包直接放在 GitHub Release，点开即可下载：
 
-**https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.1**
+**https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.2**
 
 | 平台 | 文件 | 说明 |
 |---|---|---|
-| macOS 10.15+ | `SRL_0.2.1_universal.dmg` | Intel + Apple Silicon，未签名、未公证 |
-| Windows 10/11 x64 | `SRL_0.2.1_windows-x64-portable.zip` | 需要 WebView2 Runtime；解压后运行 `Install.cmd` |
-| Linux x64 | `SRL_0.2.1_amd64.deb` | 需要 WebKitGTK 4.1 等运行库 |
-| Linux x64 | `SRL_0.2.1_amd64.AppImage` | 免安装；需要 FUSE 或 `--appimage-extract-and-run` |
+| macOS 10.15+ | `SRL_0.2.2_universal.dmg` | Intel + Apple Silicon，未签名、未公证 |
+| Windows 10/11 x64 | `SRL_0.2.2_windows-x64-portable.zip` | 需要 WebView2 Runtime；解压后运行 `Install.cmd` |
+| Linux x64 | `SRL_0.2.2_amd64.deb` | 需要 WebKitGTK 4.1 等运行库 |
+| Linux x64 | `SRL_0.2.2_amd64.AppImage` | 免安装；需要 FUSE 或 `--appimage-extract-and-run` |
 | 校验 | `SHA256SUMS` | 所有附件的 SHA-256 |
 
 > `release-assets/` 保存本次发布的构建产物，供维护者复核；普通用户直接下载 Release 附件即可。后续版本可以用 [`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) 手动构建，再上传到对应 Release。
@@ -266,7 +266,7 @@ xattr -dr com.apple.quarantine /Applications/SRL.app
 **Linux**
 
 ```bash
-sudo apt install ./SRL_0.2.1_amd64.deb
+sudo apt install ./SRL_0.2.2_amd64.deb
 ```
 
 ### 第一次使用
@@ -330,7 +330,7 @@ npm run tauri build -- --bundles nsis,msi
 ## 测试与质量
 
 ```bash
-cargo test -p sr-core          # 241 项通过（239 库 + 2 启动集成）；19 项真实网络/下载测试默认忽略
+cargo test -p sr-core          # 242 项库测试 + 2 项启动集成通过；真实网络/下载测试默认忽略
 npx vitest run                 # 50 项前端测试
 cargo check -p sr-launcher     # Tauri 命令层编译检查
 cargo fmt --all -- --check
@@ -349,7 +349,7 @@ cargo test -p sr-core --test server_status_network -- --ignored --nocapture
 
 当前质量基线：
 
-- Rust：241 项通过（239 库测试 + 2 启动集成），19 项需真实网络 / 下载的测试默认忽略。
+- Rust：242 项库测试 + 2 项启动集成通过；需真实网络 / 下载的测试默认忽略。
 - 前端：50 项通过（Vitest + Testing Library）。
 - 真实网络冒烟：Modrinth Iris → Sodium required（2 节点 / 4,264,786 字节）；`mc.hypixel.net:25565` 状态协议 47、26906/200000、322 ms。
 - `cargo fmt`、`cargo clippy -D warnings`、`npm run build` 通过。

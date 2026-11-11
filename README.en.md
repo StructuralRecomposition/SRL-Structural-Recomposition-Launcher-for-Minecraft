@@ -19,7 +19,7 @@
 
 > **Microsoft login:** due to current development constraints, SRL cannot yet offer out-of-the-box Microsoft sign-in. You currently need to register your own Azure application, obtain a `client id` and enter it in Settings; the login entry is explicitly disabled until then.
 
-> **Current version: `v0.2.1` (bilingual UI · bundled FRPC · modpack export)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.1).
+> **Current version: `v0.2.2` (multiplayer center · dependency graph · Java auto-install)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.2).
 
 ---
 
@@ -69,18 +69,18 @@
 | Mod dependency graph | 🟡 | Official Modrinth/CurseForge recursion, SVG/list view, installed detection, install plan |
 | Missing-Java install flow | 🟡 | Dynamic required major, Temurin install, rescan, no global-default overwrite |
 
-### v0.2.1 highlights
+### What's new in v0.2.2
+
+- **Multiplayer management center.** Host and guest modes share one entry. The host view separates local Minecraft service, 52FRP tunnel, FRPC, and confirmed player-log state; it adds confirmed joins/leaves, IP-source classification, room history, and a unified log. The guest view performs a real Rust-side Minecraft Server List Ping (DNS, TCP, VarInt, status JSON, MOTD, version, latency, error stage) and detects whether the server requires premium authentication through a credential-free login handshake, so offline-join failures can be diagnosed; the monitor appears only after diagnostics finish and can be stopped. Guests still join inside Minecraft manually.
+- **Mod dependency visualization.** Analyze a concrete mod version against the target Minecraft version and loader using official Modrinth/CurseForge metadata. Render an SVG graph and list, detect installed mods from real JAR metadata, show an install plan, and reuse SHA-1 verification, backups, atomic replacement, progress, cancellation, and rollback.
+- **Automatic Java runtime completion.** Read the real `javaVersion.majorVersion`, offer to install Temurin when no safe runtime exists, rescan after installation, never overwrite the global default during auto-completion, and never silently replace a pinned instance Java.
+
+### v0.2.1 highlights (previous)
 
 - **Bundled FRPC.** Each installer ships the official frp client for its platform/architecture, pinned by SHA-256. The first use verifies and extracts it locally; room creation no longer waits for GitHub. Network download remains only as a fallback.
 - **Modpack export.** Export an instance as a Modrinth `.mrpack` or a CurseForge `manifest.json` ZIP. Mods are matched by SHA-1 (Modrinth) or the official Murmur2 fingerprint (CurseForge); unknown or disabled mods, configs, resource packs and shaders are placed in `overrides/`. Worlds, logs and tokens are excluded.
 - **Bilingual interface.** A language selector in Settings switches the whole UI between Simplified Chinese and English and reloads the window. Chinese remains the default.
 - **Packaging.** macOS DMG, Windows x64 portable ZIP, Linux deb and AppImage are produced by the release workflow.
-
-### What's new in v0.2.2 (test build)
-
-- **Multiplayer management center.** Host and guest modes share one entry. The host view separates local Minecraft service, 52FRP tunnel, FRPC, and confirmed player-log state; it adds confirmed joins/leaves, IP-source classification, room history, and a unified log. The guest view performs a real Rust-side Minecraft Server List Ping (DNS, TCP, VarInt, status JSON, MOTD, version, latency, error stage) and a stoppable 12-second monitor. Guests still join inside Minecraft manually.
-- **Mod dependency visualization.** Analyze a concrete mod version against the target Minecraft version and loader using official Modrinth/CurseForge metadata. Render an SVG graph and list, detect installed mods from real JAR metadata, show an install plan, and reuse SHA-1 verification, backups, atomic replacement, progress, cancellation, and rollback.
-- **Automatic Java runtime completion.** Read the real `javaVersion.majorVersion`, offer to install Temurin when no safe runtime exists, rescan after installation, never overwrite the global default during auto-completion, and never silently replace a pinned instance Java.
 
 ## Screenshots
 
@@ -96,10 +96,10 @@
 
 | Platform | File |
 |---|---|
-| macOS 10.15+ | `SRL_0.2.1_universal.dmg` (Intel + Apple Silicon, unsigned) |
-| Windows 10/11 x64 | `SRL_0.2.1_windows-x64-portable.zip` |
-| Linux x64 | `SRL_0.2.1_amd64.deb` |
-| Linux x64 | `SRL_0.2.1_amd64.AppImage` |
+| macOS 10.15+ | `SRL_0.2.2_universal.dmg` (Intel + Apple Silicon, unsigned) |
+| Windows 10/11 x64 | `SRL_0.2.2_windows-x64-portable.zip` |
+| Linux x64 | `SRL_0.2.2_amd64.deb` |
+| Linux x64 | `SRL_0.2.2_amd64.AppImage` |
 
 Checksums: `SHA256SUMS` in the release assets.
 
@@ -118,7 +118,7 @@ Extract the whole ZIP and run `Install.cmd` (no administrator rights required), 
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.2.1_amd64.deb
+sudo apt install ./SRL_0.2.2_amd64.deb
 ```
 
 or run the AppImage. WebKitGTK 4.1 and GTK 3 are required.
