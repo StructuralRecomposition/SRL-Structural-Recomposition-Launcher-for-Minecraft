@@ -17,7 +17,7 @@ pub mod types;
 
 pub use guest::{GuestMonitor, GuestMonitorStatus, GuestSample};
 pub use manager::MultiplayerManager;
-pub use server_status::{ping_server, OnlineMode, ServerStatusReport};
+pub use server_status::{diagnose_server, ping_server, OnlineMode, ServerStatusReport};
 pub use types::{
     AccountView, CreateRoomRequest, Edition, FrpcView, LocalServiceView, MembersView,
     MultiplayerStatus, NodeView, OrphanTunnel, PlayerMember, ProgressEvent, ProgressSink,

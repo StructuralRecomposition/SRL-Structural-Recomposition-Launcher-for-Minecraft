@@ -154,11 +154,13 @@ SRL 自身角色模型为 `Owner` / `Admin` / `Member` / `Guest`。当前本机�
 
 ### 正版验证与正版隔离
 
-- Server List Ping 不公开 `online-mode`，SRL 显示“无法检测”，不会用 MOTD 或人数推断。
+- Server List Ping 本身不公开 `online-mode`；连接诊断会额外执行一次**不发送账号凭据的登录握手探测**：服务器返回加密请求（Encryption Request）说明 `online-mode=true`，直接返回登录成功（Login Success）说明 `online-mode=false`。
+- 探测只读取服务器第一个登录态数据包并立即断开，不进行 Mojang 认证、不进入游戏；无法确认时显示“未知”，不会用 MOTD 或人数推断。
 - 52FRP 开放 API（`/api/v1/openapi.json`）没有“正版隔离”字段，SRL 显示“未知”，不会把隧道在线或 FRPC 运行当作正版隔离结果。
 
 > DNS 目前解析 A/AAAA 记录，不查询 `_minecraft._tcp` SRV。只配置了 SRV 的服务器需要填写实际的 `host:port`。
 - 两个字段分开显示，避免把“正版验证”和“正版隔离”当成同一个概念。
+- 离线联机排查：若探测结果为“已启用”，离线账号会被服务器拒绝；需要在房主侧关闭正版验证（例如使用“自定义局域网联机”模组或设置 `online-mode=false`）。
 
 ### 游客监测
 

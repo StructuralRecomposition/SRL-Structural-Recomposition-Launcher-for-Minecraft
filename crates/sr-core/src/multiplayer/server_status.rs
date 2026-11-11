@@ -2,10 +2,14 @@
 //!
 //! This module only reports what the server actually returns. It never treats
 //! an open TCP port as a Minecraft server, and it never claims that a client
-//! joined the game. `online-mode` is not part of the status response and is
-//! therefore reported as undetectable instead of being guessed.
+//! joined the game. `online-mode` is not part of the status response, so the
+//! diagnostics path performs a separate, non-authenticating login handshake:
+//! an Encryption Request means online-mode=true, a Login Success means false.
+//! The probe never sends credentials and disconnects as soon as the mode is
+//! known.
 
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -206,6 +210,35 @@ fn error(stage: &str, message: impl Into<String>, retryable: bool) -> ServerStat
 
 pub async fn ping_server(address: &str) -> ServerStatusReport {
     ping_with_timeout(address, Duration::from_secs(12)).await
+}
+
+/// Run the full connection diagnosis: status ping, then a login handshake
+/// probe that determines whether the server requires premium authentication.
+pub async fn diagnose_server(address: &str) -> ServerStatusReport {
+    let mut report = ping_server(address).await;
+    if !report.ok {
+        return report;
+    }
+    let parsed = ServerAddress {
+        host: report.host.clone(),
+        port: report.port,
+    };
+    match tokio::time::timeout(
+        Duration::from_secs(8),
+        probe_online_mode(&parsed, report.protocol),
+    )
+    .await
+    {
+        Ok((mode, reason)) => {
+            report.online_mode = mode;
+            report.online_mode_reason = reason;
+        }
+        Err(_) => {
+            report.online_mode = OnlineMode::Unknown;
+            report.online_mode_reason = "登录握手检测超时，未能确认服务器是否要求正版验证。".into();
+        }
+    }
+    report
 }
 
 pub async fn ping_with_timeout(address: &str, total: Duration) -> ServerStatusReport {
@@ -521,6 +554,205 @@ impl<'a> PacketReader<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoginStartFormat {
+    Legacy,
+    Uuid,
+    FlagsUuid(bool),
+}
+
+#[derive(Debug)]
+enum LoginProbe {
+    NeedsAuth,
+    NoAuth,
+    Rejected(String),
+    Unknown(String),
+}
+
+fn probe_uuid() -> &'static [u8; 16] {
+    b"SRLprobe-0000000"
+}
+
+fn build_login_start(format: LoginStartFormat) -> Vec<u8> {
+    let mut payload = Vec::new();
+    write_var_int(&mut payload, 0x00);
+    write_string(&mut payload, "SRLProbe").expect("probe name is short");
+    match format {
+        LoginStartFormat::Legacy => {}
+        LoginStartFormat::Uuid => payload.extend_from_slice(probe_uuid()),
+        LoginStartFormat::FlagsUuid(has_uuid) => {
+            payload.push(0x00);
+            payload.push(u8::from(has_uuid));
+            if has_uuid {
+                payload.extend_from_slice(probe_uuid());
+            }
+        }
+    }
+    payload
+}
+
+fn login_start_formats(protocol: i32) -> Vec<LoginStartFormat> {
+    let primary = if protocol >= 764 {
+        LoginStartFormat::Uuid
+    } else if protocol >= 761 {
+        LoginStartFormat::FlagsUuid(true)
+    } else if protocol >= 759 {
+        LoginStartFormat::FlagsUuid(false)
+    } else {
+        LoginStartFormat::Legacy
+    };
+    let mut formats = vec![primary];
+    for fallback in [
+        LoginStartFormat::Legacy,
+        LoginStartFormat::Uuid,
+        LoginStartFormat::FlagsUuid(false),
+    ] {
+        if !formats.contains(&fallback) {
+            formats.push(fallback);
+        }
+    }
+    formats
+}
+
+async fn probe_online_mode(parsed: &ServerAddress, protocol: Option<i32>) -> (OnlineMode, String) {
+    let Some(protocol) = protocol else {
+        return (
+            OnlineMode::Unknown,
+            "服务器状态没有返回协议版本，无法执行登录握手检测。".into(),
+        );
+    };
+    let addrs = match resolve(&parsed.host, parsed.port).await {
+        Ok(addrs) => addrs,
+        Err(failure) => {
+            return (
+                OnlineMode::Unknown,
+                format!("登录握手检测失败：{}", failure.message),
+            )
+        }
+    };
+    let mut last = String::from("服务器未返回可识别的登录数据包");
+    for (index, format) in login_start_formats(protocol).into_iter().enumerate() {
+        if index > 0 {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+        match probe_login_once(parsed, protocol, &addrs, format).await {
+            Ok(LoginProbe::NeedsAuth) => {
+                return (
+                    OnlineMode::Enabled,
+                    "服务器在登录握手阶段返回加密请求：需要正版验证（online-mode=true），离线账号无法加入。"
+                        .into(),
+                )
+            }
+            Ok(LoginProbe::NoAuth) => {
+                return (
+                    OnlineMode::Disabled,
+                    "服务器在登录握手阶段直接接受登录、未要求加密：未启用正版验证（online-mode=false），离线账号可以加入；仍可能被白名单或封禁拦截。"
+                        .into(),
+                )
+            }
+            Ok(LoginProbe::Rejected(reason)) => {
+                last = format!("服务器拒绝了登录握手：{reason}");
+            }
+            Ok(LoginProbe::Unknown(reason)) => last = reason,
+            Err(failure) => last = failure.message,
+        }
+    }
+    (
+        OnlineMode::Unknown,
+        format!("状态查询成功，但登录握手未能确认 online-mode：{last}"),
+    )
+}
+
+async fn probe_login_once(
+    parsed: &ServerAddress,
+    protocol: i32,
+    addrs: &[SocketAddr],
+    format: LoginStartFormat,
+) -> Result<LoginProbe, ServerStatusError> {
+    let mut stream = connect_any(addrs, Duration::from_secs(3)).await?;
+    let mut handshake = Vec::new();
+    write_var_int(&mut handshake, 0x00);
+    write_var_int(&mut handshake, protocol);
+    write_string(&mut handshake, &parsed.host)?;
+    handshake.extend_from_slice(&parsed.port.to_be_bytes());
+    write_var_int(&mut handshake, 2);
+    write_frame(&mut stream, &handshake).await?;
+    write_frame(&mut stream, &build_login_start(format)).await?;
+
+    let packet = tokio::time::timeout(Duration::from_secs(4), read_frame(&mut stream))
+        .await
+        .map_err(|_| error("timeout", "等待登录握手响应超时", true))??;
+    login_packet_outcome(&mut stream, &packet).await
+}
+
+async fn login_packet_outcome(
+    stream: &mut TcpStream,
+    packet: &[u8],
+) -> Result<LoginProbe, ServerStatusError> {
+    let mut reader = PacketReader::new(packet);
+    match reader.var_int()? {
+        0x01 => Ok(LoginProbe::NeedsAuth),
+        0x02 => Ok(LoginProbe::NoAuth),
+        0x03 => {
+            let next = tokio::time::timeout(Duration::from_secs(4), read_frame(stream))
+                .await
+                .map_err(|_| error("timeout", "等待登录结果超时", true))??;
+            login_after_compression(&next).await
+        }
+        0x00 => {
+            let reason = reader
+                .string(MAX_JSON_BYTES)
+                .ok()
+                .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                .map(|value| json_text(&value))
+                .filter(|text| !text.is_empty())
+                .unwrap_or_else(|| "服务器未说明原因".into());
+            Ok(LoginProbe::Rejected(reason))
+        }
+        0x04 => Ok(LoginProbe::Unknown(
+            "服务器要求登录插件响应（可能安装了 Forge 或代理插件）".into(),
+        )),
+        0x05 => Ok(LoginProbe::Unknown("服务器请求 Cookie 数据".into())),
+        other => Ok(LoginProbe::Unknown(format!(
+            "服务器返回了未预期的登录数据包 0x{other:02x}"
+        ))),
+    }
+}
+
+async fn login_after_compression(payload: &[u8]) -> Result<LoginProbe, ServerStatusError> {
+    let mut reader = PacketReader::new(payload);
+    let data_length = reader.var_int()?;
+    if data_length < 0 {
+        return Ok(LoginProbe::Unknown("服务器压缩阈值无效".into()));
+    }
+    let data_length = data_length as usize;
+    if data_length == 0 {
+        return Ok(match reader.var_int()? {
+            0x01 => LoginProbe::NeedsAuth,
+            0x02 => LoginProbe::NoAuth,
+            other => LoginProbe::Unknown(format!("压缩后返回了未知数据包 0x{other:02x}")),
+        });
+    }
+    if data_length > MAX_PACKET_BYTES {
+        return Ok(LoginProbe::Unknown("服务器登录响应超过 4 MB".into()));
+    }
+    let mut decoded = Vec::with_capacity(data_length.min(64 * 1024));
+    let decoder = flate2::read::ZlibDecoder::new(&payload[reader.position..]);
+    if decoder
+        .take(MAX_PACKET_BYTES as u64)
+        .read_to_end(&mut decoded)
+        .is_err()
+    {
+        return Ok(LoginProbe::Unknown("无法解压服务器登录响应".into()));
+    }
+    let mut decoded_reader = PacketReader::new(&decoded);
+    Ok(match decoded_reader.var_int()? {
+        0x01 => LoginProbe::NeedsAuth,
+        0x02 => LoginProbe::NoAuth,
+        other => LoginProbe::Unknown(format!("压缩后返回了未知数据包 0x{other:02x}")),
+    })
+}
+
 /// Flatten a Minecraft chat component into readable text.
 pub fn json_text(value: &serde_json::Value) -> String {
     match value {
@@ -684,6 +916,69 @@ mod tests {
         assert!(report.favicon_present);
         assert!(report.latency_ms.is_some());
         assert_eq!(report.online_mode, OnlineMode::Undetectable);
+    }
+
+    async fn read_frame_async(stream: &mut TcpStream) -> Vec<u8> {
+        let length = read_varint_async(stream).await as usize;
+        let mut payload = vec![0u8; length];
+        stream.read_exact(&mut payload).await.unwrap();
+        payload
+    }
+
+    async fn diagnose_against_mock(login_reply_id: u8) -> ServerStatusReport {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut status_stream, _) = listener.accept().await.unwrap();
+            let _handshake = read_frame_async(&mut status_stream).await;
+            let _request = read_frame_async(&mut status_stream).await;
+            let status = serde_json::json!({
+                "version": {"name": "1.21.1", "protocol": 767},
+                "players": {"online": 0, "max": 20},
+                "description": {"text": "Probe"}
+            })
+            .to_string();
+            let mut payload = varint(0x00);
+            payload.extend(varint(status.len() as i32));
+            payload.extend_from_slice(status.as_bytes());
+            let mut frame = varint(payload.len() as i32);
+            frame.extend(payload);
+            status_stream.write_all(&frame).await.unwrap();
+            drop(status_stream);
+
+            let (mut login_stream, _) = listener.accept().await.unwrap();
+            let _handshake = read_frame_async(&mut login_stream).await;
+            let _login_start = read_frame_async(&mut login_stream).await;
+            let payload = varint(login_reply_id as i32);
+            let mut frame = varint(payload.len() as i32);
+            frame.extend(payload);
+            login_stream.write_all(&frame).await.unwrap();
+        });
+        let report = diagnose_server(&format!("127.0.0.1:{}", addr.port())).await;
+        server.await.unwrap();
+        report
+    }
+
+    #[tokio::test]
+    async fn detects_online_mode_from_encryption_request() {
+        let report = diagnose_against_mock(0x01).await;
+        assert!(report.ok, "{:?}", report.error);
+        assert_eq!(report.online_mode, OnlineMode::Enabled);
+    }
+
+    #[tokio::test]
+    async fn detects_offline_mode_from_login_success() {
+        let report = diagnose_against_mock(0x02).await;
+        assert!(report.ok, "{:?}", report.error);
+        assert_eq!(report.online_mode, OnlineMode::Disabled);
+    }
+
+    #[tokio::test]
+    async fn reads_login_success_after_compression() {
+        match login_after_compression(&[0x00, 0x02]).await.unwrap() {
+            LoginProbe::NoAuth => {}
+            other => panic!("unexpected probe result: {other:?}"),
+        }
     }
 
     #[tokio::test]

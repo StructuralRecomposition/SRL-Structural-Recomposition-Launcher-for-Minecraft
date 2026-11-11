@@ -13,7 +13,8 @@
 - 新增 `multiplayer/room-log.jsonl`：记录房间/FRPC/隧道/网络/玩家事件，含 timestamp、source、level、event_type、message；写入前脱敏，2 MB 上限裁剪，UI 支持筛选、时间排序与清理。
 - 游客模式新增 Rust Server List Ping：地址解析（域名/IPv4/IPv6/端口）、DNS、TCP、VarInt、状态 JSON、MOTD、版本、协议、在线人数、玩家样本、RTT 与分阶段错误。
 - 新增游客网络监测：12 秒采样（10–60 秒范围），可停止并取消后台任务；区分“网络监测状态”和“游戏内加入状态（无法确认）”。
-- 正版验证与正版隔离保持未知/无法检测：Server List Ping 不公开 `online-mode`，52FRP OpenAPI 没有正版隔离字段。
+- 正版验证改为登录握手探测：状态查询后额外建立一次登录连接，加密请求判定 `online-mode=true`，登录成功判定 `online-mode=false`；不发送账号凭据、不进入游戏。正版隔离仍显示未知（52FRP OpenAPI 无该字段）。
+- 游客网络监测改为连接诊断完成后才显示；移除“不会点击加入按钮”的说明文案。
 
 ### 模组依赖关系可视化
 

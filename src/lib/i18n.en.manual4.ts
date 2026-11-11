@@ -4,8 +4,6 @@ export const EN_MANUAL_4: Record<string, string> = {
     "52FRP tunnel connections right now: {0} (TCP connections, not players)",
   "DNS 解析": "DNS resolution",
   "Minecraft 本地服务": "Minecraft local service",
-  "SRL 不会点击加入按钮，也不会伪造“已进入世界”的状态。":
-    "SRL does not click Join and never fabricates a “joined the world” state.",
   "SRL 只检测服务器状态，不会替你打开或加入 Minecraft。":
     "SRL only checks the server status; it does not open or join Minecraft for you.",
   "TCP 连接": "TCP connection",

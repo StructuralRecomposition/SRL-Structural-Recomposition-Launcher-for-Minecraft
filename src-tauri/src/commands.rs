@@ -33,7 +33,7 @@ use sr_core::mods::ModEntry;
 use sr_core::multiplayer::{
     guest::GuestMonitorStatus,
     journal,
-    server_status::{ping_server, ServerStatusReport},
+    server_status::{diagnose_server, ServerStatusReport},
     AccountView as MultiplayerAccount, CreateRoomRequest, Edition, FrpcView, LocalServiceView,
     MembersView, MultiplayerStatus, NodeView, OrphanTunnel, RoomLogEntry, RoomView, StopRoomResult,
 };
@@ -4853,7 +4853,7 @@ pub async fn multiplayer_clear_logs(state: State<'_, AppState>) -> Result<u64> {
 
 #[tauri::command]
 pub async fn multiplayer_guest_ping(address: String) -> Result<ServerStatusReport> {
-    Ok(ping_server(address.trim()).await)
+    Ok(diagnose_server(address.trim()).await)
 }
 
 #[tauri::command]

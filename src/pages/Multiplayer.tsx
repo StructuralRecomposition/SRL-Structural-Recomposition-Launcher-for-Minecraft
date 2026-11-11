@@ -1556,7 +1556,8 @@ function GuestPanel({ pushToast }: { pushToast: (text: string, tone?: "info" | "
         </Card>
       ) : null}
 
-      <Card>
+      {ping?.ok ? (
+        <Card>
         <div className="card-head">
           <div>
             <h3>{t("网络监测")}</h3>
@@ -1632,7 +1633,8 @@ function GuestPanel({ pushToast }: { pushToast: (text: string, tone?: "info" | "
             {errorStage(sample.errorStage ?? "")}：{sample.errorMessage}
           </p>
         ) : null}
-      </Card>
+        </Card>
+      ) : null}
 
       <Card className="mp-guest__steps">
         <h3>{t("接下来需要你在 Minecraft 内手动加入")}</h3>
@@ -1642,9 +1644,6 @@ function GuestPanel({ pushToast }: { pushToast: (text: string, tone?: "info" | "
           <li>{t("手动填写上方房主提供的公网地址。")}</li>
           <li>{t("由 Minecraft 客户端完成真正的登录与世界加载。")}</li>
         </ol>
-        <p className="muted small">
-          {t("SRL 不会点击加入按钮，也不会伪造“已进入世界”的状态。")}
-        </p>
       </Card>
     </div>
   );
