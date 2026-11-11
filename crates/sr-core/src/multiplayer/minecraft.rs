@@ -1,4 +1,6 @@
 use crate::instance::Instance;
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
+use serde::Serialize;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -172,6 +174,188 @@ pub async fn detect_local(
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerEvent {
+    pub player: String,
+    /// join | leave
+    pub action: String,
+    pub at: Option<String>,
+    pub observed_ip: Option<String>,
+    /// loopback | lan | public | unknown
+    pub ip_kind: String,
+    pub source: String,
+}
+
+/// Classify an address observed by the Minecraft server. A loopback address
+/// proves a local/proxy connection, never a public visitor IP.
+pub fn classify_ip(ip: &str) -> &'static str {
+    if let Ok(addr) = ip.parse::<std::net::IpAddr>() {
+        match addr {
+            std::net::IpAddr::V4(v4) => {
+                if v4.is_loopback() {
+                    "loopback"
+                } else if v4.is_private() || v4.is_link_local() {
+                    "lan"
+                } else {
+                    "public"
+                }
+            }
+            std::net::IpAddr::V6(v6) => {
+                if v6.is_loopback() {
+                    "loopback"
+                } else if v6.is_unique_local() || v6.is_unicast_link_local() {
+                    "lan"
+                } else {
+                    "public"
+                }
+            }
+        }
+    } else {
+        "unknown"
+    }
+}
+
+fn valid_player_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 32
+        && name
+            .chars()
+            .all(|c| !c.is_whitespace() && !c.is_control() && c != '<' && c != '>')
+}
+
+fn line_clock(line: &str) -> Option<NaiveTime> {
+    let start = line.find('[')?;
+    let end = line[start + 1..].find(']')? + start + 1;
+    NaiveTime::parse_from_str(&line[start + 1..end], "%H:%M:%S").ok()
+}
+
+fn message_of(line: &str) -> Option<&str> {
+    // [12:34:56] [Server thread/INFO]: message
+    let first = line.find("]: ")?;
+    Some(&line[first + 3..])
+}
+
+/// Parse vanilla/integrated-server player events. Only lines that contain a
+/// real join/leave/login marker are used; chat text is ignored.
+pub fn parse_player_events(text: &str, date: Option<NaiveDate>) -> Vec<PlayerEvent> {
+    let mut events = Vec::new();
+    for line in text.lines() {
+        let Some(message) = message_of(line) else {
+            continue;
+        };
+        let at = date.and_then(|date| {
+            line_clock(line).and_then(|time| {
+                chrono::Local
+                    .from_local_datetime(&date.and_time(time))
+                    .single()
+                    .map(|local| local.with_timezone(&Utc).to_rfc3339())
+            })
+        });
+
+        if let Some(index) = message.find(" logged in with entity id") {
+            let head = message[..index].trim();
+            let (name, ip) = match head.split_once('[') {
+                Some((name, rest)) => {
+                    let rest = rest.strip_prefix('/').unwrap_or(rest);
+                    let ip = rest
+                        .split_once(']')
+                        .map(|(ip, _)| ip)
+                        .unwrap_or(rest)
+                        .rsplit_once(':')
+                        .map(|(ip, port)| {
+                            if port.chars().all(|c| c.is_ascii_digit()) {
+                                ip
+                            } else {
+                                rest.trim_end_matches(']')
+                            }
+                        })
+                        .unwrap_or(rest)
+                        .to_string();
+                    (name.trim(), Some(ip))
+                }
+                None => (head, None),
+            };
+            let name = name.strip_prefix("Player ").unwrap_or(name);
+            if valid_player_name(name) {
+                let ip_kind = ip
+                    .as_deref()
+                    .map(classify_ip)
+                    .unwrap_or("unknown")
+                    .to_string();
+                events.push(PlayerEvent {
+                    player: name.to_string(),
+                    action: "join".into(),
+                    at: at.clone(),
+                    observed_ip: ip,
+                    ip_kind,
+                    source: "minecraft-log".into(),
+                });
+            }
+            continue;
+        }
+
+        for (marker, action) in [
+            (" joined the game", "join"),
+            (" left the game", "leave"),
+            (" lost connection:", "leave"),
+        ] {
+            if let Some(index) = message.find(marker) {
+                let name = message[..index].trim();
+                let name = name.strip_prefix("Player ").unwrap_or(name);
+                if valid_player_name(name) {
+                    events.push(PlayerEvent {
+                        player: name.to_string(),
+                        action: action.into(),
+                        at: at.clone(),
+                        observed_ip: None,
+                        ip_kind: "unknown".into(),
+                        source: "minecraft-log".into(),
+                    });
+                }
+                break;
+            }
+        }
+    }
+    events
+}
+
+/// Read player events from the newest SRL-captured instance log. `None` means
+/// no log exists; an empty vector means the log was read but had no events.
+pub fn read_player_events(
+    logs_dir: &Path,
+    instance_id: &str,
+    since: Option<DateTime<Utc>>,
+) -> Option<Vec<PlayerEvent>> {
+    let path = latest_instance_log(logs_dir, instance_id)?;
+    let date = log_date(&path);
+    let text = read_log_tail(&path, 4 * 1024 * 1024)?;
+    let mut events = parse_player_events(&text, date);
+    if let Some(since) = since {
+        events.retain(|event| match event.at.as_deref() {
+            Some(at) => DateTime::parse_from_rfc3339(at)
+                .map(|value| value.with_timezone(&Utc) >= since)
+                .unwrap_or(true),
+            None => true,
+        });
+    }
+    Some(events)
+}
+
+fn log_date(path: &Path) -> Option<NaiveDate> {
+    let name = path.file_name()?.to_string_lossy();
+    let stamp = name.split('-').rev().take(2).collect::<Vec<_>>();
+    // file name: <instance>-YYYYMMDD-HHMMSS.log
+    let stamp = format!(
+        "{}-{}",
+        stamp.get(1)?,
+        stamp.first()?.trim_end_matches(".log")
+    );
+    chrono::NaiveDateTime::parse_from_str(&stamp, "%Y%m%d-%H%M%S")
+        .ok()
+        .map(|value| value.date())
+}
+
 fn latest_instance_log(logs_dir: &Path, instance_id: &str) -> Option<PathBuf> {
     let dir = logs_dir.join("instances");
     let mut candidates: Vec<PathBuf> = std::fs::read_dir(dir)
@@ -315,6 +499,33 @@ mod tests {
         // Port 0 always binds; a real listener on a fixed port is covered by
         // the integration path, not this pure test.
         assert!(!udp_port_in_use(0));
+    }
+
+    #[test]
+    fn parses_player_join_leave_and_observed_loopback_ip() {
+        let text = "\
+[12:00:00] [Server thread/INFO]: Steve joined the game\n\
+[12:00:01] [Server thread/INFO]: Alex[/127.0.0.1:51234] logged in with entity id 7 at (0, 64, 0)\n\
+[12:00:05] [Server thread/INFO]: <Steve> hello joined the game\n\
+[12:01:00] [Server thread/INFO]: Alex left the game\n";
+        let events = parse_player_events(text, None);
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].player, "Steve");
+        assert_eq!(events[0].action, "join");
+        assert_eq!(events[1].player, "Alex");
+        assert_eq!(events[1].observed_ip.as_deref(), Some("127.0.0.1"));
+        assert_eq!(events[1].ip_kind, "loopback");
+        assert_eq!(events[2].action, "leave");
+    }
+
+    #[test]
+    fn classifies_private_and_public_ips() {
+        assert_eq!(classify_ip("127.0.0.1"), "loopback");
+        assert_eq!(classify_ip("192.168.1.10"), "lan");
+        assert_eq!(classify_ip("10.0.0.2"), "lan");
+        assert_eq!(classify_ip("8.8.8.8"), "public");
+        assert_eq!(classify_ip("::1"), "loopback");
+        assert_eq!(classify_ip("nonsense"), "unknown");
     }
 
     #[test]

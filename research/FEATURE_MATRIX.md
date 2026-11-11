@@ -67,3 +67,40 @@
 - `npx tauri build --debug --no-bundle`：生成 macOS 可执行文件。
 - 应用实际启动：Java 扫描发现 3 个环境，数据目录与日志正常创建。
 - 未验证：Windows/Linux 构建、真实 Microsoft 登录、真实 Minecraft 进程启动（缺 Java 8 与正版账号）、GUI 截图（macOS 辅助访问权限受限）。
+
+## 下一阶段（0.3 开发线）功能矩阵
+
+| ID | 功能 | 实现位置 | 测试方式 | 当前状态 | 边界 |
+|---|---|---|---|---|---|
+| MP-01 | 房主/游客双模式 | `src/pages/Multiplayer.tsx` | 构建 + 手工流程 | 已实现并测试（构建/类型） | 同一侧边栏入口 |
+| MP-02 | 四类状态分离 | `multiplayer/manager.rs` `status()` | 单测覆盖状态选择；实机需真实 52FRP | 已实现未完整验证 | 本地服务/隧道/FRPC/玩家分别展示 |
+| MP-03 | 52FRP 隧道详情 `cur_conns` | `frp52.rs` | 官方 API 字段解析 | 已实现未完整验证 | 仅作 TCP 连接数，不推断玩家 |
+| MP-04 | 玩家加入/离开事件 | `minecraft.rs` | 日志夹具单测 | 已实现未完整验证 | 依赖实际日志是否产生事件 |
+| MP-05 | 观测 IP 类型区分 | `minecraft.rs` | 单测 loopback/lan/public | 已实现并测试 | 不会把 127.0.0.1 当公网 IP |
+| MP-06 | 成员 UUID / 游戏 OP | — | — | 受环境限制 | 无可靠来源时显示未知 |
+| MP-07 | 房间历史与统一日志 | `multiplayer/journal.rs` | 单测写入/读取/脱敏/清理 | 已实现并测试 | JSONL，2 MB 上限 |
+| MP-08 | Java Server List Ping | `multiplayer/server_status.rs` | VarInt/地址/MOTD/mock TCP/拒绝/超时 | 已实现并测试 | 不证明游戏已加入 |
+| MP-09 | 游客网络监测 | `multiplayer/guest.rs` | 启动/停止/非法地址 | 已实现并测试（本地） | 12 秒采样，可取消 |
+| MP-10 | 正版验证识别 | `server_status.rs` | 常量边界测试 | 受环境限制 | SLP 不返回 online-mode，显示无法检测 |
+| MP-11 | 正版隔离识别 | 52FRP OpenAPI 调查 | 文档核实 | 受环境限制 | API 无字段，显示未知 |
+| DEP-01 | 统一依赖模型 | `dependency/model.rs` | 类型/序列化 | 已实现并测试 | 保留 rawType |
+| DEP-02 | Modrinth 依赖适配 | `dependency/resolve.rs` | required/optional/incompatible/embedded | 已实现并测试 | 官方 API |
+| DEP-03 | CurseForge 依赖适配 | `dependency/resolve.rs` + `curseforge.rs` | relationType 1–6 | 已实现并测试 | 文件依赖字段 |
+| DEP-04 | 递归解析/循环/深度 | `dependency/resolve.rs` | mock adapter 单测 | 已实现并测试 | 深度 16，请求 120，节点 200 |
+| DEP-05 | 已安装模组检测 | `dependency/installed.rs` | 合成 JAR 单测 | 已实现并测试 | 真实 mod id/指纹，不用文件名相似度 |
+| DEP-06 | 安装计划与安装 | `dependency/apply.rs` + `mod_install.rs` | 复用现有安装测试 + 选择校验 | 已实现未完整验证（真实 API 安装需网络） | SHA-1、备份、原子替换、回滚 |
+| DEP-07 | 图形/列表视图 | `ModDependencyDialog.tsx` + `dependencyGraph.ts` | Vitest 布局测试 | 已实现并测试 | SVG，无大型图形依赖 |
+| JV-01 | Java 启动选择链 | `java::choose_for_launch` | 8/17/21/25、固定/默认 | 已实现并测试 | 实例固定优先 |
+| JV-02 | 缺失 Java 启动提示 | `JavaInstallPrompt.tsx` | 类型/构建 | 已实现未完整验证 | 需真实缺失环境 |
+| JV-03 | 下载并继续启动 | `install_java_for_version` | 后端选择逻辑测试 | 已实现未完整验证 | 不重复启动 |
+| JV-04 | 自动安装不覆盖默认 | `install_java_impl` | 代码审查 + UI 参数 | 已实现并测试（参数路径） | `setAsDefault=false` |
+| JV-05 | 安装后重新扫描 | `install_java_impl` | 现有发现单测 | 已实现并测试 | `discover_with_managed` |
+
+## 下一阶段实际验证补充（2026-11-12）
+
+- `cargo test -p sr-core`：241 项通过（239 库测试 + 2 启动集成），19 项真实网络/下载测试默认忽略。
+- `npx vitest run`：7 个测试文件、50 项通过。
+- `npm run build`、`cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings` 通过。
+- 真实 Modrinth 分析：Iris → Sodium required，2 节点 / 1 边 / 默认计划 2 文件 / 4,264,786 字节。
+- 真实 Server List Ping：`mc.hypixel.net:25565`，协议 47，26854/200000，355 ms。
+- 未验证：真实 52FRP 联调、真实 CurseForge 依赖安装、真实缺失 Java 的自动补全、Windows/Linux 实机。

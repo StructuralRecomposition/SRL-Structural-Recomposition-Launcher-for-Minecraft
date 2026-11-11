@@ -42,7 +42,9 @@ export function JavaPage() {
     setInstallError(null);
     setInstalling(true);
     try {
-      const info = await api.installJavaRuntime(targetMajor);
+      // Only claim the global default when the user has none. Existing
+      // defaults are changed explicitly from the environment list.
+      const info = await api.installJavaRuntime(targetMajor, !bootstrap?.settings.javaPath);
       updateBootstrap((b) => ({
         ...b,
         java: [...b.java.filter((j) => j.path !== info.path), info].sort(

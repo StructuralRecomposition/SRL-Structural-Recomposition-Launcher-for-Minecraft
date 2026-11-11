@@ -7,7 +7,7 @@ use sr_core::download::DownloadManager;
 use sr_core::java;
 use sr_core::launch::LaunchManager;
 use sr_core::modrinth::ModrinthService;
-use sr_core::multiplayer::MultiplayerManager;
+use sr_core::multiplayer::{GuestMonitor, MultiplayerManager};
 use sr_core::paths::{AppPaths, GamePaths};
 use sr_core::settings;
 use sr_core::skin::SkinLibrary;
@@ -99,6 +99,7 @@ pub fn run() {
                 skins,
                 modrinth,
                 multiplayer,
+                guest: GuestMonitor::new(),
                 java: std::sync::Arc::new(RwLock::new(Vec::new())),
                 launches: std::sync::Arc::new(RwLock::new(launches)),
                 http,
@@ -215,6 +216,8 @@ pub fn run() {
             commands::add_java_path,
             commands::java_runtime_options,
             commands::install_java_runtime,
+            commands::install_java_for_version,
+            commands::java_launch_check,
             commands::check_java_for_version,
             commands::list_accounts,
             commands::add_offline_account,
@@ -236,6 +239,8 @@ pub fn run() {
             commands::clear_curseforge_api_key,
             commands::test_curseforge_api_key,
             commands::default_resource_dir,
+            commands::analyze_mod_dependencies,
+            commands::install_mod_dependencies,
             commands::list_skins,
             commands::import_skin_file,
             commands::import_skin_bytes,
@@ -293,6 +298,13 @@ pub fn run() {
             commands::multiplayer_restart_frpc,
             commands::multiplayer_orphans,
             commands::multiplayer_delete_orphan,
+            commands::multiplayer_members,
+            commands::multiplayer_logs,
+            commands::multiplayer_clear_logs,
+            commands::multiplayer_guest_ping,
+            commands::multiplayer_guest_monitor_start,
+            commands::multiplayer_guest_monitor_stop,
+            commands::multiplayer_guest_monitor_status,
         ]);
 
     builder

@@ -1,10 +1,15 @@
 use crate::state::AppState;
+use chrono::TimeZone;
 use serde::Serialize;
 use sr_core::account::{Account, AccountView, KeyringStore};
 use sr_core::assistant;
 use sr_core::assistant_history;
 use sr_core::crash::{self as crash_service, CrashAnalysis, CrashFile};
 use sr_core::curseforge::{self as curseforge_service, CurseForgeFile, CurseForgeService};
+use sr_core::dependency::{
+    self as dependency_service, DependencyAnalysis, DependencyRequest, DependencySource,
+    ResolveLimits,
+};
 use sr_core::diagnostics::{self, DiagnosticsReport, LogFileInfo};
 use sr_core::download::TaskView;
 use sr_core::error::{AppError, ErrorCode, Result};
@@ -26,8 +31,11 @@ use sr_core::modrinth::{
 use sr_core::mods as mods_service;
 use sr_core::mods::ModEntry;
 use sr_core::multiplayer::{
+    guest::GuestMonitorStatus,
+    journal,
+    server_status::{ping_server, ServerStatusReport},
     AccountView as MultiplayerAccount, CreateRoomRequest, Edition, FrpcView, LocalServiceView,
-    MultiplayerStatus, NodeView, OrphanTunnel, RoomView, StopRoomResult,
+    MembersView, MultiplayerStatus, NodeView, OrphanTunnel, RoomLogEntry, RoomView, StopRoomResult,
 };
 use sr_core::paths::GamePaths;
 use sr_core::recommend::{self as recommend_service, Recommendations};
@@ -569,35 +577,55 @@ pub async fn launch_instance(
     // Per-instance selection is explicit and always wins. The global default is
     // only a preference: java::select refuses to use it when it is too new for
     // the target version (e.g. Java 25 for a Java 21 Forge pack).
-    let selected_java = match instance.java_path.clone() {
-        Some(path) => java::probe(&path, "manual").await?,
-        None => java::select_for_launch(&javas, required, settings.java_path.as_deref())
-            .ok_or_else(|| {
-                let max = java::max_supported_major(required);
-                let installed = if javas.is_empty() {
-                    "未检测到任何 Java".to_string()
-                } else {
-                    format!(
-                        "已检测到：{}",
-                        javas
-                            .iter()
-                            .map(|j| format!("Java {}（{}）", j.major, j.version_string))
-                            .collect::<Vec<_>>()
-                            .join("、")
-                    )
-                };
-                AppError::new(
-                    ErrorCode::JavaInvalid,
-                    format!(
-                        "该版本需要 Java {required}（兼容范围 {required}–{max}），但没有找到可安全使用的 Java。"
-                    ),
-                )
-                .with_detail(format!(
-                    "{installed}。请到「Java 环境」安装 Java {required}，或在实例设置中手动选择。"
-                ))
-            })?
-            .clone(),
+    let pinned = match instance.java_path.clone() {
+        Some(path) => Some(java::probe(&path, "manual").await?),
+        None => None,
     };
+    let selected_java = java::choose_for_launch(
+        &javas,
+        required,
+        pinned.as_ref(),
+        settings.java_path.as_deref(),
+    )
+    .map_err(|error| match error {
+        java::JavaSelectionError::PinnedIncompatible(check) => {
+            AppError::java_incompatible(check.message).with_detail(
+                "实例显式指定的 Java 不会被自动替换。请修改实例设置，或将实例 Java 改回自动选择。",
+            )
+        }
+        java::JavaSelectionError::PinnedInvalid(message) => AppError::new(
+            ErrorCode::JavaInvalid,
+            "实例指定的 Java 无法使用",
+        )
+        .with_detail(message),
+        java::JavaSelectionError::Missing {
+            required,
+            max_supported,
+            installed,
+        } => {
+            let installed = if installed.is_empty() {
+                "未检测到任何 Java".to_string()
+            } else {
+                format!(
+                    "已检测到：{}",
+                    installed
+                        .iter()
+                        .map(|(major, version)| format!("Java {major}（{version}）"))
+                        .collect::<Vec<_>>()
+                        .join("、")
+                )
+            };
+            AppError::new(
+                ErrorCode::JavaInvalid,
+                format!(
+                    "该版本需要 Java {required}（兼容范围 {required}–{max_supported}），但没有找到可安全使用的 Java。"
+                ),
+            )
+            .with_detail(format!(
+                "{installed}。请到「Java 环境」安装 Java {required}，或在实例设置中手动选择。"
+            ))
+        }
+    })?;
     let player = match account.kind {
         sr_core::account::AccountKind::Offline => sr_core::account::offline_player(&account)?,
         sr_core::account::AccountKind::Microsoft => {
@@ -1737,6 +1765,155 @@ pub async fn default_resource_dir() -> Result<String> {
     Ok(dir.to_string_lossy().into_owned())
 }
 
+// ---------------------------------------------------------------------------
+// Deterministic mod dependency analysis
+// ---------------------------------------------------------------------------
+
+fn instance_loader_kind(instance: &Instance) -> Option<String> {
+    instance
+        .mod_loader
+        .as_ref()
+        .map(|loader| loader.kind.to_ascii_lowercase())
+        .or_else(|| {
+            let id = instance.version_id.to_ascii_lowercase();
+            if id.contains("fabric-loader-") {
+                Some("fabric".into())
+            } else if id.contains("quilt-loader-") {
+                Some("quilt".into())
+            } else if id.contains("-neoforge-") {
+                Some("neoforge".into())
+            } else if id.contains("-forge-") {
+                Some("forge".into())
+            } else {
+                None
+            }
+        })
+}
+
+#[tauri::command]
+pub async fn analyze_mod_dependencies(
+    state: State<'_, AppState>,
+    request: DependencyRequest,
+) -> Result<DependencyAnalysis> {
+    let game = state.game_snapshot().await;
+    let mut request = request;
+    let mut instance = None;
+    if let Some(instance_id) = request
+        .instance_id
+        .clone()
+        .filter(|id| !id.trim().is_empty())
+    {
+        let found = InstanceManager::new(game.clone()).get(&instance_id).await?;
+        let base = instance_base_version(&state, &game, &found).await?;
+        let loader = instance_loader_kind(&found)
+            .ok_or_else(|| AppError::invalid_input("目标实例没有模组加载器，无法分析模组依赖"))?;
+        request.game_version = base;
+        request.loader = loader;
+        request.instance_id = Some(found.id.clone());
+        instance = Some(found);
+    }
+    let source = DependencySource::parse(&request.source)
+        .ok_or_else(|| AppError::invalid_input("不支持的依赖来源"))?;
+    let mut warnings = Vec::new();
+    let installed = match instance.as_ref() {
+        Some(instance) => {
+            match dependency_service::scan_installed(
+                instance,
+                source == DependencySource::CurseForge,
+            )
+            .await
+            {
+                Ok(mut index) => {
+                    if source == DependencySource::CurseForge {
+                        let fingerprints = index
+                            .mods
+                            .iter()
+                            .filter_map(|item| item.fingerprint)
+                            .collect::<Vec<_>>();
+                        let service = curseforge_client(&state)?;
+                        for chunk in fingerprints.chunks(100) {
+                            match service.fingerprint_matches(chunk).await {
+                                Ok(matches) => index.add_curseforge_match(&matches),
+                                Err(error) => {
+                                    warnings.push(format!(
+                                        "无法通过 CurseForge 指纹匹配已安装模组：{}",
+                                        error.message
+                                    ));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    index
+                }
+                Err(error) => {
+                    warnings.push(format!("无法读取本地 mods/ 目录：{}", error.message));
+                    Default::default()
+                }
+            }
+        }
+        None => Default::default(),
+    };
+
+    let curseforge = if source == DependencySource::CurseForge {
+        Some(curseforge_client(&state)?)
+    } else {
+        None
+    };
+    let adapter =
+        dependency_service::resolve::adapter_for(&request, &state.modrinth, curseforge.as_ref())?;
+    let mut analysis = dependency_service::analyze(
+        &request,
+        adapter.as_adapter(),
+        &installed,
+        &ResolveLimits::default(),
+    )
+    .await?;
+    if let Some(instance) = instance.as_ref() {
+        analysis.instance_name = Some(instance.name.clone());
+    }
+    if !warnings.is_empty() {
+        analysis.warnings.extend(warnings);
+        analysis.complete = false;
+    }
+    dependency_service::apply::save_analysis(&state.paths, &analysis).await?;
+    Ok(analysis)
+}
+
+#[tauri::command]
+pub async fn install_mod_dependencies(
+    state: State<'_, AppState>,
+    instance_id: String,
+    selection: dependency_service::InstallSelection,
+) -> Result<ResourceTaskAccepted> {
+    let game = state.game_snapshot().await;
+    let instance = InstanceManager::new(game).get(&instance_id).await?;
+    let analysis =
+        dependency_service::apply::load_analysis(&state.paths, &selection.analysis_id).await?;
+    let title = format!("安装 {} 与依赖", analysis.root_project_id);
+    let task = state.downloads.create("resource", &title, 0, 0).await;
+    let task_id = task.id.clone();
+    let _ = state.downloads.save().await;
+    let state = state.inner().clone();
+    let spawn_title = title.clone();
+    tauri::async_runtime::spawn(async move {
+        let cancel = task.cancel_token();
+        let result = dependency_service::install_analysis(
+            &state.http,
+            &state.paths,
+            &instance,
+            &selection,
+            &task,
+            &cancel,
+        )
+        .await;
+        if let Err(error) = result {
+            tracing::warn!(%spawn_title, %error, "dependency install failed");
+        }
+    });
+    Ok(ResourceTaskAccepted { task_id, title })
+}
+
 async fn util_ensure_dir(path: &Path) -> Result<()> {
     sr_core::util::ensure_dir(path).await
 }
@@ -2031,7 +2208,15 @@ pub async fn java_runtime_options(
 }
 
 #[tauri::command]
-pub async fn install_java_runtime(state: State<'_, AppState>, major: u32) -> Result<JavaInfo> {
+pub async fn install_java_runtime(
+    state: State<'_, AppState>,
+    major: u32,
+    set_as_default: Option<bool>,
+) -> Result<JavaInfo> {
+    install_java_impl(&state, major, set_as_default.unwrap_or(true)).await
+}
+
+async fn install_java_impl(state: &AppState, major: u32, set_as_default: bool) -> Result<JavaInfo> {
     if !(8..=40).contains(&major) {
         return Err(AppError::invalid_input("Java 版本不在支持范围内"));
     }
@@ -2057,17 +2242,165 @@ pub async fn install_java_runtime(state: State<'_, AppState>, major: u32) -> Res
         }
     };
     {
+        // Re-scan instead of trusting only the returned path: this also picks
+        // up the runtime through the normal managed-directory discovery path.
+        let settings = state.settings_snapshot().await;
+        let found = java::discover_with_managed(
+            settings.java_path.as_deref(),
+            Some(&state.paths.java_dir()),
+        )
+        .await;
         let mut list = state.java.write().await;
+        *list = found;
         if !list.iter().any(|j| j.path == info.path) {
             list.push(info.clone());
             list.sort_by_key(|a| std::cmp::Reverse(a.major));
         }
     }
-    let mut settings = state.settings_snapshot().await;
-    settings.java_path = Some(info.path.clone());
-    settings::save(&state.paths, &settings).await?;
-    *state.settings.write().await = settings;
+    if set_as_default {
+        let mut settings = state.settings_snapshot().await;
+        settings.java_path = Some(info.path.clone());
+        settings::save(&state.paths, &settings).await?;
+        *state.settings.write().await = settings;
+    }
     Ok(info)
+}
+
+/// Install a runtime requested by the launch pre-flight flow. This never
+/// changes the launcher-wide default unless the caller asks for it.
+#[tauri::command]
+pub async fn install_java_for_version(
+    state: State<'_, AppState>,
+    major: u32,
+    set_as_default: Option<bool>,
+) -> Result<JavaInfo> {
+    install_java_impl(&state, major, set_as_default.unwrap_or(false)).await
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JavaLaunchCheck {
+    pub required_major: u32,
+    pub max_supported_major: u32,
+    pub selected: Option<JavaInfo>,
+    pub compatible: bool,
+    pub instance_pinned: bool,
+    pub pinned_path: Option<String>,
+    pub can_install: bool,
+    pub needs_reset: bool,
+    pub message: String,
+}
+
+/// Explain which runtime `launch_instance` would use before starting the game.
+#[tauri::command]
+pub async fn java_launch_check(
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> Result<JavaLaunchCheck> {
+    let game = state.game_snapshot().await;
+    let manager = InstanceManager::new(game.clone());
+    let instance = manager.get(&instance_id).await?;
+    let resolved = state
+        .versions
+        .load_installed(&game, &instance.version_id)
+        .await?;
+    let required = resolved.java_major();
+    let max_supported = java::max_supported_major(required);
+    let settings = state.settings_snapshot().await;
+    let javas = state.java.read().await.clone();
+    let pinned = instance.java_path.clone();
+    let pinned_info = match pinned.as_deref() {
+        Some(path) => match java::probe(path, "manual").await {
+            Ok(info) => Some(info),
+            Err(error) => {
+                return Ok(JavaLaunchCheck {
+                    required_major: required,
+                    max_supported_major: max_supported,
+                    selected: None,
+                    compatible: false,
+                    instance_pinned: true,
+                    pinned_path: Some(path.display().to_string()),
+                    can_install: false,
+                    needs_reset: true,
+                    message: format!(
+                        "实例指定的 Java 无法使用：{}。请将实例 Java 改为自动选择，或重新指定有效路径。",
+                        error.message
+                    ),
+                });
+            }
+        },
+        None => None,
+    };
+    match java::choose_for_launch(
+        &javas,
+        required,
+        pinned_info.as_ref(),
+        settings.java_path.as_deref(),
+    ) {
+        Ok(info) => {
+            let check = java::check_compatibility(required, info.major);
+            Ok(JavaLaunchCheck {
+                required_major: required,
+                max_supported_major: max_supported,
+                selected: Some(info.clone()),
+                compatible: true,
+                instance_pinned: pinned.is_some(),
+                pinned_path: pinned.map(|p| p.display().to_string()),
+                can_install: false,
+                needs_reset: false,
+                message: check.message,
+            })
+        }
+        Err(java::JavaSelectionError::PinnedIncompatible(check)) => Ok(JavaLaunchCheck {
+            required_major: required,
+            max_supported_major: max_supported,
+            selected: pinned_info,
+            compatible: false,
+            instance_pinned: true,
+            pinned_path: pinned.map(|p| p.display().to_string()),
+            can_install: false,
+            needs_reset: true,
+            message: check.message,
+        }),
+        Err(java::JavaSelectionError::PinnedInvalid(message)) => Ok(JavaLaunchCheck {
+            required_major: required,
+            max_supported_major: max_supported,
+            selected: None,
+            compatible: false,
+            instance_pinned: true,
+            pinned_path: pinned.map(|p| p.display().to_string()),
+            can_install: false,
+            needs_reset: true,
+            message,
+        }),
+        Err(java::JavaSelectionError::Missing { installed, .. }) => {
+            let detail = if installed.is_empty() {
+                "本机没有检测到 Java。".to_string()
+            } else {
+                format!(
+                    "已发现：{}。",
+                    installed
+                        .iter()
+                        .map(|(major, version)| format!("Java {major}（{version}）"))
+                        .collect::<Vec<_>>()
+                        .join("、")
+                )
+            };
+            Ok(JavaLaunchCheck {
+                required_major: required,
+                max_supported_major: max_supported,
+                selected: None,
+                compatible: false,
+                instance_pinned: false,
+                pinned_path: None,
+                can_install: true,
+                needs_reset: false,
+                message: format!(
+                    "该版本需要 Java {required}（兼容范围 {required}–{max_supported}）。{detail}SRL 可以下载并安装合适的 Temurin 运行环境。"
+                ),
+            })
+        }
+    }
 }
 
 #[tauri::command]
@@ -4449,4 +4782,99 @@ pub async fn multiplayer_orphans(state: State<'_, AppState>) -> Result<Vec<Orpha
 #[tauri::command]
 pub async fn multiplayer_delete_orphan(state: State<'_, AppState>, tunnel_id: u64) -> Result<()> {
     state.multiplayer.delete_orphan(tunnel_id).await
+}
+
+#[tauri::command]
+pub async fn multiplayer_members(state: State<'_, AppState>) -> Result<MembersView> {
+    Ok(state.multiplayer.members().await)
+}
+
+#[tauri::command]
+pub async fn multiplayer_logs(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+    level: Option<String>,
+) -> Result<Vec<RoomLogEntry>> {
+    let limit = limit.unwrap_or(300).clamp(1, 2000);
+    let mut entries = journal::read(&state.paths, limit, level.as_deref()).await?;
+    if level.as_deref().is_none_or(|value| {
+        ["info", "warning", "error"]
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(value))
+    }) {
+        for line in state.multiplayer.frpc_log_tail().await {
+            let lower = line.to_ascii_lowercase();
+            let line_level = if lower.contains("error") || lower.contains("failed") {
+                "error"
+            } else if lower.contains("warn") {
+                "warning"
+            } else {
+                "info"
+            };
+            if let Some(filter) = level.as_deref() {
+                if !line_level.eq_ignore_ascii_case(filter) {
+                    continue;
+                }
+            }
+            entries.push(RoomLogEntry {
+                timestamp: frpc_log_timestamp(&line),
+                source: "frpc".into(),
+                level: line_level.into(),
+                event_type: "frpc.log".into(),
+                message: sr_core::util::redact_secrets(&line),
+                tunnel_id: None,
+            });
+        }
+        entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        if entries.len() > limit {
+            entries = entries.split_off(entries.len() - limit);
+        }
+    }
+    Ok(entries)
+}
+
+fn frpc_log_timestamp(line: &str) -> String {
+    let head = line.get(..19).unwrap_or("");
+    chrono::NaiveDateTime::parse_from_str(head, "%Y-%m-%d %H:%M:%S")
+        .ok()
+        .and_then(|value| {
+            chrono::Local
+                .from_local_datetime(&value)
+                .single()
+                .map(|local| local.with_timezone(&chrono::Utc).to_rfc3339())
+        })
+        .unwrap_or_else(sr_core::util::now_rfc3339)
+}
+
+#[tauri::command]
+pub async fn multiplayer_clear_logs(state: State<'_, AppState>) -> Result<u64> {
+    journal::clear(&state.paths).await
+}
+
+#[tauri::command]
+pub async fn multiplayer_guest_ping(address: String) -> Result<ServerStatusReport> {
+    Ok(ping_server(address.trim()).await)
+}
+
+#[tauri::command]
+pub async fn multiplayer_guest_monitor_start(
+    state: State<'_, AppState>,
+    address: String,
+    interval_secs: Option<u64>,
+) -> Result<GuestMonitorStatus> {
+    state.guest.start(address.trim(), interval_secs).await
+}
+
+#[tauri::command]
+pub async fn multiplayer_guest_monitor_stop(
+    state: State<'_, AppState>,
+) -> Result<GuestMonitorStatus> {
+    Ok(state.guest.stop().await)
+}
+
+#[tauri::command]
+pub async fn multiplayer_guest_monitor_status(
+    state: State<'_, AppState>,
+) -> Result<GuestMonitorStatus> {
+    Ok(state.guest.status().await)
 }

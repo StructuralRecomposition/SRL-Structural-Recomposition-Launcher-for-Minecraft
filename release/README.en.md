@@ -2,7 +2,7 @@
 
 [简体中文](README.md) · **English**
 
-Current source version: **v0.2.1** (bilingual UI · bundled FRPC · modpack export)
+Current source version: **v0.2.2 local test build** (multiplayer center · dependency graph · Java auto-install)
 
 GitHub Releases is authoritative; this directory only keeps local verification artifacts and notes.
 
@@ -36,6 +36,13 @@ sudo apt install ./SRL_0.2.1_amd64.deb
 ```
 
 or run the AppImage. WebKitGTK 4.1 and GTK 3 are required.
+
+## v0.2.2 local test build (unreleased)
+
+- Multiplayer management center with host/guest modes, separated status, player events, room log, Server List Ping and a stoppable monitor.
+- Mod dependency visualization with recursive Modrinth/CurseForge resolution, SVG graph, installed detection and safe installs.
+- Java auto-completion installs Temurin when missing and continues launching without overwriting the global default.
+- This workspace build contains the macOS universal DMG only; Windows/Linux installers require the GitHub Actions matrix.
 
 ## What's new in v0.2.1
 

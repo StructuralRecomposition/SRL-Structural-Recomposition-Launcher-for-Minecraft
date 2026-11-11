@@ -8,6 +8,7 @@ pub mod assistant;
 pub mod assistant_history;
 pub mod crash;
 pub mod curseforge;
+pub mod dependency;
 pub mod diagnostics;
 pub mod download;
 pub mod error;

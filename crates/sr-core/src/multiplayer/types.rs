@@ -112,6 +112,7 @@ pub struct RoomView {
     pub state: String,
     pub frpc_running: bool,
     pub frpc_pid: Option<u32>,
+    pub local_service_ok: Option<bool>,
     pub message: Option<String>,
 }
 
@@ -127,6 +128,77 @@ pub struct OrphanTunnel {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TunnelStateView {
+    pub online: bool,
+    pub enabled: Option<bool>,
+    pub connections: Option<u64>,
+    pub status: Option<u64>,
+    pub checked_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RoomRole {
+    Owner,
+    Admin,
+    Member,
+    Guest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomCapabilities {
+    pub role: RoomRole,
+    pub can_manage_room: bool,
+    pub can_view_member_ips: bool,
+    pub can_kick: bool,
+    pub can_ban: bool,
+    pub can_whitelist: bool,
+    pub can_op: bool,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerMember {
+    pub name: String,
+    pub uuid: Option<String>,
+    pub role: RoomRole,
+    pub minecraft_op: Option<bool>,
+    pub joined_at: Option<String>,
+    pub left_at: Option<String>,
+    pub status: String,
+    pub observed_ip: Option<String>,
+    pub ip_kind: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MembersView {
+    pub available: bool,
+    pub source: String,
+    pub message: String,
+    pub members: Vec<PlayerMember>,
+    pub partial: bool,
+    pub ip_note: String,
+    pub game_control_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomLogEntry {
+    pub timestamp: String,
+    pub source: String,
+    pub level: String,
+    pub event_type: String,
+    pub message: String,
+    #[serde(default)]
+    pub tunnel_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MultiplayerStatus {
     pub provider: String,
     pub provider_name: String,
@@ -134,7 +206,9 @@ pub struct MultiplayerStatus {
     pub logged_in: bool,
     pub account: Option<AccountView>,
     pub room: Option<RoomView>,
+    pub tunnel: Option<TunnelStateView>,
     pub frpc: FrpcView,
+    pub capabilities: RoomCapabilities,
     pub last_error: Option<String>,
 }
 

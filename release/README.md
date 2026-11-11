@@ -2,7 +2,7 @@
 
 **简体中文** · [English](README.en.md)
 
-当前源码版本：**v0.2.1**（中英双语 · 内置 FRPC · 整合包导出）
+当前源码版本：**v0.2.2 本地测试版**（联机管理中心 · 依赖可视化 · Java 自动补全）
 
 正式发布以 GitHub Releases 为准；本目录仅保留本地验证产物与说明。
 
@@ -36,6 +36,13 @@ sudo apt install ./SRL_0.2.1_amd64.deb
 ```
 
 或运行 AppImage；需要 WebKitGTK 4.1 与 GTK 3。
+
+## v0.2.2 本地测试版（未发布）
+
+- 联机管理中心：房主/游客分段、四类状态分离、玩家事件、房间日志、Server List Ping 与可停止监测。
+- 模组依赖可视化：Modrinth/CurseForge 递归解析、SVG 关系图、已安装检测与安全安装。
+- Java 自动补全：缺失时安装 Temurin 并继续启动，不覆盖全局默认 Java。
+- 本次工作区仅包含 macOS universal DMG；Windows / Linux 安装包需由 GitHub Actions 构建。
 
 ## v0.2.1 更新
 

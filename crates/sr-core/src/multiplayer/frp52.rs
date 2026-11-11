@@ -71,6 +71,13 @@ impl Frp52Provider {
         })
         .await
     }
+
+    /// Read the official tunnel detail. `cur_conns` is a TCP connection count,
+    /// not a player count, and the UI must label it that way.
+    pub async fn tunnel_state(&self, tunnel_id: u64) -> Result<super::types::TunnelStateView> {
+        let data = self.get_data(&format!("/tunnels/{tunnel_id}"), &[]).await?;
+        Ok(parse_tunnel_state(&data))
+    }
 }
 
 #[async_trait]
@@ -431,6 +438,21 @@ fn parse_tunnel(value: &Value) -> Option<ProviderTunnel> {
     })
 }
 
+pub fn parse_tunnel_state(data: &Value) -> super::types::TunnelStateView {
+    let payload = data
+        .get("data")
+        .filter(|inner| inner.get("proxy").is_some())
+        .unwrap_or(data);
+    let proxy = payload.get("proxy").unwrap_or(payload);
+    super::types::TunnelStateView {
+        online: proxy.get("is_online").map(value_bool).unwrap_or(false),
+        enabled: proxy.get("enabled").and_then(Value::as_bool),
+        connections: proxy.get("cur_conns").and_then(value_u64),
+        status: proxy.get("status").and_then(value_u64),
+        checked_at: chrono::Utc::now().to_rfc3339(),
+    }
+}
+
 fn value_u64(value: &Value) -> Option<u64> {
     value
         .as_u64()
@@ -487,6 +509,27 @@ mod tests {
         assert_eq!(ranges, vec![(20000, 30000), (40000, 40000), (50000, 50000)]);
         assert!(port_in_ranges(&ranges, 25565));
         assert!(!port_in_ranges(&ranges, 60000));
+    }
+
+    #[test]
+    fn parses_tunnel_detail_without_inventing_player_counts() {
+        let data = serde_json::json!({
+            "ok": true,
+            "data": {
+                "proxy": {
+                    "id": 9,
+                    "is_online": 1,
+                    "enabled": true,
+                    "cur_conns": 3,
+                    "status": 0
+                }
+            }
+        });
+        let state = parse_tunnel_state(&data);
+        assert!(state.online);
+        assert_eq!(state.enabled, Some(true));
+        assert_eq!(state.connections, Some(3));
+        assert_eq!(state.status, Some(0));
     }
 
     #[test]

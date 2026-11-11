@@ -225,6 +225,10 @@ pub fn redact_secrets(input: &str) -> String {
         "Authorization",
         "clientSecret",
         "client_secret",
+        "token",
+        "password",
+        "passwd",
+        "secret",
     ];
     let mut out = redact_bearer(input.to_string());
     for key in keys {

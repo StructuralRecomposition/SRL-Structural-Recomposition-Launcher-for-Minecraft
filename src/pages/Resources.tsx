@@ -30,6 +30,7 @@ import { Icon } from "../components/Icon";
 import { Modal } from "../components/Modal";
 import { DropZone } from "../components/DropZone";
 import { LoaderResourcePanel } from "../components/LoaderResourcePanel";
+import { ModDependencyDialog } from "../components/ModDependencyDialog";
 import { t as tr } from "../lib/i18n";
 
 
@@ -138,6 +139,7 @@ export function ResourcesPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [installState, setInstallState] = useState<InstallState | null>(null);
+  const [dependencyState, setDependencyState] = useState<InstallState | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const sequence = useRef(0);
   const detailSequence = useRef(0);
@@ -711,14 +713,40 @@ export function ResourcesPage() {
                           {file && !file.sha1 ? tr(" · 缺少校验值") : ""}
                         </span>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        icon="download"
-                        disabled={!file?.sha1}
-                        onClick={() => startInstall(version)}
-                      >
-                        {tr("安装")}</Button>
+                      <div className="resource-version-actions">
+                        {detail.project.kind === "mod" ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon="layers"
+                            onClick={() =>
+                              setDependencyState({
+                                hit: detail.hit,
+                                project: detail.project,
+                                version,
+                                file: file ?? {
+                                  filename: "",
+                                  url: "",
+                                  size: 0,
+                                  primary: false,
+                                  sha1: null,
+                                  sha512: null,
+                                  fileType: null,
+                                },
+                              })
+                            }
+                          >
+                            {tr("依赖")}</Button>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          icon="download"
+                          disabled={!file?.sha1}
+                          onClick={() => startInstall(version)}
+                        >
+                          {tr("安装")}</Button>
+                      </div>
                     </li>
                   );
                 })}
@@ -730,6 +758,16 @@ export function ResourcesPage() {
 
       {installState ? (
         <InstallDialog state={installState} onClose={() => setInstallState(null)} />
+      ) : null}
+      {dependencyState ? (
+        <ModDependencyDialog
+          project={dependencyState.project}
+          version={dependencyState.version}
+          instances={bootstrap?.instances ?? []}
+          defaultGameVersion={gameVersion}
+          defaultLoader={loader}
+          onClose={() => setDependencyState(null)}
+        />
       ) : null}
       {importOpen ? (
         <ImportModpackDialog

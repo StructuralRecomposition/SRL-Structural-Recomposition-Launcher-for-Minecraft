@@ -472,6 +472,18 @@ export interface JavaCheck {
   message: string;
 }
 
+export interface JavaLaunchCheck {
+  requiredMajor: number;
+  maxSupportedMajor: number;
+  selected: JavaInfo | null;
+  compatible: boolean;
+  instancePinned: boolean;
+  pinnedPath: string | null;
+  canInstall: boolean;
+  needsReset: boolean;
+  message: string;
+}
+
 export interface VersionDetail {
   id: string;
   mainClass: string;
@@ -863,7 +875,114 @@ export interface MultiplayerRoom {
   state: "online" | "offline" | "retained" | string;
   frpcRunning: boolean;
   frpcPid: number | null;
+  localServiceOk: boolean | null;
   message: string | null;
+}
+
+export interface MultiplayerTunnelState {
+  online: boolean;
+  enabled: boolean | null;
+  connections: number | null;
+  status: number | null;
+  checkedAt: string;
+}
+
+export interface MultiplayerCapabilities {
+  role: string;
+  canManageRoom: boolean;
+  canViewMemberIps: boolean;
+  canKick: boolean;
+  canBan: boolean;
+  canWhitelist: boolean;
+  canOp: boolean;
+  note: string;
+}
+
+export interface MultiplayerMember {
+  name: string;
+  uuid: string | null;
+  role: string;
+  minecraftOp: boolean | null;
+  joinedAt: string | null;
+  leftAt: string | null;
+  status: string;
+  observedIp: string | null;
+  ipKind: "loopback" | "lan" | "public" | "unknown" | string;
+  source: string;
+}
+
+export interface MultiplayerMembers {
+  available: boolean;
+  source: string;
+  message: string;
+  members: MultiplayerMember[];
+  partial: boolean;
+  ipNote: string;
+  gameControlAvailable: boolean;
+}
+
+export interface MultiplayerLogEntry {
+  timestamp: string;
+  source: string;
+  level: string;
+  eventType: string;
+  message: string;
+  tunnelId: number | null;
+}
+
+export interface MultiplayerServerError {
+  stage: string;
+  message: string;
+  retryable: boolean;
+}
+
+export interface MultiplayerServerStatus {
+  ok: boolean;
+  address: string;
+  host: string;
+  port: number;
+  resolvedIps: string[];
+  dnsMs: number | null;
+  connectMs: number | null;
+  latencyMs: number | null;
+  protocol: number | null;
+  versionName: string | null;
+  motd: string | null;
+  onlinePlayers: number | null;
+  maxPlayers: number | null;
+  samplePlayers: string[];
+  faviconPresent: boolean;
+  onlineMode: "enabled" | "disabled" | "unknown" | "undetectable";
+  onlineModeReason: string;
+  authIsolation: "enabled" | "disabled" | "unknown" | "undetectable";
+  authIsolationReason: string;
+  error: MultiplayerServerError | null;
+}
+
+export interface MultiplayerGuestSample {
+  checkedAt: string;
+  latencyMs: number | null;
+  ok: boolean;
+  versionName: string | null;
+  protocol: number | null;
+  onlinePlayers: number | null;
+  maxPlayers: number | null;
+  motd: string | null;
+  errorStage: string | null;
+  errorMessage: string | null;
+  consecutiveFailures: number;
+  lastOkAt: string | null;
+  onlineMode: string;
+}
+
+export interface MultiplayerGuestMonitor {
+  running: boolean;
+  target: string | null;
+  intervalSeconds: number;
+  samples: number;
+  startedAt: string | null;
+  sample: MultiplayerGuestSample | null;
+  lastReport: MultiplayerServerStatus | null;
 }
 
 export interface MultiplayerOrphan {
@@ -881,7 +1000,9 @@ export interface MultiplayerStatus {
   loggedIn: boolean;
   account: MultiplayerAccount | null;
   room: MultiplayerRoom | null;
+  tunnel: MultiplayerTunnelState | null;
   frpc: MultiplayerFrpc;
+  capabilities: MultiplayerCapabilities;
   lastError: string | null;
 }
 
@@ -906,6 +1027,103 @@ export interface MultiplayerStopResult {
   localStopped: boolean;
   tunnelDeleted: boolean;
   message: string;
+}
+
+// --- Deterministic mod dependency analysis ---------------------------------
+
+export type DependencyRelation =
+  | "required"
+  | "optional"
+  | "incompatible"
+  | "embedded"
+  | "tool"
+  | "include"
+  | "unknown";
+
+export interface DependencyRequest {
+  source: string;
+  projectId: string;
+  versionId?: string | null;
+  fileId?: string | null;
+  instanceId?: string | null;
+  gameVersion: string;
+  loader: string;
+}
+
+export interface DependencyNode {
+  id: string;
+  source: string;
+  projectId: string;
+  title: string;
+  versionId: string | null;
+  versionNumber: string | null;
+  versionType: string | null;
+  fileName: string | null;
+  url: string | null;
+  sha1: string | null;
+  sha512: string | null;
+  size: number;
+  hasChecksum: boolean;
+  relation: DependencyRelation;
+  depth: number;
+  parent: string | null;
+  requiredBy: string[];
+  installed: boolean;
+  installedFile: string | null;
+  installedVersion: string | null;
+  compatible: boolean;
+  installable: boolean;
+  selectedByDefault: boolean;
+  notes: string[];
+}
+
+export interface DependencyEdge {
+  from: string;
+  to: string;
+  relation: DependencyRelation;
+  rawType: string;
+}
+
+export interface DependencyStats {
+  nodes: number;
+  required: number;
+  optional: number;
+  incompatible: number;
+  installed: number;
+  toInstall: number;
+  totalBytes: number;
+}
+
+export interface PlannedEntry {
+  nodeId: string;
+  title: string;
+  fileName: string;
+  size: number;
+  relation: DependencyRelation;
+}
+
+export interface DependencyAnalysis {
+  id: string;
+  createdAt: string;
+  source: string;
+  rootProjectId: string;
+  rootVersionId: string | null;
+  gameVersion: string;
+  loader: string;
+  instanceId: string | null;
+  instanceName: string | null;
+  nodes: DependencyNode[];
+  edges: DependencyEdge[];
+  warnings: string[];
+  blockers: string[];
+  stats: DependencyStats;
+  defaultPlan: PlannedEntry[];
+  complete: boolean;
+}
+
+export interface DependencyInstallSelection {
+  analysisId: string;
+  nodeIds: string[];
 }
 
 // --- Command wrappers ------------------------------------------------------
@@ -1045,8 +1263,12 @@ export const api = {
   listJava: (refresh = false) => command<JavaInfo[]>("list_java", { refresh }),
   addJavaPath: (path: string) => command<JavaInfo>("add_java_path", { path }),
   javaRuntimeOptions: () => command<JavaRuntimeOptions>("java_runtime_options"),
-  installJavaRuntime: (major: number) =>
-    command<JavaInfo>("install_java_runtime", { major }),
+  installJavaRuntime: (major: number, setAsDefault = true) =>
+    command<JavaInfo>("install_java_runtime", { major, setAsDefault }),
+  installJavaForVersion: (major: number, setAsDefault = false) =>
+    command<JavaInfo>("install_java_for_version", { major, setAsDefault }),
+  javaLaunchCheck: (instanceId: string) =>
+    command<JavaLaunchCheck>("java_launch_check", { instanceId }),
   checkJavaForVersion: (versionId: string) =>
     command<JavaCheck>("check_java_for_version", { versionId }),
   listAccounts: () => command<AccountView[]>("list_accounts"),
@@ -1087,6 +1309,10 @@ export const api = {
     command<ResourceVersion[]>("get_resource_versions", { id, gameVersion, loader }),
   installResource: (projectId: string, versionId: string, target: ResourceTarget) =>
     command<ResourceTaskAccepted>("install_resource", { projectId, versionId, target }),
+  analyzeModDependencies: (request: DependencyRequest) =>
+    command<DependencyAnalysis>("analyze_mod_dependencies", { request }),
+  installModDependencies: (instanceId: string, selection: DependencyInstallSelection) =>
+    command<ResourceTaskAccepted>("install_mod_dependencies", { instanceId, selection }),
   importModpack: (instanceId: string, path: string, allowIncomplete: boolean) =>
     command<ResourceTaskAccepted>("import_modpack", {
       instanceId,
@@ -1178,6 +1404,21 @@ export const api = {
   multiplayerOrphans: () => command<MultiplayerOrphan[]>("multiplayer_orphans"),
   multiplayerDeleteOrphan: (tunnelId: number) =>
     command<void>("multiplayer_delete_orphan", { tunnelId }),
+  multiplayerMembers: () => command<MultiplayerMembers>("multiplayer_members"),
+  multiplayerLogs: (limit = 300, level?: string | null) =>
+    command<MultiplayerLogEntry[]>("multiplayer_logs", { limit, level }),
+  multiplayerClearLogs: () => command<number>("multiplayer_clear_logs"),
+  multiplayerGuestPing: (address: string) =>
+    command<MultiplayerServerStatus>("multiplayer_guest_ping", { address }),
+  multiplayerGuestMonitorStart: (address: string, intervalSecs?: number) =>
+    command<MultiplayerGuestMonitor>("multiplayer_guest_monitor_start", {
+      address,
+      intervalSecs,
+    }),
+  multiplayerGuestMonitorStop: () =>
+    command<MultiplayerGuestMonitor>("multiplayer_guest_monitor_stop"),
+  multiplayerGuestMonitorStatus: () =>
+    command<MultiplayerGuestMonitor>("multiplayer_guest_monitor_status"),
   listFabricLoaders: (gameVersion: string) =>
     command<FabricLoader[]>("list_fabric_loaders", { gameVersion }),
   installFabric: (gameVersion: string, loaderVersion: string) =>

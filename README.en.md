@@ -63,6 +63,11 @@
 | Multiplayer | ✅ | 52FRP API, Java/Bedrock tunnels, node selection, bundled FRPC |
 | Diagnostics | ✅ | Environment checks, logs, crash reports, redacted report export |
 | Bilingual UI | ✅ | Simplified Chinese / English, default Chinese |
+| Host/guest multiplayer | 🟡 | Separate host room management and guest diagnostics; no fabricated game join |
+| Guest status ping | ✅ | Rust Server List Ping with VarInt, MOTD, version, players, RTT, typed errors |
+| Room history/log | ✅ | Bounded, redacted JSONL with level filters, sorting, and cleanup |
+| Mod dependency graph | 🟡 | Official Modrinth/CurseForge recursion, SVG/list view, installed detection, install plan |
+| Missing-Java install flow | 🟡 | Dynamic required major, Temurin install, rescan, no global-default overwrite |
 
 ### v0.2.1 highlights
 
@@ -70,6 +75,12 @@
 - **Modpack export.** Export an instance as a Modrinth `.mrpack` or a CurseForge `manifest.json` ZIP. Mods are matched by SHA-1 (Modrinth) or the official Murmur2 fingerprint (CurseForge); unknown or disabled mods, configs, resource packs and shaders are placed in `overrides/`. Worlds, logs and tokens are excluded.
 - **Bilingual interface.** A language selector in Settings switches the whole UI between Simplified Chinese and English and reloads the window. Chinese remains the default.
 - **Packaging.** macOS DMG, Windows x64 portable ZIP, Linux deb and AppImage are produced by the release workflow.
+
+### What's new in v0.2.2 (test build)
+
+- **Multiplayer management center.** Host and guest modes share one entry. The host view separates local Minecraft service, 52FRP tunnel, FRPC, and confirmed player-log state; it adds confirmed joins/leaves, IP-source classification, room history, and a unified log. The guest view performs a real Rust-side Minecraft Server List Ping (DNS, TCP, VarInt, status JSON, MOTD, version, latency, error stage) and a stoppable 12-second monitor. Guests still join inside Minecraft manually.
+- **Mod dependency visualization.** Analyze a concrete mod version against the target Minecraft version and loader using official Modrinth/CurseForge metadata. Render an SVG graph and list, detect installed mods from real JAR metadata, show an install plan, and reuse SHA-1 verification, backups, atomic replacement, progress, cancellation, and rollback.
+- **Automatic Java runtime completion.** Read the real `javaVersion.majorVersion`, offer to install Temurin when no safe runtime exists, rescan after installation, never overwrite the global default during auto-completion, and never silently replace a pinned instance Java.
 
 ## Screenshots
 

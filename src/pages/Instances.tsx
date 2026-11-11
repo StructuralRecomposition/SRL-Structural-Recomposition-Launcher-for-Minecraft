@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { api, type ImportCheck, type Instance } from "../lib/api";
+import { api, ApiError, type ImportCheck, type Instance } from "../lib/api";
 import { formatBytes, formatDate, relativeTime, splitLines } from "../lib/format";
 import { useApp } from "../state/AppContext";
 import { Badge, Button, Card, EmptyState, Field, IconButton } from "../components/ui";
@@ -10,6 +10,7 @@ import { ShaderManager } from "../components/ShaderManager";
 import { MapManager } from "../components/MapManager";
 import { ResourcePackManager } from "../components/ResourcePackManager";
 import { t } from "../lib/i18n";
+import { JavaInstallPrompt } from "../components/JavaInstallPrompt";
 
 
 export function InstancesPage() {
@@ -22,6 +23,7 @@ export function InstancesPage() {
   const [editing, setEditing] = useState<Instance | null>(null);
   const [deleting, setDeleting] = useState<Instance | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [javaPrompt, setJavaPrompt] = useState<Instance | null>(null);
 
   const [name, setName] = useState("");
   const [versionId, setVersionId] = useState(versions[0]?.id ?? "");
@@ -136,7 +138,14 @@ export function InstancesPage() {
         pushToast(t("启动提示"), "warning", result.warnings.join("；"));
       }
     } catch (e) {
-      pushToast(t("启动失败"), "error", e instanceof Error ? e.message : String(e));
+      if (
+        e instanceof ApiError &&
+        (e.code === "JAVA_INVALID" || e.code === "JAVA_INCOMPATIBLE")
+      ) {
+        setJavaPrompt(inst);
+      } else {
+        pushToast(t("启动失败"), "error", e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setBusy(null);
     }
@@ -869,6 +878,18 @@ export function InstancesPage() {
       {mapsFor ? <MapManager instance={mapsFor} onClose={() => setMapsFor(null)} /> : null}
       {texturesFor ? (
         <ResourcePackManager instance={texturesFor} onClose={() => setTexturesFor(null)} />
+      ) : null}
+      {javaPrompt ? (
+        <JavaInstallPrompt
+          instanceId={javaPrompt.id}
+          instanceName={javaPrompt.name}
+          onClose={() => setJavaPrompt(null)}
+          onInstalled={() => {
+            const target = javaPrompt;
+            setJavaPrompt(null);
+            void launch(target);
+          }}
+        />
       ) : null}
     </div>
   );

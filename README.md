@@ -30,6 +30,12 @@
 - **整合包导出。** 支持 Modrinth `.mrpack` 与 CurseForge `manifest.json` ZIP；Modrinth 走 SHA-1，CurseForge 走官方 Murmur2 指纹，未识别模组进入 `overrides/`。
 - **三平台安装包。** macOS DMG、Windows x64 便携 ZIP、Linux deb / AppImage。
 
+### v0.2.2 更新摘要（测试版）
+
+- **联机管理中心。** 联机页新增房主/游客模式；房主端分开显示本地服务、52FRP 隧道、FRPC 与玩家日志状态，新增可确认的玩家加入/离开、IP 类型区分、房间历史与统一日志。游客端使用 Rust 实现 Minecraft Server List Ping，展示 DNS、TCP、协议、MOTD、延迟与真实错误；监测可停止。游客仍需在 Minecraft 内手动加入。
+- **模组依赖可视化。** 资源详情新增“依赖”：按具体版本、目标 Minecraft 版本和加载器递归解析 Modrinth/CurseForge 官方依赖，生成 SVG 关系图与列表，识别已安装模组，展示安装计划；安装复用 SHA-1 校验、备份、原子替换与回滚。
+- **Java 自动补全。** 启动前读取真实 `javaVersion.majorVersion`；缺失 Java 时提示具体版本并一键安装 Temurin，安装后重新扫描；自动安装不覆盖用户全局默认 Java，实例固定 Java 不会被静默替换。
+
 ---
 
 ## 目录
@@ -88,6 +94,9 @@
 | 一键安装 Temurin | ✅ | Eclipse Temurin 8–27 可选；下载 → SHA-256 校验 → 解压到启动器数据目录 → 自动识别 |
 | 国内镜像加速 | ✅ | 开启“国内镜像”后优先使用清华 TUNA 的 Adoptium 镜像；镜像缺失或不可用时自动回退 Adoptium 官方 |
 | 校验不降级 | ✅ | 版本元数据仍来自 Adoptium API；镜像只改变下载地址，SHA-256 校验不变 |
+| 启动前缺失 Java 提示 | 🟡 | `java_launch_check` 动态返回 required major、兼容范围、已选环境与能否安装；需真实缺失环境实机验证 |
+| 下载并继续启动 | 🟡 | 复用 Temurin 安装与下载任务；安装后重新扫描并再次校验，不重复启动；自动补全不修改全局默认 |
+| 实例固定 Java 保护 | ✅ | 实例显式指定的 Java 必须通过兼容检查，否则明确报错；不会被自动替换 |
 
 > Java 一键安装不依赖系统预装 Java。安装后会出现在 Java 列表中，但不会顶掉已有默认；启动器会按实例版本自动选择。开启国内镜像后，下载优先走清华 TUNA，失败回退官方，校验值不变。
 
@@ -135,6 +144,8 @@
 | CurseForge | ✅ | 模组、整合包、光影、材质、地图搜索；官方 API；分类、Minecraft 版本与加载器筛选 |
 | 下载校验 | ✅ | SHA-1 校验、可信域名限制、原子写入；失败自动清理 |
 | 本地整合包导入 | ✅ | `.mrpack`、CurseForge `manifest.zip`、普通整合 ZIP；拒绝路径穿越、绝对路径、符号链接、保留名与异常压缩比 |
+| 模组依赖关系图 | 🟡 | 具体版本的 Modrinth/CurseForge 官方依赖递归解析；SVG 图形 + 列表；已安装检测；真实安装计划需网络 API 实机验证 |
+| 依赖安装安全 | ✅ | 分析保存在服务端，前端只提交节点 ID；安装复用 SHA-1、备份、原子替换、失败回滚与任务进度 |
 
 > CurseForge 搜索需要 API key。可在设置中保存个人 key（系统凭据库）；未配置时回退到项目内置的共享配置。共享配置只用于默认体验，公开部署或二次分发时请替换为你自己的 key。
 
@@ -150,6 +161,12 @@
 | 本地服务检测 | ✅ | Java 局域网动态端口日志 + 进程监听端口；Bedrock UDP 端口占用检查；支持手动 IP/端口 |
 | 停止与清理 | ✅ | 停止 FRPC 与删除云端隧道分离；只删除 `SRL_` 前缀的临时隧道 |
 | 真实联调 | 🟡 | 需要真实 52FRP 账户与 API 令牌；代码按官方 v1 OpenAPI 实现 |
+| 房主/游客双模式 | 🟡 | 同一入口分段切换；房主保留原 52FRP 流程，游客只做连接诊断，不代替游戏加入 |
+| 四类状态分离 | 🟡 | 本地服务、52FRP 隧道、FRPC、玩家日志状态分别显示；52FRP `cur_conns` 只作 TCP 连接数 |
+| 游客成员 | 🟡 | 只读 Minecraft 日志中可确认的加入/离开；UUID 与真实公网 IP 无来源时显示未知 |
+| 连接诊断 | ✅ | Rust Server List Ping：地址/DNS/TCP/VarInt/状态 JSON/MOTD/版本/人数/延迟/错误阶段 |
+| 游客网络监测 | ✅ | 12 秒采样，可停止；后端任务可取消；不声称已进入游戏 |
+| 正版验证/隔离 | 🟡 | SLP 不公开 online-mode；52FRP API 无正版隔离字段，界面显示“无法检测/未知” |
 
 > 联机中心不要求用户理解 FRP、公网 IP 或端口映射。房主启动游戏、创建房间并复制地址；朋友不需要开穿透，直接在 Minecraft 里直连即可。API 令牌在 52FRP 个人中心创建，只保存在系统凭据库。
 >
@@ -312,8 +329,8 @@ npm run tauri build -- --bundles nsis,msi
 ## 测试与质量
 
 ```bash
-cargo test -p sr-core          # 180 项单元测试 + 2 项集成测试通过；13 项真实网络测试默认忽略
-npx vitest run                 # 41 项前端测试
+cargo test -p sr-core          # 241 项通过（239 库 + 2 启动集成）；19 项真实网络/下载测试默认忽略
+npx vitest run                 # 50 项前端测试
 cargo check -p sr-launcher     # Tauri 命令层编译检查
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
@@ -325,12 +342,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test -p sr-core --test real_install -- --ignored --nocapture
 cargo test -p sr-core --test fabric_install -- --ignored --nocapture
 cargo test -p sr-core --test fabric_mirror_install -- --ignored --nocapture
+cargo test -p sr-core --test dependency_network -- --ignored --nocapture
+cargo test -p sr-core --test server_status_network -- --ignored --nocapture
 ```
 
 当前质量基线：
 
-- Rust：182 项通过，13 项需真实网络 / 下载的测试默认忽略。
-- 前端：41 项通过（Vitest + Testing Library）。
+- Rust：241 项通过（239 库测试 + 2 启动集成），19 项需真实网络 / 下载的测试默认忽略。
+- 前端：50 项通过（Vitest + Testing Library）。
+- 真实网络冒烟：Modrinth Iris → Sodium required（2 节点 / 4,264,786 字节）；`mc.hypixel.net:25565` 状态协议 47、26906/200000、322 ms。
 - `cargo fmt`、`cargo clippy -D warnings`、`npm run build` 通过。
 - 发布前运行 `node scripts/verify-no-secrets.mjs` 与 `bash scripts/verify-clean-bundle.sh <SRL.app>`。
 

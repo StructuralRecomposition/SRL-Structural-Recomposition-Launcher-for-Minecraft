@@ -1,6 +1,7 @@
 use crate::error::{AppError, ErrorCode, Result};
 use crate::instance::Instance;
 use crate::paths::AppPaths;
+use chrono::{DateTime, Utc};
 use futures_util::future::join_all;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -9,14 +10,16 @@ use tokio::sync::{Mutex, RwLock};
 
 use super::frp52::{parse_port_ranges, port_in_ranges, Frp52Provider};
 use super::frpc::{DownloadProgress, FrpcManager};
+use super::journal;
 use super::minecraft;
 use super::nodes::{rank_nodes, tcp_latency};
 use super::provider::{supports_edition, ProviderNode, TunnelCreate, TunnelProvider};
 use super::token::Frp52TokenStore;
 use super::types::{
-    AccountView, CreateRoomRequest, Edition, FrpcView, LocalServiceView, MultiplayerStatus,
-    NodeView, OrphanTunnel, ProgressEvent, ProgressSink, RoomView, StopRoomResult, StoredRoom,
-    DEFAULT_TUNNEL_PREFIX, PROVIDER_ID, PROVIDER_NAME,
+    AccountView, CreateRoomRequest, Edition, FrpcView, LocalServiceView, MembersView,
+    MultiplayerStatus, NodeView, OrphanTunnel, PlayerMember, ProgressEvent, ProgressSink,
+    RoomCapabilities, RoomView, StopRoomResult, StoredRoom, TunnelStateView, DEFAULT_TUNNEL_PREFIX,
+    PROVIDER_ID, PROVIDER_NAME,
 };
 
 pub struct MultiplayerManager {
@@ -28,6 +31,9 @@ pub struct MultiplayerManager {
     creating: Mutex<()>,
     progress: ProgressSink,
     last_error: RwLock<Option<String>>,
+    tunnel_cache: RwLock<Option<(Instant, TunnelStateView)>>,
+    last_room_state: RwLock<Option<String>>,
+    seen_player_events: Mutex<std::collections::HashSet<String>>,
 }
 
 impl MultiplayerManager {
@@ -52,6 +58,9 @@ impl MultiplayerManager {
             creating: Mutex::new(()),
             progress,
             last_error: RwLock::new(None),
+            tunnel_cache: RwLock::new(None),
+            last_room_state: RwLock::new(None),
+            seen_player_events: Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -99,6 +108,19 @@ impl MultiplayerManager {
             Some(pid) => process_alive(pid).await,
             None => true,
         };
+        let local_service_ok = match stored_room.as_ref() {
+            Some(stored) => Some(match stored.edition {
+                Edition::Java => {
+                    minecraft::tcp_reachable(&stored.local_ip, stored.local_port).await
+                }
+                Edition::Bedrock => minecraft::udp_port_in_use(stored.local_port),
+            }),
+            None => None,
+        };
+        let tunnel = match stored_room.as_ref() {
+            Some(stored) if logged_in => self.tunnel_state(stored.tunnel_id).await,
+            _ => None,
+        };
         let room = stored_room.map(|stored| {
             let state = if stored.retained {
                 "retained"
@@ -128,6 +150,7 @@ impl MultiplayerManager {
                 state: state.into(),
                 frpc_running: frpc.running,
                 frpc_pid,
+                local_service_ok,
                 message: if stored.retained {
                     Some("FRPC 已停止，云端隧道仍然保留。可以删除临时隧道。".into())
                 } else if stored.local_pid.is_some() && !local_alive {
@@ -137,11 +160,36 @@ impl MultiplayerManager {
                     )
                 } else if !frpc.running {
                     Some("FRPC 未运行。可以重启 FRPC 或停止并删除隧道。".into())
+                } else if local_service_ok == Some(false) {
+                    Some("FRPC 在运行，但本地 Minecraft 端口当前不可连接。".into())
                 } else {
                     None
                 },
             }
         });
+        if let Some(room) = room.as_ref() {
+            let mut last = self.last_room_state.write().await;
+            if last.as_deref() != Some(room.state.as_str()) {
+                let previous = last.clone();
+                *last = Some(room.state.clone());
+                drop(last);
+                if previous.is_some() {
+                    let _ = journal::append(
+                        &self.paths,
+                        "room",
+                        if room.state == "online" {
+                            "info"
+                        } else {
+                            "warning"
+                        },
+                        "room.state",
+                        &format!("房间状态变为 {}", room.state),
+                        Some(room.tunnel_id),
+                    )
+                    .await;
+                }
+            }
+        }
         MultiplayerStatus {
             provider: PROVIDER_ID.into(),
             provider_name: PROVIDER_NAME.into(),
@@ -149,8 +197,159 @@ impl MultiplayerManager {
             logged_in,
             account,
             room,
+            tunnel,
             frpc,
+            capabilities: owner_capabilities(),
             last_error,
+        }
+    }
+
+    async fn tunnel_state(&self, tunnel_id: u64) -> Option<TunnelStateView> {
+        {
+            let cache = self.tunnel_cache.read().await;
+            if let Some((at, value)) = cache.as_ref() {
+                if at.elapsed() < Duration::from_secs(20) {
+                    return Some(value.clone());
+                }
+            }
+        }
+        match self.provider().tunnel_state(tunnel_id).await {
+            Ok(value) => {
+                *self.tunnel_cache.write().await = Some((Instant::now(), value.clone()));
+                Some(value)
+            }
+            Err(error) => {
+                tracing::debug!(%error, "52FRP tunnel state unavailable");
+                None
+            }
+        }
+    }
+
+    /// Player events come from the real Minecraft log captured by SRL. No
+    /// event is inferred from TCP connection counts.
+    pub async fn members(&self) -> MembersView {
+        let room = self.room.read().await.clone();
+        let Some(room) = room else {
+            return MembersView {
+                available: false,
+                source: "none".into(),
+                message: "当前没有联机房间。".into(),
+                members: Vec::new(),
+                partial: true,
+                ip_note: String::new(),
+                game_control_available: false,
+            };
+        };
+        if room.edition != Edition::Java {
+            return MembersView {
+                available: false,
+                source: "none".into(),
+                message: "基岩版没有可读取的 Java 服务端玩家日志。".into(),
+                members: Vec::new(),
+                partial: true,
+                ip_note: String::new(),
+                game_control_available: false,
+            };
+        }
+        let since = DateTime::parse_from_rfc3339(&room.created_at)
+            .ok()
+            .map(|value| value.with_timezone(&Utc));
+        let events =
+            minecraft::read_player_events(&self.paths.logs_dir(), &room.instance_id, since);
+        let Some(events) = events else {
+            return MembersView {
+                available: false,
+                source: "minecraft-log".into(),
+                message: "没有找到该实例由 SRL 捕获的游戏日志，无法读取玩家事件。".into(),
+                members: Vec::new(),
+                partial: true,
+                ip_note: String::new(),
+                game_control_available: false,
+            };
+        };
+        {
+            let mut seen = self.seen_player_events.lock().await;
+            for event in &events {
+                if seen.len() >= 5000 {
+                    break;
+                }
+                let key = format!(
+                    "{}|{}|{}",
+                    event.action,
+                    event.player,
+                    event.at.as_deref().unwrap_or("")
+                );
+                if !seen.insert(key) {
+                    continue;
+                }
+                let _ = journal::append(
+                    &self.paths,
+                    "minecraft",
+                    "info",
+                    if event.action == "leave" {
+                        "player.leave"
+                    } else {
+                        "player.join"
+                    },
+                    &format!(
+                        "玩家 {} {}",
+                        event.player,
+                        if event.action == "leave" {
+                            "离开"
+                        } else {
+                            "加入"
+                        }
+                    ),
+                    Some(room.tunnel_id),
+                )
+                .await;
+            }
+        }
+        let mut members: std::collections::BTreeMap<String, PlayerMember> = Default::default();
+        for event in events {
+            let entry = members
+                .entry(event.player.clone())
+                .or_insert_with(|| PlayerMember {
+                    name: event.player.clone(),
+                    uuid: None,
+                    role: super::types::RoomRole::Guest,
+                    minecraft_op: None,
+                    joined_at: None,
+                    left_at: None,
+                    status: "unknown".into(),
+                    observed_ip: None,
+                    ip_kind: "unknown".into(),
+                    source: event.source.clone(),
+                });
+            match event.action.as_str() {
+                "join" => {
+                    entry.joined_at = event.at.clone().or(entry.joined_at.clone());
+                    entry.left_at = None;
+                    entry.status = "connected".into();
+                    if event.observed_ip.is_some() {
+                        entry.observed_ip = event.observed_ip;
+                        entry.ip_kind = event.ip_kind;
+                    }
+                }
+                "leave" => {
+                    entry.left_at = event.at.clone().or(entry.left_at.clone());
+                    entry.status = "left".into();
+                }
+                _ => {}
+            }
+        }
+        MembersView {
+            available: true,
+            source: "minecraft-log".into(),
+            message: if members.is_empty() {
+                "游戏日志可读取，但还没有观察到玩家加入事件。".into()
+            } else {
+                "来自 Minecraft 游戏日志的真实加入/离开事件。".into()
+            },
+            members: members.into_values().collect(),
+            partial: true,
+            ip_note: "服务端观察到的地址经 52FRP 转发时通常是 127.0.0.1；这表示本地代理连接，不代表游客公网 IP。".into(),
+            game_control_available: false,
         }
     }
 
@@ -256,6 +455,17 @@ impl MultiplayerManager {
             ));
         }
         *self.last_error.write().await = None;
+        self.seen_player_events.lock().await.clear();
+        *self.last_room_state.write().await = None;
+        let _ = journal::append(
+            &self.paths,
+            "room",
+            "info",
+            "room.create",
+            "开始创建联机房间",
+            None,
+        )
+        .await;
 
         let provider = self.provider();
         let mut created_tunnel = None;
@@ -273,6 +483,19 @@ impl MultiplayerManager {
                 }
                 *self.room.write().await = Some(stored.clone());
                 self.emit("done", "联机房间创建成功", "ok", None);
+                let _ = journal::append(
+                    &self.paths,
+                    "room",
+                    "info",
+                    "room.created",
+                    &format!(
+                        "房间已创建：{}:{}（隧道 #{}，节点 {}）",
+                        stored.public_host, stored.public_port, stored.tunnel_id, stored.node_name
+                    ),
+                    Some(stored.tunnel_id),
+                )
+                .await;
+                *self.tunnel_cache.write().await = None;
                 let frpc = self.frpc.status().await;
                 Ok(RoomView {
                     tunnel_id: stored.tunnel_id,
@@ -293,6 +516,7 @@ impl MultiplayerManager {
                     state: "online".into(),
                     frpc_running: frpc.running,
                     frpc_pid: self.frpc.pid().await,
+                    local_service_ok: Some(true),
                     message: None,
                 })
             }
@@ -303,6 +527,15 @@ impl MultiplayerManager {
                 }
                 *self.last_error.write().await = Some(error.message.clone());
                 self.emit("error", "创建失败", "error", Some(error.message.clone()));
+                let _ = journal::append(
+                    &self.paths,
+                    "room",
+                    "error",
+                    "room.error",
+                    &format!("创建联机房间失败：{}", error.message),
+                    None,
+                )
+                .await;
                 Err(error)
             }
         }
@@ -618,12 +851,32 @@ impl MultiplayerManager {
                 message: "当前没有联机房间".into(),
             });
         };
+        let tunnel_id = room.tunnel_id;
         self.frpc.stop().await?;
+        let _ = journal::append(
+            &self.paths,
+            "frpc",
+            "info",
+            "frpc.stop",
+            "FRPC 已停止",
+            Some(room.tunnel_id),
+        )
+        .await;
         if !delete_tunnel {
             let mut retained = room;
             retained.retained = true;
             save_room(&self.paths, &retained).await?;
             *self.room.write().await = Some(retained);
+            let _ = journal::append(
+                &self.paths,
+                "room",
+                "warning",
+                "room.retained",
+                "房间已停止，云端隧道保留",
+                Some(tunnel_id),
+            )
+            .await;
+            *self.last_room_state.write().await = Some("retained".into());
             return Ok(StopRoomResult {
                 local_stopped: true,
                 tunnel_deleted: false,
@@ -643,6 +896,17 @@ impl MultiplayerManager {
             None => {
                 let _ = std::fs::remove_file(self.paths.multiplayer_room_file());
                 *self.room.write().await = None;
+                *self.last_room_state.write().await = None;
+                *self.tunnel_cache.write().await = None;
+                let _ = journal::append(
+                    &self.paths,
+                    "room",
+                    "info",
+                    "room.closed",
+                    "房间已关闭；云端隧道已不存在",
+                    Some(room.tunnel_id),
+                )
+                .await;
                 return Ok(StopRoomResult {
                     local_stopped: true,
                     tunnel_deleted: true,
@@ -656,6 +920,17 @@ impl MultiplayerManager {
                 let _ = std::fs::remove_file(self.paths.multiplayer_room_file());
                 *self.room.write().await = None;
                 *self.last_error.write().await = None;
+                *self.last_room_state.write().await = None;
+                *self.tunnel_cache.write().await = None;
+                let _ = journal::append(
+                    &self.paths,
+                    "room",
+                    "info",
+                    "room.closed",
+                    "房间已关闭，临时隧道已删除",
+                    Some(room.tunnel_id),
+                )
+                .await;
                 Ok(StopRoomResult {
                     local_stopped: true,
                     tunnel_deleted: true,
@@ -694,6 +969,16 @@ impl MultiplayerManager {
         let prepared = self.frpc.prepare(None).await?;
         self.frpc.set_prepared(&prepared).await;
         self.frpc.start(&prepared.path, &config_text).await?;
+        let _ = journal::append(
+            &self.paths,
+            "frpc",
+            "info",
+            "frpc.restart",
+            "FRPC 已重新启动",
+            Some(room.tunnel_id),
+        )
+        .await;
+        *self.tunnel_cache.write().await = None;
         Ok(self.frpc.status().await)
     }
 
@@ -711,6 +996,24 @@ impl MultiplayerManager {
 
     pub async fn stored_room(&self) -> Option<StoredRoom> {
         self.room.read().await.clone()
+    }
+
+    /// Current FRPC log ring buffer, used by the unified room log view.
+    pub async fn frpc_log_tail(&self) -> Vec<String> {
+        self.frpc.status().await.log_tail
+    }
+}
+
+fn owner_capabilities() -> RoomCapabilities {
+    RoomCapabilities {
+        role: super::types::RoomRole::Owner,
+        can_manage_room: true,
+        can_view_member_ips: true,
+        can_kick: false,
+        can_ban: false,
+        can_whitelist: false,
+        can_op: false,
+        note: "SRL 只管理自己的房间与隧道；当前没有经过验证的 Minecraft 服务端控制通道，因此踢出、封禁、白名单和 OP 操作不可用。".into(),
     }
 }
 

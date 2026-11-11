@@ -3,7 +3,7 @@ use sr_core::download::DownloadManager;
 use sr_core::java::JavaInfo;
 use sr_core::launch::{LaunchManager, LaunchSink};
 use sr_core::modrinth::ModrinthService;
-use sr_core::multiplayer::{MultiplayerManager, ProgressSink};
+use sr_core::multiplayer::{GuestMonitor, MultiplayerManager, ProgressSink};
 use sr_core::paths::{AppPaths, GamePaths};
 use sr_core::settings::Settings;
 use sr_core::skin::SkinLibrary;
@@ -24,6 +24,7 @@ pub struct AppState {
     pub skins: SkinLibrary,
     pub modrinth: ModrinthService,
     pub multiplayer: Arc<MultiplayerManager>,
+    pub guest: GuestMonitor,
     pub java: Arc<RwLock<Vec<JavaInfo>>>,
     pub launches: Arc<RwLock<LaunchManager>>,
     pub http: reqwest::Client,

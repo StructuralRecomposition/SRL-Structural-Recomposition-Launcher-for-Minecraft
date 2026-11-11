@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, onEvent } from "../lib/api";
 import type {
   MultiplayerEdition,
+  MultiplayerGuestMonitor,
   MultiplayerLocalService,
+  MultiplayerLogEntry,
+  MultiplayerMembers,
   MultiplayerNode,
   MultiplayerOrphan,
   MultiplayerProgress,
   MultiplayerRoom,
+  MultiplayerServerStatus,
   MultiplayerStatus,
 } from "../lib/api";
 import { useApp } from "../state/AppContext";
@@ -48,6 +52,17 @@ function stateTone(room: MultiplayerRoom): "success" | "warning" | "neutral" {
   return "neutral";
 }
 
+function durationSince(createdAt: string): string {
+  const started = new Date(createdAt).getTime();
+  if (!Number.isFinite(started)) return "—";
+  const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return `${hours} h ${minutes} min`;
+  if (minutes > 0) return `${minutes} min`;
+  return `${seconds} s`;
+}
+
 function roomStateLabel(room: MultiplayerRoom) {
   if (room.state === "online") return t("联机在线");
   if (room.state === "retained") return t("隧道保留");
@@ -86,11 +101,68 @@ export function MultiplayerPage() {
   const [token, setToken] = useState("");
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [mode, setMode] = useState<"host" | "guest">("host");
+  const [members, setMembers] = useState<MultiplayerMembers | null>(null);
+  const [showFullIp, setShowFullIp] = useState(false);
+  const [logs, setLogs] = useState<MultiplayerLogEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   const instance = useMemo(
     () => instances.find((item) => item.id === instanceId) ?? instances[0],
     [instances, instanceId],
   );
+  const roomForMembers = status?.room?.edition === "java" ? status.room.tunnelId : null;
+
+  useEffect(() => {
+    if (!status?.loggedIn || roomForMembers == null) {
+      setMembers(null);
+      return;
+    }
+    let disposed = false;
+    const load = () =>
+      api
+        .multiplayerMembers()
+        .then((value) => {
+          if (!disposed) setMembers(value);
+        })
+        .catch(() => {
+          if (!disposed) setMembers(null);
+        });
+    void load();
+    const timer = window.setInterval(load, 15000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [status?.loggedIn, roomForMembers]);
+
+  useEffect(() => {
+    if (!status?.room) {
+      setLogs([]);
+      return;
+    }
+    let disposed = false;
+    const load = () => {
+      setLogsLoading(true);
+      api
+        .multiplayerLogs(300)
+        .then((value) => {
+          if (!disposed) setLogs(value);
+        })
+        .catch(() => {
+          if (!disposed) setLogs([]);
+        })
+        .finally(() => {
+          if (!disposed) setLogsLoading(false);
+        });
+    };
+    void load();
+    const timer = window.setInterval(load, 20000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [status?.room?.tunnelId]);
   const room = status?.room ?? null;
   const online = room?.state === "online";
   const visibleOrphans = orphans.filter((orphan) => orphan.tunnelId !== room?.tunnelId);
@@ -412,16 +484,43 @@ export function MultiplayerPage() {
         <div className="mp-toolbar__title">
           <h2>{t("Minecraft 联机")}</h2>
         </div>
+        <div className="segmented mp-mode-switch">
+          <button
+            type="button"
+            className={`segmented__item ${mode === "host" ? "segmented__item--active" : ""}`}
+            onClick={() => setMode("host")}
+          >
+            {t("房主模式")}
+          </button>
+          <button
+            type="button"
+            className={`segmented__item ${mode === "guest" ? "segmented__item--active" : ""}`}
+            onClick={() => setMode("guest")}
+          >
+            {t("游客模式")}
+          </button>
+        </div>
         <div className="mp-toolbar__status">
-          <Badge tone={status.loggedIn ? "success" : "neutral"}>
-            {status.providerName ?? "52FRP"}
-          </Badge>
-          <Badge tone={online ? "success" : "neutral"}>
-            {online ? t("联机在线") : status.loggedIn ? t("未建房") : t("未连接")}
-          </Badge>
+          {mode === "host" ? (
+            <>
+              <Badge tone={status.loggedIn ? "success" : "neutral"}>
+                {status.providerName ?? "52FRP"}
+              </Badge>
+              <Badge tone={online ? "success" : "neutral"}>
+                {online ? t("联机在线") : status.loggedIn ? t("未建房") : t("未连接")}
+              </Badge>
+            </>
+          ) : (
+            <Badge tone="info">{t("游客诊断")}</Badge>
+          )}
         </div>
       </div>
 
+      {mode === "guest" ? (
+        <GuestPanel pushToast={pushToast} />
+      ) : null}
+
+      <div hidden={mode !== "host"}>
       {error ? <Notice tone="danger" title={t("操作失败")}>{error}</Notice> : null}
       {status.lastError && status.lastError !== error ? (
         <Notice tone="warning" title={t("最近一次连接状态")}>{status.lastError}</Notice>
@@ -474,6 +573,8 @@ export function MultiplayerPage() {
               onStopDelete={() => askStop(true)}
               onRestart={() => void restartFrpc()}
               frpcLog={status.frpc.logTail}
+              tunnel={status.tunnel}
+              members={members}
             />
           ) : (
             <Card className="mp-create">
@@ -626,6 +727,36 @@ export function MultiplayerPage() {
             </Card>
           )}
 
+          {room ? (
+            <HostMembersCard
+              members={members}
+              showFullIp={showFullIp}
+              onToggleIp={() => setShowFullIp((value) => !value)}
+            />
+          ) : null}
+
+          {room ? (
+            <RoomLogPanel
+              logs={logs}
+              loading={logsLoading}
+              onRefresh={() =>
+                void api
+                  .multiplayerLogs(300)
+                  .then(setLogs)
+                  .catch(() => setLogs([]))
+              }
+              onClear={async () => {
+                try {
+                  await api.multiplayerClearLogs();
+                  setLogs([]);
+                  pushToast(t("房间日志已清理"), "success");
+                } catch (e) {
+                  pushToast(t("清理失败"), "error", e instanceof Error ? e.message : undefined);
+                }
+              }}
+            />
+          ) : null}
+
           {steps.length > 0 && (creating || steps.some((step) => step.status === "error")) ? (
             <StepList steps={steps} />
           ) : null}
@@ -715,6 +846,7 @@ export function MultiplayerPage() {
           </Card>
         </div>
       </div>
+      </div>
 
       <Modal
         open={confirmAction !== null}
@@ -767,6 +899,8 @@ function RoomCard({
   onStopDelete,
   onRestart,
   frpcLog,
+  tunnel,
+  members,
 }: {
   room: MultiplayerRoom;
   online: boolean;
@@ -777,7 +911,12 @@ function RoomCard({
   onStopDelete: () => void;
   onRestart: () => void;
   frpcLog: string[];
+  tunnel: MultiplayerStatus["tunnel"];
+  members: MultiplayerMembers | null;
 }) {
+  const connected = members?.available
+    ? members.members.filter((member) => member.status === "connected").length
+    : null;
   return (
     <Card className="mp-room">
       <div className="mp-room__head">
@@ -787,7 +926,8 @@ function RoomCard({
             <Badge tone={stateTone(room)}>{roomStateLabel(room)}</Badge>
           </div>
           <p className="muted small">
-            {editionLabel(room.edition)} · {room.versionId} · {room.nodeName}
+            {t("房间")} {room.tunnelName} · {editionLabel(room.edition)} · {room.versionId} ·{" "}
+            {room.nodeName}
           </p>
         </div>
       </div>
@@ -825,7 +965,61 @@ function RoomCard({
             {t("延迟")}</dt>
           <dd>{room.latencyMs != null ? `${room.latencyMs} ms` : t("未测速")}</dd>
         </div>
+        <div>
+          <dt>{t("创建时间")}</dt>
+          <dd>{new Date(room.createdAt).toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>{t("持续时间")}</dt>
+          <dd>{durationSince(room.createdAt)}</dd>
+        </div>
       </dl>
+
+      <div className="mp-status-grid">
+        <StatusLine
+          label={t("Minecraft 本地服务")}
+          value={
+            room.localServiceOk == null
+              ? t("未知")
+              : room.localServiceOk
+                ? t("端口可连接")
+                : t("不可连接")
+          }
+          tone={room.localServiceOk == null ? "neutral" : room.localServiceOk ? "success" : "danger"}
+        />
+        <StatusLine
+          label={t("52FRP 云端隧道")}
+          value={
+            tunnel == null
+              ? t("暂不可用")
+              : tunnel.online
+                ? t("在线")
+                : t("离线")
+          }
+          tone={tunnel == null ? "neutral" : tunnel.online ? "success" : "warning"}
+        />
+        <StatusLine
+          label="FRPC"
+          value={room.frpcRunning ? t("运行中") : t("已停止")}
+          tone={room.frpcRunning ? "success" : "danger"}
+        />
+        <StatusLine
+          label={t("玩家已进入游戏")}
+          value={
+            connected == null
+              ? t("无法确认")
+              : connected > 0
+                ? t("日志显示 {0} 人", [connected])
+                : t("日志未显示玩家")
+          }
+          tone={connected != null && connected > 0 ? "success" : "neutral"}
+        />
+      </div>
+      {tunnel?.connections != null ? (
+        <p className="muted small">
+          {t("52FRP 当前隧道连接数：{0}（TCP 连接数，不等于玩家人数）", [tunnel.connections])}
+        </p>
+      ) : null}
 
       {room.message ? <p className="mp-room__message">{room.message}</p> : null}
 
@@ -901,5 +1095,557 @@ function StepList({ steps }: { steps: MultiplayerProgress[] }) {
         ))}
       </ol>
     </Card>
+  );
+}
+
+function StatusLine({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "success" | "warning" | "danger" | "neutral";
+}) {
+  return (
+    <div className="mp-status-line">
+      <span>{label}</span>
+      <Badge tone={tone}>{value}</Badge>
+    </div>
+  );
+}
+
+function maskIp(value: string) {
+  if (value.includes(":")) return `${value.split(":").slice(0, 2).join(":")}:****`;
+  const parts = value.split(".");
+  if (parts.length === 4) return `${parts[0]}.${parts[1]}.*.*`;
+  return "****";
+}
+
+function HostMembersCard({
+  members,
+  showFullIp,
+  onToggleIp,
+}: {
+  members: MultiplayerMembers | null;
+  showFullIp: boolean;
+  onToggleIp: () => void;
+}) {
+  const hasIp = members?.members.some((member) => member.observedIp) ?? false;
+  return (
+    <Card className="mp-members">
+      <div className="card-head">
+        <div>
+          <h3>{t("游客成员")}</h3>
+          <p className="muted small">{t("只显示能从 Minecraft 游戏日志确认的事件。")}</p>
+        </div>
+        <Badge tone="warning">{t("部分可用")}</Badge>
+      </div>
+      {!members ? (
+        <p className="muted">{t("正在读取游戏日志…")}</p>
+      ) : !members.available ? (
+        <Notice tone="info" title={t("无法读取成员事件")}>
+          {members.message}
+        </Notice>
+      ) : (
+        <>
+          {members.members.length === 0 ? (
+            <p className="muted">{members.message}</p>
+          ) : (
+            <div className="mp-member-list">
+              {members.members.map((member) => (
+                <div className="mp-member" key={member.name}>
+                  <div className="mp-member__main">
+                    <strong>{member.name}</strong>
+                    <span className="muted small">
+                      {member.status === "connected"
+                        ? t("已连接")
+                        : member.status === "left"
+                          ? t("已离开")
+                          : t("未知")}
+                      {member.joinedAt ? ` · ${t("加入")} ${new Date(member.joinedAt).toLocaleTimeString()}` : ""}
+                      {member.leftAt ? ` · ${t("离开")} ${new Date(member.leftAt).toLocaleTimeString()}` : ""}
+                    </span>
+                  </div>
+                  <div className="mp-member__meta">
+                    <Badge tone="neutral">{member.role}</Badge>
+                    <span className="muted small">
+                      {t("游戏内 OP")}：{member.minecraftOp == null ? t("无法确认") : member.minecraftOp ? t("是") : t("否")}
+                    </span>
+                  </div>
+                  <div className="mp-member__ip">
+                    <span className="muted small">
+                      {member.observedIp
+                        ? `${t("服务端观测地址")}：${
+                            showFullIp || member.ipKind === "loopback"
+                              ? member.observedIp
+                              : maskIp(member.observedIp)
+                          }（${
+                            member.ipKind === "loopback"
+                              ? t("本地代理连接")
+                              : member.ipKind === "lan"
+                                ? t("局域网地址")
+                                : member.ipKind === "public"
+                                  ? t("公网地址")
+                                  : t("未知来源")
+                          }）`
+                        : t("连接来源 IP：不可获取")}
+                    </span>
+                    {!member.observedIp ? (
+                      <span className="muted small">{t("游戏日志没有提供该玩家的地址。")}</span>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {hasIp ? (
+            <Button size="sm" variant="ghost" onClick={onToggleIp}>
+              {showFullIp ? t("脱敏显示") : t("显示完整 IP")}
+            </Button>
+          ) : null}
+          <p className="muted small">{members.ipNote}</p>
+          {members.partial ? (
+            <>
+              <p className="muted small">
+                {t("玩家 UUID、真实公网 IP 和游戏内管理权限没有可靠来源，因此显示为未知。")}
+              </p>
+              <p className="muted small">
+                {t("SRL 只管理自己的房间与隧道；没有经过验证的 Minecraft 服务端控制接口，踢出、封禁、白名单和 OP 不可用。")}
+              </p>
+            </>
+          ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function RoomLogPanel({
+  logs,
+  loading,
+  onRefresh,
+  onClear,
+}: {
+  logs: MultiplayerLogEntry[];
+  loading: boolean;
+  onRefresh: () => void;
+  onClear: () => void;
+}) {
+  const [level, setLevel] = useState("");
+  const [desc, setDesc] = useState(true);
+  const filtered = logs.filter((entry) => !level || entry.level === level);
+  const ordered = desc ? [...filtered].reverse() : filtered;
+  return (
+    <Card className="mp-logs">
+      <div className="card-head">
+        <div>
+          <h3>{t("房间历史与日志")}</h3>
+          <p className="muted small">
+            {t("房间生命周期、FRPC、网络检测和可确认的玩家事件。")}
+          </p>
+        </div>
+        <div className="toolbar__actions">
+          <select value={level} onChange={(event) => setLevel(event.target.value)}>
+            <option value="">{t("全部级别")}</option>
+            <option value="info">info</option>
+            <option value="warning">warning</option>
+            <option value="error">error</option>
+          </select>
+          <Button size="sm" variant="ghost" loading={loading} onClick={onRefresh}>
+            {t("刷新")}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              if (window.confirm(t("确定清理房间历史与日志？该操作不可撤销。"))) onClear();
+            }}
+          >
+            {t("清理")}
+          </Button>
+        </div>
+      </div>
+      <div className="mp-log-toolbar">
+        <Button size="sm" variant="ghost" onClick={() => setDesc((value) => !value)}>
+          {desc ? t("最新在上") : t("最早在上")}
+        </Button>
+        <span className="muted small">{t("{0} 条", [ordered.length])}</span>
+      </div>
+      {ordered.length === 0 ? (
+        <p className="muted">{t("还没有记录。")}</p>
+      ) : (
+        <div className="mp-log-table">
+          <div className="mp-log-row mp-log-row--head">
+            <span>{t("时间")}</span>
+            <span>{t("来源")}</span>
+            <span>{t("级别")}</span>
+            <span>{t("事件")}</span>
+            <span>{t("内容")}</span>
+          </div>
+          {ordered.map((entry, index) => (
+            <div className="mp-log-row" key={`${entry.timestamp}-${index}`}>
+              <span className="mono">{new Date(entry.timestamp).toLocaleString()}</span>
+              <span>{entry.source}</span>
+              <span>
+                <Badge
+                  tone={
+                    entry.level === "error"
+                      ? "danger"
+                      : entry.level === "warning"
+                        ? "warning"
+                        : "neutral"
+                  }
+                >
+                  {entry.level}
+                </Badge>
+              </span>
+              <span className="mono">{entry.eventType}</span>
+              <span>{entry.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function authLabel(value: string) {
+  if (value === "enabled") return t("已启用");
+  if (value === "disabled") return t("未启用");
+  if (value === "unknown") return t("未知");
+  return t("无法检测");
+}
+
+function authTone(value: string): "success" | "warning" | "neutral" {
+  if (value === "enabled") return "success";
+  if (value === "disabled") return "warning";
+  return "neutral";
+}
+
+function errorStage(stage: string) {
+  switch (stage) {
+    case "address":
+      return t("地址格式");
+    case "dns":
+      return t("DNS 解析");
+    case "connect":
+      return t("TCP 连接");
+    case "handshake":
+      return t("协议握手");
+    case "protocol":
+      return t("协议数据");
+    case "timeout":
+      return t("超时");
+    case "closed":
+      return t("连接关闭");
+    case "response":
+      return t("状态响应");
+    default:
+      return stage;
+  }
+}
+
+function GuestPanel({ pushToast }: { pushToast: (text: string, tone?: "info" | "success" | "warning" | "error", detail?: string) => void }) {
+  const [address, setAddress] = useState("");
+  const [ping, setPing] = useState<MultiplayerServerStatus | null>(null);
+  const [pinging, setPinging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [monitor, setMonitor] = useState<MultiplayerGuestMonitor | null>(null);
+  const [busy, setBusy] = useState(false);
+  const runningRef = useRef(false);
+
+  useEffect(() => {
+    let disposed = false;
+    api
+      .multiplayerGuestMonitorStatus()
+      .then((value) => {
+        if (!disposed) {
+          setMonitor(value);
+          runningRef.current = value.running;
+          if (value.target) setAddress(value.target);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      if (runningRef.current) void api.multiplayerGuestMonitorStop().catch(() => {});
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!monitor?.running) return;
+    let disposed = false;
+    const timer = window.setInterval(() => {
+      void api
+        .multiplayerGuestMonitorStatus()
+        .then((value) => {
+          if (!disposed) setMonitor(value);
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [monitor?.running]);
+
+  async function test() {
+    if (!address.trim()) {
+      setError(t("请输入服务器地址"));
+      return;
+    }
+    setPinging(true);
+    setError(null);
+    try {
+      const result = await api.multiplayerGuestPing(address.trim());
+      setPing(result);
+      if (!result.ok) {
+        setError(result.error?.message ?? t("连接检测失败"));
+      } else {
+        pushToast(t("连接检测通过"), "success", result.address);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPinging(false);
+    }
+  }
+
+  async function startMonitor() {
+    if (!ping?.ok) return;
+    setBusy(true);
+    try {
+      const value = await api.multiplayerGuestMonitorStart(address.trim(), 12);
+      setMonitor(value);
+      runningRef.current = true;
+      pushToast(t("网络监测已开始"), "success");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stopMonitor() {
+    setBusy(true);
+    try {
+      const value = await api.multiplayerGuestMonitorStop();
+      setMonitor(value);
+      runningRef.current = false;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const sample = monitor?.sample;
+  return (
+    <div className="mp-guest">
+      <Card>
+        <div className="card-head">
+          <div>
+            <h3>{t("连接诊断")}</h3>
+            <p className="muted small">
+              {t("SRL 只检测服务器状态，不会替你打开或加入 Minecraft。")}
+            </p>
+          </div>
+          <Badge tone="info">{t("游客模式")}</Badge>
+        </div>
+        <div className="mp-guest__address">
+          <input
+            className="mono"
+            value={address}
+            onChange={(event) => setAddress(event.target.value)}
+            placeholder="example.com:25565"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void test();
+            }}
+          />
+          <Button variant="primary" icon="search" loading={pinging} onClick={() => void test()}>
+            {t("检测连接")}
+          </Button>
+        </div>
+        <p className="muted small">
+          {t("支持域名、IPv4、IPv6、显式端口；未写端口时使用 25565。")}
+        </p>
+        {error ? <p className="form-error">{error}</p> : null}
+      </Card>
+
+      {ping ? (
+        <Card className="mp-guest__result">
+          <div className="card-head">
+            <div>
+              <h3>{t("检测结果")}</h3>
+              <p className="muted small">{ping.address}</p>
+            </div>
+            <Badge tone={ping.ok ? "success" : "danger"}>
+              {ping.ok ? t("检测通过") : t("检测失败")}
+            </Badge>
+          </div>
+          {ping.error ? (
+            <div className="notice notice--danger">
+              <Icon name="alert" size={16} />
+              <div>
+                <strong>{errorStage(ping.error.stage)}</strong>
+                <p>{ping.error.message}</p>
+                {ping.error.retryable ? <span className="muted small">{t("该错误可能可以重试。")}</span> : null}
+              </div>
+            </div>
+          ) : null}
+          <dl className="mp-guest__facts">
+            <div>
+              <dt>{t("DNS 解析")}</dt>
+              <dd className="mono">
+                {ping.resolvedIps.length > 0 ? ping.resolvedIps.join(", ") : t("未解析")}
+                {ping.dnsMs != null ? ` · ${ping.dnsMs} ms` : ""}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("TCP 连接")}</dt>
+              <dd>{ping.connectMs != null ? `${t("成功")} · ${ping.connectMs} ms` : t("失败")}</dd>
+            </div>
+            <div>
+              <dt>{t("状态延迟")}</dt>
+              <dd>{ping.latencyMs != null ? `${ping.latencyMs} ms` : "—"}</dd>
+            </div>
+            <div>
+              <dt>{t("服务端版本")}</dt>
+              <dd>{ping.versionName ?? t("未知")}</dd>
+            </div>
+            <div>
+              <dt>{t("协议版本")}</dt>
+              <dd className="mono">{ping.protocol ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>{t("在线人数")}</dt>
+              <dd>
+                {ping.onlinePlayers != null && ping.maxPlayers != null
+                  ? `${ping.onlinePlayers} / ${ping.maxPlayers}`
+                  : "—"}
+              </dd>
+            </div>
+            <div className="mp-guest__motd">
+              <dt>MOTD</dt>
+              <dd>{ping.motd ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>{t("服务器图标")}</dt>
+              <dd>{ping.faviconPresent ? t("已提供") : t("未提供")}</dd>
+            </div>
+          </dl>
+          {ping.samplePlayers.length > 0 ? (
+            <p className="muted small">
+              {t("公开玩家样本：")}
+              {ping.samplePlayers.join("、")}
+            </p>
+          ) : null}
+          <div className="mp-guest__auth">
+            <div>
+              <span>{t("正版验证")}</span>
+              <Badge tone={authTone(ping.onlineMode)}>{authLabel(ping.onlineMode)}</Badge>
+              <p className="muted small">{ping.onlineModeReason}</p>
+            </div>
+            <div>
+              <span>{t("正版隔离")}</span>
+              <Badge tone={authTone(ping.authIsolation)}>{authLabel(ping.authIsolation)}</Badge>
+              <p className="muted small">{ping.authIsolationReason}</p>
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
+      <Card>
+        <div className="card-head">
+          <div>
+            <h3>{t("网络监测")}</h3>
+            <p className="muted small">
+              {t("每 12 秒向目标服务器执行一次真实状态查询；不会监测你的游戏客户端是否已进入世界。")}
+            </p>
+          </div>
+          <Badge tone={monitor?.running ? "success" : "neutral"}>
+            {monitor?.running ? t("监测中") : t("未开启")}
+          </Badge>
+        </div>
+        <div className="toolbar__actions">
+          <Button
+            variant="primary"
+            icon="activity"
+            loading={busy}
+            disabled={!ping?.ok || monitor?.running}
+            onClick={() => void startMonitor()}
+          >
+            {t("开始监测")}
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={!monitor?.running}
+            loading={busy}
+            onClick={() => void stopMonitor()}
+          >
+            {t("停止监测")}
+          </Button>
+        </div>
+        <div className="mp-guest__monitor">
+          <div>
+            <span>{t("游戏内加入状态")}</span>
+            <Badge tone="neutral">{t("无法确认")}</Badge>
+          </div>
+          <div>
+            <span>{t("网络监测状态")}</span>
+            <Badge tone={sample?.ok ? "success" : sample ? "danger" : "neutral"}>
+              {sample ? (sample.ok ? t("正常") : t("异常")) : t("尚未检测")}
+            </Badge>
+          </div>
+          <div>
+            <span>{t("目标地址")}</span>
+            <strong className="mono">{(monitor?.target ?? address) || "—"}</strong>
+          </div>
+          <div>
+            <span>{t("采样次数")}</span>
+            <strong>{monitor?.samples ?? 0}</strong>
+          </div>
+          <div>
+            <span>{t("当前延迟")}</span>
+            <strong>{sample?.latencyMs != null ? `${sample.latencyMs} ms` : "—"}</strong>
+          </div>
+          <div>
+            <span>{t("连续失败")}</span>
+            <strong>{sample?.consecutiveFailures ?? 0}</strong>
+          </div>
+          <div>
+            <span>{t("最近成功")}</span>
+            <strong>
+              {sample?.lastOkAt ? new Date(sample.lastOkAt).toLocaleTimeString() : t("尚未成功")}
+            </strong>
+          </div>
+          <div>
+            <span>{t("最近检查")}</span>
+            <strong>
+              {sample?.checkedAt ? new Date(sample.checkedAt).toLocaleTimeString() : "—"}
+            </strong>
+          </div>
+        </div>
+        {sample?.errorMessage ? (
+          <p className="form-error">
+            {errorStage(sample.errorStage ?? "")}：{sample.errorMessage}
+          </p>
+        ) : null}
+      </Card>
+
+      <Card className="mp-guest__steps">
+        <h3>{t("接下来需要你在 Minecraft 内手动加入")}</h3>
+        <ol>
+          <li>{t("打开 Minecraft，进入「多人游戏」。")}</li>
+          <li>{t("选择「直接连接」或「添加服务器」。")}</li>
+          <li>{t("手动填写上方房主提供的公网地址。")}</li>
+          <li>{t("由 Minecraft 客户端完成真正的登录与世界加载。")}</li>
+        </ol>
+        <p className="muted small">
+          {t("SRL 不会点击加入按钮，也不会伪造“已进入世界”的状态。")}
+        </p>
+      </Card>
+    </div>
   );
 }

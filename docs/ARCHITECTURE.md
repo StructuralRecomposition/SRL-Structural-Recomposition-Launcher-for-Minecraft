@@ -79,7 +79,8 @@ install_version(version_id)
 ```
 launch_instance(id)
   ├─ 读取实例与已安装元数据
-  ├─ Java 选择：实例指定 → 设置默认 → 自动选最接近的兼容版本
+  ├─ Java 选择：实例指定（必须兼容）→ 精确 major →
+  │   用户默认（兼容时）→ 安全范围内最接近版本
   ├─ 兼容性检查（required major）
   ├─ 账号检查（当前仅离线档案）
   ├─ 文件预检：客户端 JAR + 全部非 native 库
@@ -112,6 +113,7 @@ launch_instance(id)
 | `list/create/update/delete/duplicate_instance` | DTO | 实例 |
 | `launch_instance` / `stop_instance` | id | pid + 日志路径 / — |
 | `list_java(refresh)` / `add_java_path` / `check_java_for_version` | — | Java 信息 |
+| `java_launch_check` / `install_java_for_version` | instanceId / major | 启动前 Java 检查 / 自动补全 |
 | `list_accounts` / `add_offline_account` / `remove_account` / `set_active_account` / `microsoft_login` | — | 账号 |
 | `get_diagnostics` / `list_logs` / `read_log` / `export_diagnostics` | — | 诊断 |
 
@@ -162,3 +164,80 @@ launch_instance(id)
 4. 版本元数据只支持单一官方源，无镜像抽象（刻意保守）。
 5. 任务快照每 3 秒与关键操作时写入，崩溃可能丢失最近约 3 秒的进度。
 6. 虚拟资源（legacy）只做了映射，缺少端到端真实版本验证。
+
+## 9. 下一阶段模块（0.3 开发线）
+
+| 模块 | 位置 | 职责 |
+|---|---|---|
+| `dependency::model` | `crates/sr-core/src/dependency/model.rs` | 统一依赖关系、节点、边、分析结果 |
+| `dependency::resolve` | `dependency/resolve.rs` | Modrinth / CurseForge 适配器、递归解析、深度/请求上限 |
+| `dependency::installed` | `dependency/installed.rs` | 只读 JAR 元数据：Fabric/Quilt/Forge/NeoForge、真实 mod id、CurseForge 指纹 |
+| `dependency::apply` | `dependency/apply.rs` | 服务端保存分析、校验选择、复用 `mod_install::apply_files` 安装 |
+| `multiplayer::server_status` | `multiplayer/server_status.rs` | Minecraft Java Server List Ping、VarInt、MOTD、RTT、错误分类 |
+| `multiplayer::guest` | `multiplayer/guest.rs` | 游客网络监测任务、取消、采样状态 |
+| `multiplayer::journal` | `multiplayer/journal.rs` | 房间历史/日志 JSONL、脱敏、大小上限 |
+| `minecraft::parse_player_events` | `multiplayer/minecraft.rs` | 从真实游戏日志提取玩家加入/离开与观测地址 |
+
+### 9.1 依赖分析流程
+
+```
+analyze_mod_dependencies(request)
+  ├─ 可选：读取实例，派生真实 Minecraft 版本与加载器
+  ├─ 扫描 mods/：读取 JAR 内 fabric.mod.json / quilt.mod.json /
+  │   META-INF/mods.toml / META-INF/neoforge.mods.toml
+  ├─ CurseForge：Murmur2 指纹批量匹配 projectID/fileID
+  ├─ ModrinthAdapter / CurseForgeAdapter
+  ├─ 递归解析 required / optional / incompatible / embedded /
+  │   tool / include / unknown；深度上限 16，请求上限 120，节点上限 200
+  ├─ 生成 nodes + edges + warnings + blockers + default_plan
+  └─ 保存到 cache/dependencies/<analysis-id>.json
+```
+
+安装时渲染进程只提交 `analysisId + nodeIds`；URL、大小、SHA-1 从服务端分析记录读取，并再次校验实例、加载器、Minecraft 版本、必需依赖与不兼容关系。下载复用 `mod_install::apply_files`：临时目录 → SHA-1 → 备份同名文件 → 原子 rename → 失败回滚。
+
+### 9.2 联机状态采集流程
+
+```
+multiplayer_status()
+  ├─ 52FRP 账户
+  ├─ 房间持久化记录
+  ├─ 本地进程存活 + 本地端口 TCP/UDP 探测
+  ├─ 52FRP GET /tunnels/{id}（20 秒缓存）
+  ├─ FRPC 子进程状态
+  └─ 状态变化写入 room-log.jsonl
+
+multiplayer_members()
+  ├─ 读取该实例最新 SRL 游戏日志尾部（上限 4 MB）
+  ├─ 解析 joined / left / logged in with entity id
+  ├─ 只接受房间创建后的事件
+  ├─ 标注观测 IP 类型（loopback/lan/public/unknown）
+  └─ 新事件写入 room-log.jsonl，不记录 IP
+
+multiplayer_guest_ping/address
+  └─ Rust Server List Ping；前端不直接联网
+
+multiplayer_guest_monitor_start/stop/status
+  └─ 单个 Tokio 任务 + CancellationToken；12 秒采样
+```
+
+### 9.3 新增 IPC 命令
+
+| 命令 | 输入 | 输出 |
+|---|---|---|
+| `java_launch_check` | instanceId | 需要的 Java、已选环境、是否可安装、是否需要重置实例 Java |
+| `install_java_for_version` | major, setAsDefault=false | 安装后的 JavaInfo；不修改全局默认 |
+| `analyze_mod_dependencies` | DependencyRequest | DependencyAnalysis |
+| `install_mod_dependencies` | instanceId, analysisId + nodeIds | 资源任务 ID |
+| `multiplayer_members` | — | MembersView（部分可用标记、IP 类型、IP 提示） |
+| `multiplayer_logs` / `multiplayer_clear_logs` | limit, level | 房间日志 / 清理数量 |
+| `multiplayer_guest_ping` | address | ServerStatusReport |
+| `multiplayer_guest_monitor_start/stop/status` | address, interval | GuestMonitorStatus |
+
+### 9.4 存储补充
+
+| 文件 | 内容 | 写入方式 |
+|---|---|---|
+| `cache/dependencies/<id>.json` | 依赖分析快照（含下载 URL/哈希） | 原子写；最多保留 200 份 |
+| `multiplayer/room-log.jsonl` | 房间历史与统一日志 | 追加 + 2 MB 上限裁剪 |
+
+仍不引入 SQLite、Redis、独立服务端或前端网络请求。

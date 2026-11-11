@@ -24,7 +24,7 @@ pub enum JavaCompatibility {
     Incompatible,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JavaCheck {
     pub compatibility: JavaCompatibility,
@@ -466,6 +466,51 @@ pub fn select_for_launch<'a>(
 
 /// Best-effort selection for diagnostics/UI. Falls back to the closest or
 /// newest installed runtime so the user can see what is wrong.
+/// Why automatic selection could not produce a safe runtime.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JavaSelectionError {
+    /// The instance pins a Java path, but that runtime is missing or invalid.
+    PinnedInvalid(String),
+    /// The pinned runtime exists but is outside the safe major range.
+    PinnedIncompatible(JavaCheck),
+    /// No installed runtime satisfies the target version.
+    Missing {
+        required: u32,
+        max_supported: u32,
+        installed: Vec<(u32, String)>,
+    },
+}
+
+/// Resolve the runtime used by `launch_instance`.
+///
+/// An instance-level path is an explicit user decision: it is never replaced
+/// silently. A global default is only a preference and loses to the exact
+/// required major when that major is installed.
+pub fn choose_for_launch(
+    javas: &[JavaInfo],
+    required: u32,
+    pinned: Option<&JavaInfo>,
+    preferred: Option<&Path>,
+) -> std::result::Result<JavaInfo, JavaSelectionError> {
+    if let Some(info) = pinned {
+        let check = check_compatibility(required, info.major);
+        if check.compatibility == JavaCompatibility::Incompatible {
+            return Err(JavaSelectionError::PinnedIncompatible(check));
+        }
+        return Ok(info.clone());
+    }
+    select_for_launch(javas, required, preferred)
+        .cloned()
+        .ok_or_else(|| JavaSelectionError::Missing {
+            required,
+            max_supported: max_supported_major(required),
+            installed: javas
+                .iter()
+                .map(|j| (j.major, j.version_string.clone()))
+                .collect(),
+        })
+}
+
 pub fn select<'a>(
     javas: &'a [JavaInfo],
     required: u32,
@@ -555,16 +600,20 @@ mod tests {
         assert!(c.message.contains("过新"));
     }
 
-    #[test]
-    fn selects_closest_compatible_java() {
-        let mk = |p: &str, major: u32| JavaInfo {
+    fn java(p: &str, major: u32) -> JavaInfo {
+        JavaInfo {
             path: PathBuf::from(p),
             version_string: major.to_string(),
             major,
             vendor: None,
             arch: None,
             source: "test".into(),
-        };
+        }
+    }
+
+    #[test]
+    fn selects_closest_compatible_java() {
+        let mk = java;
         let list = vec![mk("/j8", 8), mk("/j17", 17), mk("/j21", 21)];
         assert_eq!(select(&list, 17, None).unwrap().major, 17);
         assert_eq!(select(&list, 8, None).unwrap().major, 8);
@@ -592,5 +641,49 @@ mod tests {
         // No exact 17, but Java 21 is inside the safe range for a 17 target.
         let list = vec![mk("/j8", 8), mk("/j21", 21)];
         assert_eq!(select_for_launch(&list, 17, None).unwrap().major, 21);
+    }
+
+    #[test]
+    fn selects_all_supported_lts_majors() {
+        let list = vec![
+            java("/j8", 8),
+            java("/j17", 17),
+            java("/j21", 21),
+            java("/j25", 25),
+        ];
+        assert_eq!(select_for_launch(&list, 8, None).unwrap().major, 8);
+        assert_eq!(select_for_launch(&list, 17, None).unwrap().major, 17);
+        assert_eq!(select_for_launch(&list, 21, None).unwrap().major, 21);
+        assert_eq!(select_for_launch(&list, 25, None).unwrap().major, 25);
+        // A 21-target project must not silently pick Java 25 unless the caller
+        // explicitly asks for a 25 target; Java 25 is outside the safe range.
+        let only_new = vec![java("/j25", 25)];
+        assert!(select_for_launch(&only_new, 21, None).is_none());
+    }
+
+    #[test]
+    fn instance_pin_wins_only_when_compatible() {
+        let list = vec![java("/j17", 17), java("/j21", 21), java("/j25", 25)];
+        let pinned = java("/j21", 21);
+        assert_eq!(
+            choose_for_launch(&list, 21, Some(&pinned), Some(Path::new("/j17")))
+                .unwrap()
+                .major,
+            21
+        );
+        let too_new = java("/j25", 25);
+        assert!(matches!(
+            choose_for_launch(&list, 21, Some(&too_new), None),
+            Err(JavaSelectionError::PinnedIncompatible(_))
+        ));
+        assert!(matches!(
+            choose_for_launch(&list, 17, None, Some(Path::new("/j25"))),
+            Ok(info) if info.major == 17
+        ));
+        let none: Vec<JavaInfo> = Vec::new();
+        assert!(matches!(
+            choose_for_launch(&none, 17, None, None),
+            Err(JavaSelectionError::Missing { required: 17, .. })
+        ));
     }
 }

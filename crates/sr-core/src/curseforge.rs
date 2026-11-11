@@ -200,13 +200,48 @@ fn is_fingerprint_whitespace(byte: u8) -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct CurseForgeFile {
     pub id: u64,
+    pub mod_id: u64,
     pub file_name: String,
     pub download_url: String,
     pub sha1: Option<String>,
+    pub sha512: Option<String>,
     pub size: u64,
     pub game_versions: Vec<String>,
     pub file_date: Option<String>,
     pub release_type: u32,
+    pub dependencies: Vec<CurseForgeDependency>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurseForgeDependency {
+    pub mod_id: u64,
+    pub relation_type: u32,
+}
+
+/// CurseForge relationType values as documented by the official REST API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CurseForgeRelation {
+    EmbeddedLibrary,
+    OptionalDependency,
+    RequiredDependency,
+    Tool,
+    Incompatible,
+    Include,
+    Unknown,
+}
+
+pub fn curseforge_relation(relation_type: u32) -> CurseForgeRelation {
+    match relation_type {
+        1 => CurseForgeRelation::EmbeddedLibrary,
+        2 => CurseForgeRelation::OptionalDependency,
+        3 => CurseForgeRelation::RequiredDependency,
+        4 => CurseForgeRelation::Tool,
+        5 => CurseForgeRelation::Incompatible,
+        6 => CurseForgeRelation::Include,
+        _ => CurseForgeRelation::Unknown,
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -590,15 +625,30 @@ async fn map_file(
         .iter()
         .find(|h| h.algo == 1)
         .map(|h| h.value.clone());
+    let sha512 = raw
+        .hashes
+        .iter()
+        .find(|h| h.algo == 2)
+        .map(|h| h.value.clone());
     Ok(CurseForgeFile {
         id: raw.id,
+        mod_id,
         file_name: raw.file_name,
         download_url: url,
         sha1,
+        sha512,
         size: raw.file_length,
         game_versions: raw.game_versions,
         file_date: raw.file_date,
         release_type: raw.release_type,
+        dependencies: raw
+            .dependencies
+            .into_iter()
+            .map(|dep| CurseForgeDependency {
+                mod_id: dep.mod_id,
+                relation_type: dep.relation_type,
+            })
+            .collect(),
     })
 }
 
@@ -731,6 +781,17 @@ struct CfFileData {
     file_date: Option<String>,
     #[serde(default)]
     release_type: u32,
+    #[serde(default)]
+    dependencies: Vec<CfFileDependencyData>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct CfFileDependencyData {
+    #[serde(default)]
+    mod_id: u64,
+    #[serde(default)]
+    relation_type: u32,
 }
 
 #[derive(Debug, Deserialize)]

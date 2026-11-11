@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type Instance, type VersionDetail } from "../lib/api";
+import { api, ApiError, type Instance, type VersionDetail } from "../lib/api";
 import { formatBytes, formatDate, relativeTime } from "../lib/format";
 import { TASK_LABELS, isActive, taskTone } from "../lib/task";
 import { useApp } from "../state/AppContext";
@@ -7,6 +7,7 @@ import { Badge, Button, Card, EmptyState, ProgressBar } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { formatSpeed } from "../lib/format";
 import { t as tr } from "../lib/i18n";
+import { JavaInstallPrompt } from "../components/JavaInstallPrompt";
 
 
 export function HomePage() {
@@ -29,6 +30,7 @@ export function HomePage() {
   );
   const [detail, setDetail] = useState<VersionDetail | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [javaPrompt, setJavaPrompt] = useState<Instance | null>(null);
   const [logOpen, setLogOpen] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
 
@@ -95,7 +97,14 @@ export function HomePage() {
         ),
       }));
     } catch (e) {
-      pushToast(tr("启动失败"), "error", e instanceof Error ? e.message : String(e));
+      if (
+        e instanceof ApiError &&
+        (e.code === "JAVA_INVALID" || e.code === "JAVA_INCOMPATIBLE")
+      ) {
+        setJavaPrompt(instance);
+      } else {
+        pushToast(tr("启动失败"), "error", e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setLaunching(false);
     }
@@ -382,6 +391,17 @@ export function HomePage() {
           ) : null}
         </Card>
       </div>
+      {javaPrompt ? (
+        <JavaInstallPrompt
+          instanceId={javaPrompt.id}
+          instanceName={javaPrompt.name}
+          onClose={() => setJavaPrompt(null)}
+          onInstalled={() => {
+            setJavaPrompt(null);
+            void launch();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

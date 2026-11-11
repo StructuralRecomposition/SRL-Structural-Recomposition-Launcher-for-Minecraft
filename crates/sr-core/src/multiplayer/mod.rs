@@ -5,15 +5,21 @@
 
 pub mod frp52;
 pub mod frpc;
+pub mod guest;
+pub mod journal;
 pub mod manager;
 pub mod minecraft;
 pub mod nodes;
 pub mod provider;
+pub mod server_status;
 pub mod token;
 pub mod types;
 
+pub use guest::{GuestMonitor, GuestMonitorStatus, GuestSample};
 pub use manager::MultiplayerManager;
+pub use server_status::{ping_server, OnlineMode, ServerStatusReport};
 pub use types::{
-    AccountView, CreateRoomRequest, Edition, FrpcView, LocalServiceView, MultiplayerStatus,
-    NodeView, OrphanTunnel, ProgressEvent, ProgressSink, RoomView, StopRoomResult,
+    AccountView, CreateRoomRequest, Edition, FrpcView, LocalServiceView, MembersView,
+    MultiplayerStatus, NodeView, OrphanTunnel, PlayerMember, ProgressEvent, ProgressSink,
+    RoomCapabilities, RoomLogEntry, RoomView, StopRoomResult, TunnelStateView,
 };

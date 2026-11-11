@@ -379,6 +379,14 @@ impl Ticker {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct InstallFile {
+    pub file_name: String,
+    pub url: String,
+    pub size: u64,
+    pub sha1: String,
+}
+
 pub async fn apply_with_http(
     http: &reqwest::Client,
     paths: &AppPaths,
@@ -387,15 +395,28 @@ pub async fn apply_with_http(
     task: &TaskHandle,
     cancel: &CancellationToken,
 ) -> Result<ModInstallResult> {
-    // Kept as a thin wrapper so the downloader receives the shared client.
-    apply_inner(http, paths, instance, plan, task, cancel).await
+    let files = plan
+        .entries
+        .iter()
+        .map(|entry| InstallFile {
+            file_name: entry.file_name.clone(),
+            url: entry.url.clone(),
+            size: entry.size,
+            sha1: entry.sha1.clone(),
+        })
+        .collect::<Vec<_>>();
+    apply_files(http, paths, instance, &files, &plan.warnings, task, cancel).await
 }
 
-async fn apply_inner(
+/// Shared staged download + backup + atomic-replace implementation used by the
+/// resource page and the deterministic dependency installer. Every file needs
+/// a SHA-1; callers must build this list from verified API metadata only.
+pub async fn apply_files(
     http: &reqwest::Client,
     paths: &AppPaths,
     instance: &Instance,
-    plan: &ModInstallPlan,
+    files: &[InstallFile],
+    warnings: &[String],
     task: &TaskHandle,
     cancel: &CancellationToken,
 ) -> Result<ModInstallResult> {
@@ -413,8 +434,8 @@ async fn apply_inner(
     let canonical_mods = tokio::fs::canonicalize(&mods_dir)
         .await
         .unwrap_or_else(|_| mods_dir.clone());
-    let total: u64 = plan.entries.iter().map(|e| e.size).sum();
-    task.set_total_files(plan.entries.len() as u32).await;
+    let total: u64 = files.iter().map(|file| file.size).sum();
+    task.set_total_files(files.len() as u32).await;
     task.set_total_bytes(total).await;
     task.set_status(TaskStatus::Running).await;
 
@@ -428,35 +449,36 @@ async fn apply_inner(
     };
     util::write_json(&backup_dir.join("manifest.json"), &manifest).await?;
 
-    let mut staged: Vec<(ModPlanEntry, PathBuf)> = Vec::new();
+    let mut staged: Vec<(InstallFile, PathBuf)> = Vec::new();
     let result = async {
         let ticker = Ticker::start(task);
         let mut downloaded = 0u64;
-        for entry in &plan.entries {
+        for file in files {
             if cancel.is_cancelled() {
                 return Err(AppError::cancelled());
             }
-            validate_file_name(&entry.file_name)?;
-            let dest = staging.join(&entry.file_name);
-            task.set_current_file(&entry.file_name).await;
+            validate_file_name(&file.file_name)?;
+            download::ensure_trusted_url(&file.url, false)?;
+            let dest = staging.join(&file.file_name);
+            task.set_current_file(&file.file_name).await;
             let spec = DownloadSpec {
-                url: &entry.url,
+                url: &file.url,
                 dest: &dest,
-                sha1: Some(&entry.sha1),
-                size: Some(entry.size),
+                sha1: Some(&file.sha1),
+                size: Some(file.size),
             };
             let base = downloaded;
             download::download_file(http, &spec, cancel, false, |done| {
                 ticker.set(base.saturating_add(done))
             })
             .await?;
-            downloaded = downloaded.saturating_add(entry.size);
-            staged.push((entry.clone(), dest));
+            downloaded = downloaded.saturating_add(file.size);
+            staged.push((file.clone(), dest));
         }
         ticker.stop();
 
-        for (entry, staged_path) in &staged {
-            let target = mods_dir.join(&entry.file_name);
+        for (file, staged_path) in &staged {
+            let target = mods_dir.join(&file.file_name);
             if tokio::fs::try_exists(&target).await.unwrap_or(false) {
                 let canonical = tokio::fs::canonicalize(&target)
                     .await
@@ -464,17 +486,17 @@ async fn apply_inner(
                 if !canonical.starts_with(&canonical_mods) {
                     return Err(AppError::path_unsafe("拒绝覆盖 mods/ 之外的文件"));
                 }
-                let backup_name = format!("{}-{}", manifest.backups.len(), entry.file_name);
+                let backup_name = format!("{}-{}", manifest.backups.len(), file.file_name);
                 tokio::fs::copy(&target, backup_dir.join(&backup_name)).await?;
                 manifest.backups.push(BackupFile {
-                    file_name: entry.file_name.clone(),
+                    file_name: file.file_name.clone(),
                     backup_name,
                 });
             }
-            let tmp = mods_dir.join(format!(".{}.tmp-{}", entry.file_name, util::short_id()));
+            let tmp = mods_dir.join(format!(".{}.tmp-{}", file.file_name, util::short_id()));
             tokio::fs::copy(staged_path, &tmp).await?;
             tokio::fs::rename(&tmp, &target).await?;
-            manifest.installed.push(entry.file_name.clone());
+            manifest.installed.push(file.file_name.clone());
             util::write_json(&backup_dir.join("manifest.json"), &manifest).await?;
             task.file_finished().await;
         }
@@ -485,7 +507,11 @@ async fn apply_inner(
     if let Err(error) = result {
         let _ = rollback_with_manifest(instance, &manifest, &backup_dir).await;
         let _ = tokio::fs::remove_dir_all(&staging).await;
-        task.fail(error.clone()).await;
+        if error.code == ErrorCode::Cancelled {
+            task.cancelled().await;
+        } else {
+            task.fail(error.clone()).await;
+        }
         return Err(error);
     }
 
@@ -495,7 +521,7 @@ async fn apply_inner(
         token,
         backup_dir: backup_dir.display().to_string(),
         installed: manifest.installed.clone(),
-        warnings: plan.warnings.clone(),
+        warnings: warnings.to_vec(),
     })
 }
 
@@ -539,4 +565,70 @@ pub async fn rollback(paths: &AppPaths, instance: &Instance, token: &str) -> Res
     manifest.rolled_back = true;
     util::write_json(&manifest_path, &manifest).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod install_tests {
+    use super::*;
+
+    fn instance(root: &Path) -> Instance {
+        Instance {
+            id: "inst".into(),
+            name: "Test".into(),
+            version_id: "1.21.1".into(),
+            game_dir: root.join("game"),
+            java_path: None,
+            memory_mb: 2048,
+            jvm_args: Vec::new(),
+            game_args: Vec::new(),
+            created_at: util::now_rfc3339(),
+            last_launched_at: None,
+            account_id: None,
+            resolution_width: None,
+            resolution_height: None,
+            mod_loader: Some(crate::instance::ModLoaderInfo {
+                kind: "fabric".into(),
+                version: "0.16".into(),
+                installed: true,
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn rollback_restores_backup_and_removes_new_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let instance = instance(dir.path());
+        let mods = instance.game_dir.join("mods");
+        std::fs::create_dir_all(&mods).unwrap();
+        std::fs::write(mods.join("kept.jar"), b"keep").unwrap();
+        std::fs::write(mods.join("new.jar"), b"new").unwrap();
+        // A previous version of new.jar was backed up before replacement.
+        let backup_dir = dir.path().join("backup");
+        std::fs::create_dir_all(&backup_dir).unwrap();
+        std::fs::write(backup_dir.join("0-new.jar"), b"old").unwrap();
+        let manifest = Manifest {
+            token: "mod-test".into(),
+            instance_id: instance.id.clone(),
+            created_at: util::now_rfc3339(),
+            installed: vec!["new.jar".into()],
+            backups: vec![BackupFile {
+                file_name: "new.jar".into(),
+                backup_name: "0-new.jar".into(),
+            }],
+            rolled_back: false,
+        };
+        rollback_with_manifest(&instance, &manifest, &backup_dir)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(mods.join("new.jar")).unwrap(), b"old");
+        assert_eq!(std::fs::read(mods.join("kept.jar")).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn rejects_file_names_with_path_separators() {
+        assert!(validate_file_name("../evil.jar").is_err());
+        assert!(validate_file_name("a/b.jar").is_err());
+        assert!(validate_file_name("a.jar.disabled").is_err());
+        assert!(validate_file_name("ok-1.0.jar").is_ok());
+    }
 }

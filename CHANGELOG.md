@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.2.2 — 2026-11-12
+
+### Minecraft 联机管理中心
+
+- 联机页新增房主 / 游客分段模式，保留原 52FRP 账户、节点、创建、停止、重启与临时隧道清理流程。
+- 房主房间卡分开显示：Minecraft 本地服务端口、52FRP 云端隧道在线状态、FRPC 客户端状态、玩家日志确认状态；四者不再混为一个“在线”标签。
+- 通过 52FRP `GET /tunnels/{id}` 读取 `is_online`、`enabled`、`cur_conns`、`status`，并对 `cur_conns` 明确标注为 TCP 连接数，不推断玩家人数。
+- 新增游客成员列表：只解析 SRL 捕获的 Minecraft 日志中真实的 `joined the game` / `left the game` / `logged in with entity id` 事件，只接受房间创建后的事件。
+- 观测 IP 分为 loopback / LAN / public / unknown；`127.0.0.1` 显示为“本地代理连接”，不会冒充游客公网 IP；公网地址默认脱敏，可手动显示完整值。
+- 明确部分可用边界：玩家 UUID、真实公网 IP、游戏内 OP / 踢出 / 封禁 / 白名单没有可靠来源时显示未知，不提供空按钮。
+- 新增 `multiplayer/room-log.jsonl`：记录房间/FRPC/隧道/网络/玩家事件，含 timestamp、source、level、event_type、message；写入前脱敏，2 MB 上限裁剪，UI 支持筛选、时间排序与清理。
+- 游客模式新增 Rust Server List Ping：地址解析（域名/IPv4/IPv6/端口）、DNS、TCP、VarInt、状态 JSON、MOTD、版本、协议、在线人数、玩家样本、RTT 与分阶段错误。
+- 新增游客网络监测：12 秒采样（10–60 秒范围），可停止并取消后台任务；区分“网络监测状态”和“游戏内加入状态（无法确认）”。
+- 正版验证与正版隔离保持未知/无法检测：Server List Ping 不公开 `online-mode`，52FRP OpenAPI 没有正版隔离字段。
+
+### 模组依赖关系可视化
+
+- 新增 `crates/sr-core/src/dependency/`：统一依赖模型、Modrinth/CurseForge 适配器、递归解析、已安装检测与安装执行。
+- Modrinth 支持 `required` / `optional` / `incompatible` / `embedded`；CurseForge 支持 `relationType` 1–6，并保留原始平台字段。
+- 递归解析优先精确 `version_id`，否则按目标 Minecraft 版本和加载器筛选；稳定版优先；深度上限 16、请求上限 120、节点上限 200；循环引用截断。
+- 从 JAR 内 `fabric.mod.json`、`quilt.mod.json`、`META-INF/mods.toml`、`META-INF/neoforge.mods.toml` 读取真实 mod id；CurseForge 使用 Murmur2 指纹；不使用文件名或标题相似度。
+- 资源详情新增“依赖”入口：SVG 图形视图 + 列表视图、节点详情、已安装/待安装/不兼容状态、可选依赖勾选、阻止安装的问题、预计下载大小。
+- 分析保存到 `cache/dependencies/<id>.json`；安装时前端只提交 `analysisId + nodeIds`，后端重新校验实例、加载器、Minecraft 版本、必需依赖与不兼容关系。
+- 安装复用 `mod_install::apply_files`：SHA-1、临时文件、同名备份、原子替换、失败回滚、任务进度与取消。
+- 全程不调用 AI 模型推断依赖。
+
+### Java 自动运行环境
+
+- 新增 `java::choose_for_launch` 统一启动选择：实例固定 Java → 精确 major → 用户默认（兼容时）→ 安全范围内最接近版本。
+- 实例显式指定的 Java 不再被自动替换；不兼容时返回明确错误并提供改回自动选择的路径。
+- 新增 `java_launch_check`：动态返回 required major、兼容范围、当前选择、是否可安装、是否需要重置实例 Java。
+- 新增 `install_java_for_version`：缺失 Java 时下载安装 Temurin，安装后重新扫描；默认不修改全局默认 Java。
+- 首页/实例页在启动返回 `JAVA_INVALID` / `JAVA_INCOMPATIBLE` 时打开安装提示，安装成功后只继续启动一次，不重复启动。
+- Java 环境页手动安装仅在用户没有默认 Java 时设置默认；已有默认不会被新安装顶掉。
+
+### 文档与测试
+
+- 新增 `docs/DEPENDENCIES.md`、`docs/JAVA_RUNTIME.md`，更新 `docs/MULTIPLAYER.md`、`docs/ARCHITECTURE.md`、`research/FEATURE_MATRIX.md`。
+- 新增 Rust 测试：Server List Ping/VarInt/地址/MOTD/mock TCP/超时/拒绝、玩家日志事件、日志脱敏、依赖递归/循环/深度/缺失/不兼容、CurseForge 1–6 映射、JAR 元数据读取、Java 8/17/21/25 选择。
+- 新增前端测试：依赖图分层布局与空图。
+- 真实网络验证：Modrinth Iris → Sodium required（2 节点 / 2 文件 / 4,264,786 字节）；`mc.hypixel.net:25565` Server List Ping 返回协议 47、26854/200000、355 ms。
+
+
 ## 0.2.1 — 2026-11-09
 
 ### 界面与语言

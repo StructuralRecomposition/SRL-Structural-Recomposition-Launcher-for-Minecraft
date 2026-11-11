@@ -758,7 +758,10 @@ describe("SR Launcher UI", () => {
     expect(await screen.findByText("下载并安装 Java")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "下载并安装" }));
     await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("install_java_runtime", { major: 21 }),
+      expect(invokeMock).toHaveBeenCalledWith(
+        "install_java_runtime",
+        expect.objectContaining({ major: 21 }),
+      ),
     );
   });
 
