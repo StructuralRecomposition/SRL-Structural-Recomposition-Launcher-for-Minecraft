@@ -1,7 +1,6 @@
 use crate::error::{AppError, ErrorCode, Result};
 use crate::instance::Instance;
 use crate::paths::AppPaths;
-use chrono::{DateTime, Utc};
 use futures_util::future::join_all;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -159,7 +158,9 @@ impl MultiplayerManager {
         };
         let room = stored_room.map(|stored| {
             let tunnel_online = tunnel.as_ref().map(|value| value.online);
-            let state = if stored.retained {
+            let state = if !stored.lifecycle_state.is_empty() {
+                stored.lifecycle_state.as_str()
+            } else if stored.retained {
                 "retained"
             } else if stored.local_pid.is_some() && !local_alive {
                 "local_stopped"
@@ -301,11 +302,20 @@ impl MultiplayerManager {
                 game_control_available: false,
             };
         }
-        let since = DateTime::parse_from_rfc3339(&room.created_at)
+        let checkpoint_path = self
+            .paths
+            .multiplayer_dir()
+            .join(format!("player-state-{}.json", room.tunnel_id));
+        let mut checkpoint: minecraft::PlayerCheckpoint = crate::util::read_json(&checkpoint_path)
+            .await
             .ok()
-            .map(|value| value.with_timezone(&Utc));
-        let events =
-            minecraft::read_player_events(&self.paths.logs_dir(), &room.instance_id, since);
+            .flatten()
+            .unwrap_or_default();
+        let events = minecraft::read_player_events_incremental(
+            &self.paths.logs_dir(),
+            &room.instance_id,
+            &mut checkpoint,
+        );
         let Some(events) = events else {
             return MembersView {
                 available: false,
@@ -387,6 +397,30 @@ impl MultiplayerManager {
                 _ => {}
             }
         }
+        // Players whose join event is older than the current log window are
+        // restored from the persisted checkpoint instead of disappearing.
+        for (name, presence) in &checkpoint.players {
+            if presence.status != "online_inferred" || members.contains_key(name) {
+                continue;
+            }
+            members.insert(
+                name.clone(),
+                PlayerMember {
+                    name: name.clone(),
+                    uuid: None,
+                    role: super::types::RoomRole::Guest,
+                    minecraft_op: None,
+                    joined_at: presence.last_joined_at.clone(),
+                    left_at: None,
+                    status: "connected".into(),
+                    observed_ip: presence.observed_ip.clone(),
+                    ip_kind: presence.ip_kind.clone(),
+                    source: "minecraft-log-checkpoint".into(),
+                },
+            );
+        }
+        let _ = crate::util::write_json(&checkpoint_path, &checkpoint).await;
+
         MembersView {
             available: true,
             source: "minecraft-log".into(),
@@ -914,6 +948,7 @@ impl MultiplayerManager {
             latency_ms: selected.latency_ms,
             created_at: chrono::Utc::now().to_rfc3339(),
             retained: false,
+            lifecycle_state: "running".into(),
         })
     }
 
@@ -940,6 +975,7 @@ impl MultiplayerManager {
         if !delete_tunnel {
             let mut retained = room;
             retained.retained = true;
+            retained.lifecycle_state = "paused".into();
             save_room(&self.paths, &retained).await?;
             *self.room.write().await = Some(retained);
             let _ = journal::append(
@@ -1015,6 +1051,7 @@ impl MultiplayerManager {
             Err(error) => {
                 let mut retained = room;
                 retained.retained = true;
+                retained.lifecycle_state = "cleanup_required".into();
                 save_room(&self.paths, &retained).await?;
                 *self.room.write().await = Some(retained);
                 *self.last_error.write().await = Some(error.message.clone());
@@ -1091,6 +1128,7 @@ impl MultiplayerManager {
             let mut room = self.room.write().await;
             if let Some(room) = room.as_mut() {
                 room.retained = true;
+                room.lifecycle_state = "paused".into();
                 let _ = save_room(&self.paths, room).await;
             }
         }
@@ -1302,6 +1340,7 @@ mod tests {
             latency_ms: Some(30),
             created_at: "2026-11-07T00:00:00Z".into(),
             retained: false,
+            lifecycle_state: "running".into(),
         };
         save_room(&paths, &room).await.unwrap();
         let loaded = load_room(&paths).await.unwrap();

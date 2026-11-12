@@ -358,6 +358,77 @@ pub fn parse_player_events(text: &str, date: Option<NaiveDate>) -> Vec<PlayerEve
     events
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerPresence {
+    pub last_joined_at: Option<String>,
+    pub last_left_at: Option<String>,
+    /// online_inferred | offline_inferred | unknown
+    pub status: String,
+    pub last_observed_at: Option<String>,
+    pub observed_ip: Option<String>,
+    pub ip_kind: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerCheckpoint {
+    pub log_path: String,
+    pub offset: u64,
+    pub sequence: u64,
+    pub players: std::collections::BTreeMap<String, PlayerPresence>,
+}
+
+/// Incremental player-event reader backed by a persisted checkpoint. The first
+/// run after upgrade reads the last 4 MiB as recovery; subsequent runs read
+/// only appended bytes and can survive logs much larger than 4 MiB.
+pub fn read_player_events_incremental(
+    logs_dir: &Path,
+    instance_id: &str,
+    checkpoint: &mut PlayerCheckpoint,
+) -> Option<Vec<PlayerEvent>> {
+    let path = latest_instance_log(logs_dir, instance_id)?;
+    let path_text = path.to_string_lossy().into_owned();
+    if checkpoint.log_path != path_text {
+        checkpoint.log_path = path_text;
+        checkpoint.offset = 0;
+        checkpoint.sequence = 0;
+    }
+    let len = std::fs::metadata(&path).ok()?.len();
+    if len < checkpoint.offset {
+        checkpoint.offset = 0;
+        checkpoint.sequence = 0;
+    }
+    if checkpoint.offset == 0 && len > 4 * 1024 * 1024 {
+        checkpoint.offset = len - 4 * 1024 * 1024;
+    }
+    let mut file = std::fs::File::open(&path).ok()?;
+    file.seek(SeekFrom::Start(checkpoint.offset)).ok()?;
+    let mut text = String::new();
+    let mut limited = file.take(16 * 1024 * 1024);
+    limited.read_to_string(&mut text).ok()?;
+    let date = log_date(&path);
+    let mut events = parse_player_events(&text, date);
+    for (index, event) in events.iter_mut().enumerate() {
+        event.line = (checkpoint.sequence as usize) + index + 1;
+        let entry = checkpoint.players.entry(event.player.clone()).or_default();
+        entry.observed_ip = event.observed_ip.clone();
+        entry.ip_kind = event.ip_kind.clone();
+        entry.last_observed_at = event.at.clone();
+        if event.action == "join" {
+            entry.last_joined_at = event.at.clone();
+            entry.last_left_at = None;
+            entry.status = "online_inferred".into();
+        } else if event.action == "leave" {
+            entry.last_left_at = event.at.clone();
+            entry.status = "offline_inferred".into();
+        }
+    }
+    checkpoint.offset = checkpoint.offset.saturating_add(text.len() as u64);
+    checkpoint.sequence = checkpoint.sequence.saturating_add(events.len() as u64);
+    Some(events)
+}
+
 /// Read player events from the newest SRL-captured instance log. `None` means
 /// no log exists; an empty vector means the log was read but had no events.
 pub fn read_player_events(
@@ -569,6 +640,7 @@ pub fn udp_port_in_use(port: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn finds_dynamic_lan_port_from_real_log_line() {
@@ -618,6 +690,35 @@ mod tests {
         assert_eq!(events[1].observed_ip.as_deref(), Some("127.0.0.1"));
         assert_eq!(events[1].ip_kind, "loopback");
         assert_eq!(events[2].action, "leave");
+    }
+
+    #[test]
+    fn checkpoint_reads_only_appended_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let logs = dir.path().to_path_buf();
+        let instance_logs = logs.join("instances");
+        std::fs::create_dir_all(&instance_logs).unwrap();
+        let path = instance_logs.join("abc-20261112-230000.log");
+        std::fs::write(
+            &path,
+            "[23:59:50] [Server thread/INFO]: A joined the game\n",
+        )
+        .unwrap();
+        let mut checkpoint = PlayerCheckpoint::default();
+        let first = read_player_events_incremental(&logs, "abc", &mut checkpoint).unwrap();
+        assert_eq!(first.len(), 1);
+        assert!(checkpoint.offset > 0);
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(b"[00:00:10] [Server thread/INFO]: B joined the game\n")
+            .unwrap();
+        let second = read_player_events_incremental(&logs, "abc", &mut checkpoint).unwrap();
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].player, "B");
+        assert_eq!(checkpoint.players.len(), 2);
+        assert_eq!(checkpoint.players["A"].status, "online_inferred");
     }
 
     #[test]

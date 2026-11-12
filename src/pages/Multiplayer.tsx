@@ -53,7 +53,9 @@ function stateTone(room: MultiplayerRoom): "success" | "warning" | "neutral" {
     room.state === "local_stopped" ||
     room.state === "tunnel_offline" ||
     room.state === "local_unreachable" ||
-    room.state === "unconfirmed"
+    room.state === "unconfirmed" ||
+    room.state === "paused" ||
+    room.state === "cleanup_required"
   )
     return "warning";
   return "neutral";
@@ -77,6 +79,8 @@ function roomStateLabel(room: MultiplayerRoom) {
   if (room.state === "tunnel_offline") return t("隧道未在线");
   if (room.state === "local_unreachable") return t("本地服务异常");
   if (room.state === "unconfirmed") return t("状态未确认");
+  if (room.state === "paused") return t("已暂停");
+  if (room.state === "cleanup_required") return t("待清理");
   return t("FRPC 离线");
 }
 
@@ -1207,6 +1211,7 @@ function HostMembersCard({
                         : member.status === "left"
                           ? t("已离开")
                           : t("未知")}
+                      {member.source.startsWith("minecraft-log") ? ` · ${t("日志推断")}` : ""}
                       {member.joinedAt ? ` · ${t("加入")} ${new Date(member.joinedAt).toLocaleTimeString()}` : ""}
                       {member.leftAt ? ` · ${t("离开")} ${new Date(member.leftAt).toLocaleTimeString()}` : ""}
                     </span>

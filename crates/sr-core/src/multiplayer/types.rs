@@ -279,4 +279,7 @@ pub struct StoredRoom {
     pub created_at: String,
     #[serde(default)]
     pub retained: bool,
+    /// running | paused | reconnecting | cleanup_required | unknown
+    #[serde(default)]
+    pub lifecycle_state: String,
 }
