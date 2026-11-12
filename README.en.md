@@ -15,7 +15,7 @@
 
 > **SRL** is an independent, cross-platform Minecraft: Java Edition launcher. It has no self-hosted backend: versions, instances, accounts and logs stay on your machine. Downloads are hash-verified, launches use real processes and real arguments, and failures come with reproducible evidence instead of guesses.
 >
-> This project is not affiliated with Mojang, Microsoft, PCL2 or HMCL. “Minecraft” is a trademark of Mojang Studios.
+> This project is not affiliated with Mojang or Microsoft. “Minecraft” is a trademark of Mojang Studios.
 
 > **Microsoft login:** due to current development constraints, SRL cannot yet offer out-of-the-box Microsoft sign-in. You currently need to register your own Azure application, obtain a `client id` and enter it in Settings; the login entry is explicitly disabled until then.
 
@@ -69,35 +69,16 @@
 | Mod dependency graph | 🟡 | Official Modrinth/CurseForge recursion, SVG/list view, installed detection, install plan |
 | Missing-Java install flow | 🟡 | Dynamic required major, Temurin install, rescan, no global-default overwrite |
 
-### What's new in v0.2.5
+### Cumulative highlights: v0.2.2 → v0.2.5
 
-- **Log reliability.** Game stdout is read as bytes and decoded lossily, so GBK output on Chinese Windows no longer stops log capture. Player checkpoints advance by real byte offsets, and rotated logs/new sessions no longer leave ghost online players.
-- **Cancellation and deadlines.** Cancelling dependency analysis now aborts in-flight HTTP requests, and the 120-second overall deadline is real. Downloads can be cancelled while waiting for response headers and now have a 60-second no-data stall timeout.
-- **File safety.** Generic ZIP modpack imports now use the same validate → stage → backup → commit transaction as overrides. Windows replacements use `MoveFileExW`, so a failed rename no longer deletes the old file first. Transaction manifests are written atomically; recovery re-validates paths and backups.
-- **Resources and performance.** FRPC cleanup is off the constructor path (no more 800 ms async-runtime stall), binary verification streams SHA-256, download target locks are released after use, and frontend launch logs flush at 5 Hz with a bounded buffer. Long mod lists use `content-visibility`.
+- **Stability and data safety.** Instance launch/stop shares one lifecycle lock with delete, duplicate and reconfiguration. Overrides, generic ZIP modpacks and interrupted imports use validate → stage → backup → commit/rollback transactions. Windows replacements use `MoveFileExW`, so a failed rename no longer deletes the old file first. Transaction manifests are atomic, and recovery re-validates paths and backups.
+- **Logs, players and processes.** Game stdout is read as bytes and decoded lossily, so GBK output on Chinese Windows no longer stops capture. Player checkpoints advance by real byte offsets; rotated logs/new sessions no longer leave ghost online players. Logs rotate at 32 MiB, failed rotation keeps the true byte counter, and process identity checks PID plus start time.
+- **Dependencies and mods.** Dependency node IDs are `source:project:version`, with graph integrity checks; local mods distinguish enabled/disabled/version-mismatch/conflict. Resolution uses bounded concurrency, a real request budget, a 120-second overall deadline, and cancellation that aborts in-flight HTTP. The dependency graph offers SVG/list views, installed detection and an install plan.
+- **Multiplayer.** Host/guest management separates local service, 52FRP tunnel, FRPC and player logs. Java uses Server List Ping and Bedrock uses strict RakNet validation. Room lifecycle is explicit, 52FRP recovery uses an absolute deadline, FRPC orphan cleanup is off the startup blocking path, and cache verification streams SHA-256.
+- **Java and resources.** The launcher reads the real `javaVersion.majorVersion`, installs the matching Temurin runtime when missing, rescans afterwards, and never overwrites the global default Java. Mod, resource-pack and shader imports use atomic replacement.
+- **Release engineering.** fmt, tests, clippy, frontend test/build, cargo audit, npm audit and tag/version consistency gate CI. v0.2.5 passed all three platform builds and published a Release whose `SHA256SUMS` covers the source archive and every platform asset.
 
-### What's new in v0.2.4
-
-- **Dependency correctness.** Unified node IDs and graph integrity checks; local mods distinguish enabled/disabled/version-mismatch/conflict; backend verifies the required closure; bounded concurrent resolution with request budget and cancellation.
-- **Player state.** Persisted checkpoints read appended log bytes and survive restarts; midnight rollover is handled.
-- **Logs and processes.** 32 MiB log shards with rotation; process identity checks PID plus start time; startup cleans up SRL-owned orphan FRPC processes.
-- **Multiplayer and transactions.** Explicit room lifecycle; absolute 52FRP recovery deadline; strict RakNet validation; recoverable modpack transactions.
-
-### What's new in v0.2.3
-
-- **Data safety.** Running instances cannot be deleted, copied or reconfigured; modpack imports use staging, backups and rollback; extraction refuses existing symlink escapes.
-- **Process lifecycle.** Windows asks the game to exit gracefully before offering a force stop; launch and destructive file operations share a backend lock.
-- **Multiplayer accuracy.** Local services are verified with Java SLP / Bedrock RakNet; FRPC process, cloud tunnel and local protocol health are shown separately.
-- **Dependencies and Java.** The backend verifies the required-dependency closure; incompatible edges are no longer swallowed by node de-duplication; Java selection checks CPU architecture.
-- **Release gates.** fmt, tests, clippy, frontend test/build, cargo audit, npm audit and tag/version consistency now gate releases.
-
-### What's new in v0.2.2
-
-- **Multiplayer management center.** Host and guest modes share one entry. The host view separates local Minecraft service, 52FRP tunnel, FRPC, and confirmed player-log state; it adds confirmed joins/leaves, IP-source classification, room history, and a unified log. The guest view performs a real Rust-side Minecraft Server List Ping (DNS, TCP, VarInt, status JSON, MOTD, version, latency, error stage) and detects whether the server requires premium authentication through a credential-free login handshake, so offline-join failures can be diagnosed; the monitor appears only after diagnostics finish and can be stopped. Guests still join inside Minecraft manually.
-- **Mod dependency visualization.** Analyze a concrete mod version against the target Minecraft version and loader using official Modrinth/CurseForge metadata. Render an SVG graph and list, detect installed mods from real JAR metadata, show an install plan, and reuse SHA-1 verification, backups, atomic replacement, progress, cancellation, and rollback.
-- **Automatic Java runtime completion.** Read the real `javaVersion.majorVersion`, offer to install Temurin when no safe runtime exists, rescan after installation, never overwrite the global default during auto-completion, and never silently replace a pinned instance Java.
-
-### v0.2.1 highlights (previous)
+### v0.2.1 highlights
 
 - **Bundled FRPC.** Each installer ships the official frp client for its platform/architecture, pinned by SHA-256. The first use verifies and extracts it locally; room creation no longer waits for GitHub. Network download remains only as a fallback.
 - **Modpack export.** Export an instance as a Modrinth `.mrpack` or a CurseForge `manifest.json` ZIP. Mods are matched by SHA-1 (Modrinth) or the official Murmur2 fingerprint (CurseForge); unknown or disabled mods, configs, resource packs and shaders are placed in `overrides/`. Worlds, logs and tokens are excluded.
@@ -172,6 +153,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 The suite covers version resolution, download resume/checksum/atomic writes, instance import/export, Modrinth and CurseForge modpack export (including real-network tests), FRPC bundle extraction, and the React UI.
+
+Current baseline: 264 Rust library tests + 2 launch integration tests pass, plus 50 frontend tests. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `tsc -b` and `vite build` pass. The v0.2.5 GitHub Actions run passed quality, security audit, Linux, Windows, macOS universal and release.
 
 ## Project layout
 

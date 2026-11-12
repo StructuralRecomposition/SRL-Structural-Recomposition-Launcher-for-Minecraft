@@ -15,7 +15,7 @@
 
 > **SRL** 是一个独立实现的跨平台 Minecraft Java Edition 启动器。它不依赖自建服务端，所有版本、实例、账号与日志都保存在本机；下载的文件经过哈希校验，启动过程使用真实进程与真实参数，出错时给出可复现的证据而不是猜测。
 >
-> 本项目与 Mojang、Microsoft、PCL2、HMCL 均无隶属关系。“Minecraft”是 Mojang Studios 的商标。
+> 本项目与 Mojang、Microsoft 均无隶属关系。“Minecraft”是 Mojang Studios 的商标。
 
 > **关于 Microsoft 正版登录：** 很抱歉，受当前开发条件限制，SRL 还不能做到开箱即用的 Microsoft 正版登录。目前需要玩家自行注册 Azure 应用、获取 `client id` 并在设置中填写；未配置时登录入口会明确禁用。我们会在后续版本继续修复，感谢理解。
 
@@ -23,35 +23,16 @@
 
 > **当前版本：`v0.2.5`（稳定性 · 性能 · Bug 修复）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.5)。
 
-### v0.2.5 更新摘要
+### v0.2.2 → v0.2.5 累计更新摘要
 
-- **日志可靠性。** 游戏 stdout 改为按字节读取并容错非 UTF-8；中文 Windows 的 GBK 输出不再导致日志采集中断。玩家检查点按真实字节偏移推进，日志轮转和新会话不再留下“幽灵在线玩家”。
-- **取消与超时。** 依赖解析取消会中断正在进行的 HTTP 请求，120 秒整体截止时间真正生效；下载在等待响应头阶段即可取消，并增加 60 秒无数据停滞超时。
-- **文件安全。** 通用 ZIP 整合包导入也使用“校验 → 暂存 → 备份 → 提交”事务；Windows 文件替换统一使用 `MoveFileExW`，重命名失败不再先删除旧文件；事务清单原子写入，恢复时重新校验路径与备份。
-- **资源与性能。** FRPC 清理移出构造路径（不再阻塞异步线程 800ms），二进制校验改为流式 SHA-256；下载目标锁使用后释放；前端游戏日志按 200ms 批量刷新并限制缓冲，模组长列表启用 `content-visibility`。
+- **稳定性与数据安全。** 实例启动/停止与删除、复制、配置修改共用生命周期锁；整合包 overrides、通用 ZIP 与中断恢复使用“校验 → 暂存 → 备份 → 提交/回滚”事务；Windows 文件替换统一使用 `MoveFileExW`，失败不再先删除旧文件；事务清单原子写入，恢复时重新校验路径与备份。
+- **日志、玩家与进程。** 游戏 stdout 按字节读取并容错非 UTF-8，中文 Windows 的 GBK 输出不再中断采集；玩家检查点按真实字节偏移推进，日志轮转/新会话不再产生幽灵在线玩家；日志 32 MiB 分片，轮转失败保留真实计数；游戏进程身份同时校验 PID 与启动时间。
+- **依赖与模组。** 依赖节点 ID 统一为 `source:project:version` 并校验图完整性；区分已启用/禁用/版本不匹配/冲突；解析使用受控并发、真实请求预算、120 秒整体 deadline，取消会中断在途 HTTP；依赖图提供 SVG/列表、已安装检测与安装计划。
+- **联机。** 房主/游客管理中心分离本地服务、52FRP 隧道、FRPC 与玩家日志；Java 使用 Server List Ping，基岩版使用 RakNet 严格校验；房间生命周期显式化，52FRP 恢复使用绝对 deadline；FRPC 遗留清理移出启动阻塞路径，缓存校验改为流式 SHA-256。
+- **Java 与资源。** 启动前读取真实 `javaVersion.majorVersion`，缺失时按版本安装 Temurin 并重新扫描，不覆盖全局默认 Java；模组、材质包与光影导入使用原子替换。
+- **发布工程。** fmt、test、clippy、前端测试/构建、cargo audit、npm audit 与 tag/版本一致性检查进入 CI；v0.2.5 三平台构建与 Release 发布全部通过，`SHA256SUMS` 覆盖源码归档与全部平台产物。
 
-### v0.2.4 更新摘要
-
-- **依赖正确性。** 节点 ID 统一并校验图完整性；本地模组区分已启用/禁用/版本不匹配/冲突；后端复核必需依赖闭包；解析增加受控并发、请求预算与取消。
-- **玩家状态。** 持久化检查点增量读取日志，重启后可恢复在线玩家；跨午夜时间修正。
-- **日志与进程。** 日志 32 MiB 分片轮转；进程身份同时校验 PID 与启动时间；启动时清理本应用遗留 FRPC。
-- **联机与事务。** 房间生命周期显式化；52FRP 恢复使用绝对 deadline；RakNet 严格校验；整合包事务支持启动恢复。
-
-### v0.2.3 更新摘要
-
-- **数据安全。** 运行中的实例禁止删除/复制/修改；整合包导入改为事务式暂存、备份与回滚；解压拒绝已有符号链接越界。
-- **实例与进程。** Windows 停止游戏先请求优雅退出，超时后询问是否强制结束；同一实例的启动与危险文件操作共用后端锁。
-- **联机状态。** 本地服务使用 Java SLP / Bedrock RakNet 协议检测；FRPC 进程、云端隧道、本地服务分别显示，不再把 FRPC 存活当作可连接。
-- **依赖与 Java。** 必需依赖闭包由后端复核，不兼容边不再被节点去重吞掉；Java 选择同时校验 CPU 架构。
-- **发布门禁。** fmt、test、clippy、前端测试/构建、cargo audit、npm audit 与 tag/版本一致性检查进入发布工作流。
-
-### v0.2.2 更新摘要
-
-- **联机管理中心。** 联机页新增房主/游客模式；房主端分开显示本地服务、52FRP 隧道、FRPC 与玩家日志状态，新增可确认的玩家加入/离开、IP 类型区分、房间历史与统一日志。游客端使用 Rust 实现 Minecraft Server List Ping，展示 DNS、TCP、协议、MOTD、延迟与真实错误；连接诊断还会通过一次不发送账号凭据的登录握手探测服务器是否要求正版验证（离线账号能否加入）；监测在诊断完成后才显示、可随时停止。游客仍需在 Minecraft 内手动加入。
-- **模组依赖可视化。** 资源详情新增“依赖”：按具体版本、目标 Minecraft 版本和加载器递归解析 Modrinth/CurseForge 官方依赖，生成 SVG 关系图与列表，识别已安装模组，展示安装计划；安装复用 SHA-1 校验、备份、原子替换与回滚。
-- **Java 自动补全。** 启动前读取真实 `javaVersion.majorVersion`；缺失 Java 时提示具体版本并一键安装 Temurin，安装后重新扫描；自动安装不覆盖用户全局默认 Java，实例固定 Java 不会被静默替换。
-
-### v0.2.1 更新摘要（上一版）
+### v0.2.1 更新摘要
 
 - **中英双语界面。** 设置中新增语言切换，默认简体中文；切换后界面重新加载。
 - **FRPC 安装包内置。** 按平台/架构携带官方 frp 客户端并锁定 SHA-256，创建房间不再等待 GitHub；网络下载仅作为内置缺失时的回退。
@@ -352,9 +333,9 @@ npm run tauri build -- --bundles nsis,msi
 ## 测试与质量
 
 ```bash
-cargo test -p sr-core          # 254 项库测试 + 2 项启动集成通过；真实网络/下载测试默认忽略
-npx vitest run                 # 50 项前端测试
-cargo check -p sr-launcher     # Tauri 命令层编译检查
+cargo test --workspace --all-targets  # 264 项库测试 + 2 项启动集成通过；真实网络/下载测试默认忽略
+npx vitest run                        # 50 项前端测试
+cargo check --workspace               # Tauri 命令层编译检查
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
@@ -371,10 +352,10 @@ cargo test -p sr-core --test server_status_network -- --ignored --nocapture
 
 当前质量基线：
 
-- Rust：254 项库测试 + 2 项启动集成通过；需真实网络 / 下载的测试默认忽略。
+- Rust：264 项库测试 + 2 项启动集成通过；需真实网络 / 下载的测试默认忽略。
 - 前端：50 项通过（Vitest + Testing Library）。
-- 真实网络冒烟：Modrinth Iris → Sodium required（2 节点 / 4,264,786 字节）；`mc.hypixel.net:25565` 状态协议 47、26906/200000、322 ms。
-- `cargo fmt`、`cargo clippy -D warnings`、`npm run build` 通过。
+- `cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`tsc -b`、`vite build` 通过。
+- GitHub Actions v0.2.5：quality、Security audit、Linux、Windows、macOS universal 与 Release 全部通过。
 - 发布前运行 `node scripts/verify-no-secrets.mjs` 与 `bash scripts/verify-clean-bundle.sh <SRL.app>`。
 
 ## 项目结构
@@ -504,7 +485,7 @@ crates/sr-core
 
 SRL 自有代码采用 **MIT License**，见 [`LICENSE`](LICENSE)。
 
-本项目**不包含**任何 Minecraft 游戏文件、Mojang 素材、PCL2 或 HMCL 的代码 / 资源。第三方依赖与许可证见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 与 [`research/LICENSE_AUDIT.md`](research/LICENSE_AUDIT.md)。
+本项目**不包含**任何 Minecraft 游戏文件、Mojang 素材或第三方启动器的代码 / 资源。第三方依赖与许可证见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 与 [`research/LICENSE_AUDIT.md`](research/LICENSE_AUDIT.md)。
 
 ## 文档
 
