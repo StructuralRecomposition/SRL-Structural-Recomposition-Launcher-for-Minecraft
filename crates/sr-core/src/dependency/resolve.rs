@@ -5,7 +5,7 @@ use super::model::*;
 use crate::curseforge::{
     curseforge_relation, split_versions, CurseForgeRelation, CurseForgeService,
 };
-use crate::error::{AppError, Result};
+use crate::error::{AppError, ErrorCode, Result};
 use crate::modrinth::{ModrinthService, ResourceProject, ResourceVersion};
 use crate::util;
 use async_trait::async_trait;
@@ -15,6 +15,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
+
+const RESOLVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const RESOLVE_DEADLINE: Duration = Duration::from_secs(120);
+const RESOLVE_ROOT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
 pub struct ResolveLimits {
@@ -102,7 +106,22 @@ pub async fn analyze_with_cancel(
     let game_version = request.game_version.trim();
     let loader = request.loader.trim();
 
-    let root = adapter.root(request).await?;
+    let deadline = Instant::now() + RESOLVE_DEADLINE;
+    let root = bounded(
+        async {
+            match tokio::time::timeout(RESOLVE_ROOT_TIMEOUT, adapter.root(request)).await {
+                Ok(result) => result,
+                Err(_) => Err(AppError::new(
+                    ErrorCode::Timeout,
+                    "根模组信息请求超过 30 秒",
+                )),
+            }
+        },
+        deadline,
+        cancel,
+        "根模组信息",
+    )
+    .await?;
     let mut warnings: Vec<String> = Vec::new();
     let mut blockers: Vec<String> = Vec::new();
     let mut nodes: Vec<DependencyNode> = Vec::new();
@@ -111,7 +130,6 @@ pub async fn analyze_with_cancel(
     let mut index: HashMap<String, usize> = HashMap::new();
     let mut requests = 1usize;
     let mut complete = true;
-    let deadline = Instant::now() + Duration::from_secs(120);
     let mut cache: HashMap<String, ResolvedItem> = HashMap::new();
 
     if !root.supports(game_version, loader) {
@@ -172,6 +190,9 @@ pub async fn analyze_with_cancel(
     }
 
     while let Some((parent_id, parent_title, depth, relation, dependency, active)) = stack.pop() {
+        if cancel.is_some_and(|token| token.is_cancelled()) {
+            return Err(AppError::new(ErrorCode::Cancelled, "依赖分析已取消"));
+        }
         let Some(project_id) = dependency.project_id.clone().filter(|v| !v.is_empty()) else {
             complete = false;
             let message = format!(
@@ -257,7 +278,7 @@ pub async fn analyze_with_cancel(
         if Instant::now() >= deadline {
             complete = false;
             blockers.push("依赖分析超过 120 秒，已停止继续请求".into());
-            continue;
+            break;
         }
         let cache_key = dep_cache_key(&project_id, dependency.version_id.as_deref());
         let fetched = if let Some(hit) = cache.get(&cache_key).cloned() {
@@ -269,23 +290,16 @@ pub async fn analyze_with_cancel(
                 continue;
             }
             requests += 1;
-            match tokio::time::timeout(
-                Duration::from_secs(15),
-                adapter.fetch(
-                    &project_id,
-                    dependency.version_id.as_deref(),
-                    game_version,
-                    loader,
-                ),
+            fetch_bounded(
+                adapter,
+                &project_id,
+                dependency.version_id.as_deref(),
+                game_version,
+                loader,
+                deadline,
+                cancel,
             )
             .await
-            {
-                Ok(result) => result,
-                Err(_) => Err(AppError::new(
-                    crate::error::ErrorCode::Timeout,
-                    format!("依赖 {project_id} 请求超过 15 秒"),
-                )),
-            }
         };
         match fetched {
             Ok(item) => {
@@ -375,8 +389,15 @@ pub async fn analyze_with_cancel(
                     }
                 }
             }
+            Err(error) if error.code == ErrorCode::Cancelled => {
+                return Err(error);
+            }
             Err(error) => {
                 complete = false;
+                if error.code == ErrorCode::Timeout && Instant::now() >= deadline {
+                    blockers.push("依赖分析超过 120 秒，已停止继续请求".into());
+                    break;
+                }
                 let title = format!("未知依赖 {project_id}");
                 let message = format!(
                     "{} 的 {} 依赖 {} 无法解析：{}",
@@ -516,6 +537,60 @@ pub async fn analyze_with_cancel(
     })
 }
 
+/// Run one dependency step under the shared cancellation token and the true
+/// overall deadline. Dropping the inner future aborts the HTTP request instead
+/// of leaving it running until its own timeout.
+async fn bounded<F, T>(
+    future: F,
+    deadline: Instant,
+    cancel: Option<&CancellationToken>,
+    what: &str,
+) -> Result<T>
+where
+    F: std::future::Future<Output = Result<T>>,
+{
+    tokio::pin!(future);
+    tokio::select! {
+        result = &mut future => result,
+        _ = tokio::time::sleep_until(deadline.into()) => Err(AppError::new(
+            ErrorCode::Timeout,
+            format!("依赖分析超过 120 秒，已停止：{what}"),
+        )),
+        _ = async {
+            match cancel {
+                Some(token) => token.cancelled().await,
+                None => std::future::pending::<()>().await,
+            }
+        } => Err(AppError::cancelled()),
+    }
+}
+
+async fn fetch_bounded(
+    adapter: &dyn Adapter,
+    project_id: &str,
+    version_id: Option<&str>,
+    game_version: &str,
+    loader: &str,
+    deadline: Instant,
+    cancel: Option<&CancellationToken>,
+) -> Result<ResolvedItem> {
+    let request = async {
+        match tokio::time::timeout(
+            RESOLVE_REQUEST_TIMEOUT,
+            adapter.fetch(project_id, version_id, game_version, loader),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(AppError::new(
+                ErrorCode::Timeout,
+                format!("依赖 {project_id} 请求超过 15 秒"),
+            )),
+        }
+    };
+    bounded(request, deadline, cancel, &format!("请求 {project_id}")).await
+}
+
 #[allow(clippy::too_many_arguments)]
 /// The single source of truth for dependency node identity.
 pub fn dependency_node_id(source: &str, project_id: &str, version: Option<&str>) -> String {
@@ -590,18 +665,24 @@ async fn prefetch_dependencies(
     let futures = jobs.into_iter().map(|(project_id, version_id, key)| {
         let semaphore = semaphore.clone();
         async move {
-            if cancel.is_some_and(|token| token.is_cancelled()) {
+            if cancel.is_some_and(|token| token.is_cancelled()) || Instant::now() >= deadline {
                 return (key, None);
             }
             let Ok(_permit) = semaphore.acquire().await else {
                 return (key, None);
             };
-            let result = tokio::time::timeout(
-                Duration::from_secs(15),
-                adapter.fetch(&project_id, version_id.as_deref(), game_version, loader),
+            let item = fetch_bounded(
+                adapter,
+                &project_id,
+                version_id.as_deref(),
+                game_version,
+                loader,
+                deadline,
+                cancel,
             )
-            .await;
-            (key, result.ok().and_then(|value| value.ok()))
+            .await
+            .ok();
+            (key, item)
         }
     });
     for (key, item) in join_all(futures).await {
@@ -1075,6 +1156,9 @@ mod tests {
     struct MockAdapter {
         items: Mutex<HashMap<String, ResolvedItem>>,
         calls: Mutex<VecDeque<String>>,
+        /// Artificial delay applied to non-root fetches, used to prove that
+        /// cancellation interrupts an in-flight request.
+        delay: Option<Duration>,
     }
 
     #[async_trait]
@@ -1099,6 +1183,11 @@ mod tests {
             _loader: &str,
         ) -> Result<ResolvedItem> {
             self.calls.lock().unwrap().push_back(project_id.into());
+            if let Some(delay) = self.delay {
+                if project_id != "root" {
+                    tokio::time::sleep(delay).await;
+                }
+            }
             self.items
                 .lock()
                 .unwrap()
@@ -1224,6 +1313,39 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn cancellation_interrupts_an_in_flight_fetch() {
+        let mut adapter = adapter(vec![
+            item("root", vec![("a", DependencyRelation::Required)]),
+            item("a", vec![]),
+        ]);
+        adapter.delay = Some(Duration::from_secs(10));
+        let token = CancellationToken::new();
+        let cancel_later = token.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            cancel_later.cancel();
+        });
+        let started = Instant::now();
+        let result = analyze_with_cancel(
+            &request("root"),
+            &adapter,
+            &InstalledIndex::default(),
+            &ResolveLimits::default(),
+            Some(&token),
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(error) if error.code == ErrorCode::Cancelled
+        ));
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "cancel took {:?}",
+            started.elapsed()
+        );
+    }
+
     fn adapter(items: Vec<ResolvedItem>) -> MockAdapter {
         MockAdapter {
             items: Mutex::new(
@@ -1233,6 +1355,7 @@ mod tests {
                     .collect(),
             ),
             calls: Mutex::new(VecDeque::new()),
+            delay: None,
         }
     }
 

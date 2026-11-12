@@ -284,13 +284,16 @@ pub async fn read_log_tail(paths: &AppPaths, path: &Path, max_lines: usize) -> R
     let meta = tokio::fs::metadata(&canonical).await?;
     let start_offset = meta.len().saturating_sub(LOG_MAX_READ_BYTES);
     let content = if start_offset == 0 {
-        tokio::fs::read_to_string(&canonical).await?
+        let bytes = tokio::fs::read(&canonical).await?;
+        String::from_utf8_lossy(&bytes).into_owned()
     } else {
         use tokio::io::{AsyncReadExt, AsyncSeekExt};
         let mut file = tokio::fs::File::open(&canonical).await?;
         file.seek(std::io::SeekFrom::Start(start_offset)).await?;
         let mut bytes = Vec::with_capacity(LOG_MAX_READ_BYTES as usize);
         file.read_to_end(&mut bytes).await?;
+        // Game logs may contain platform-encoded bytes; never fail a log view
+        // because of one invalid UTF-8 sequence.
         let text = String::from_utf8_lossy(&bytes).into_owned();
         // Drop the first (likely partial) line of the truncated window.
         text.split_once('\n')

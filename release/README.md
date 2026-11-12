@@ -2,16 +2,16 @@
 
 **简体中文** · [English](README.en.md)
 
-当前源码版本：**v0.2.4 可靠性修复版**（依赖身份 · 玩家检查点 · 日志轮转 · 进程身份）
+当前源码版本：**v0.2.5 稳定性 / 性能 / Bug 修复版**（日志容错 · 可取消网络请求 · 文件事务 · 资源收敛）
 
 正式发布以 GitHub Releases 为准；本目录仅保留本地验证产物与说明。
 
 | 平台 | 文件 |
 |---|---|
-| macOS（Intel + Apple Silicon） | `SRL_0.2.4_universal.dmg` |
-| Windows 10/11 x64 | `SRL_0.2.4_windows-x64-portable.zip` |
-| Linux x64（Debian / Ubuntu） | `SRL_0.2.4_amd64.deb` |
-| Linux x64（通用） | `SRL_0.2.4_amd64.AppImage` |
+| macOS（Intel + Apple Silicon） | `SRL_0.2.5_universal.dmg` |
+| Windows 10/11 x64 | `SRL_0.2.5_windows-x64-portable.zip` |
+| Linux x64（Debian / Ubuntu） | `SRL_0.2.5_amd64.deb` |
+| Linux x64（通用） | `SRL_0.2.5_amd64.AppImage` |
 
 校验值见 `SHA256SUMS`。
 
@@ -32,17 +32,15 @@ xattr -dr com.apple.quarantine /Applications/SRL.app
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.2.4_amd64.deb
+sudo apt install ./SRL_0.2.5_amd64.deb
 ```
 
 或运行 AppImage；需要 WebKitGTK 4.1 与 GTK 3。
 
-## v0.2.2 本地测试版（未发布）
+## 说明
 
-- 联机管理中心：房主/游客分段、四类状态分离、玩家事件、房间日志、Server List Ping 与可停止监测。
-- 模组依赖可视化：Modrinth/CurseForge 递归解析、SVG 关系图、已安装检测与安全安装。
-- Java 自动补全：缺失时安装 Temurin 并继续启动，不覆盖全局默认 Java。
-- 四个安装包均已在本地构建；尚未发布 GitHub Release。
+- 安装包由 GitHub Actions 在对应 tag 上构建；本地文件仅用于验证，不替代 Release 附件。
+- 本版本不包含签名或公证；校验值以发布附件中的 `SHA256SUMS` 为准。
 
 ## v0.2.1 更新
 

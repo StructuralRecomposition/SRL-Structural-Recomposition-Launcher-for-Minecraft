@@ -142,8 +142,8 @@ pub async fn get_bootstrap(state: State<'_, AppState>) -> Result<Bootstrap> {
             },
             FeatureState {
                 id: "modpacks".into(),
-                available: false,
-                reason: Some("安全导入将在阶段 6 实现".into()),
+                available: true,
+                reason: None,
             },
             FeatureState {
                 id: "auto_update".into(),

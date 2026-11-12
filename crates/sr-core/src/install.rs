@@ -84,7 +84,10 @@ impl Installer<'_> {
         let prepared = self.prepared.is_some();
         let resolved = match &self.prepared {
             Some(v) => v.clone(),
-            None => versions.resolve_remote(paths, version_id).await?,
+            None => tokio::select! {
+                result = versions.resolve_remote(paths, version_id) => result?,
+                _ = cancel.cancelled() => return Err(AppError::cancelled()),
+            },
         };
         if cancel.is_cancelled() {
             return Err(AppError::cancelled());
@@ -94,11 +97,14 @@ impl Installer<'_> {
             None
         } else {
             task.set_current_file("获取资源索引…").await;
-            Some(
-                versions
-                    .ensure_asset_index(game, &resolved, options.allow_custom_hosts)
-                    .await?,
-            )
+            Some(tokio::select! {
+                result = versions.ensure_asset_index(
+                    game,
+                    &resolved,
+                    options.allow_custom_hosts,
+                ) => result?,
+                _ = cancel.cancelled() => return Err(AppError::cancelled()),
+            })
         };
 
         let include_assets = options.include_assets && !prepared;

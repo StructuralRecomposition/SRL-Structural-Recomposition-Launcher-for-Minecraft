@@ -387,26 +387,61 @@ pub fn read_player_events_incremental(
     instance_id: &str,
     checkpoint: &mut PlayerCheckpoint,
 ) -> Option<Vec<PlayerEvent>> {
+    const RECOVERY_BYTES: u64 = 4 * 1024 * 1024;
+    const MAX_READ_BYTES: u64 = 16 * 1024 * 1024;
+
     let path = latest_instance_log(logs_dir, instance_id)?;
     let path_text = path.to_string_lossy().into_owned();
     if checkpoint.log_path != path_text {
+        // A new captured log means a new game session. Players inferred as
+        // online from the previous session must not survive as ghosts.
+        for presence in checkpoint.players.values_mut() {
+            if presence.status == "online_inferred" {
+                presence.status = "offline_inferred".into();
+            }
+        }
         checkpoint.log_path = path_text;
         checkpoint.offset = 0;
         checkpoint.sequence = 0;
     }
     let len = std::fs::metadata(&path).ok()?.len();
     if len < checkpoint.offset {
+        // The live shard was replaced or truncated; re-read the new file.
         checkpoint.offset = 0;
         checkpoint.sequence = 0;
     }
-    if checkpoint.offset == 0 && len > 4 * 1024 * 1024 {
-        checkpoint.offset = len - 4 * 1024 * 1024;
+    if checkpoint.offset == 0 && len > RECOVERY_BYTES {
+        checkpoint.offset = len - RECOVERY_BYTES;
     }
+    let start = checkpoint.offset;
     let mut file = std::fs::File::open(&path).ok()?;
-    file.seek(SeekFrom::Start(checkpoint.offset)).ok()?;
-    let mut text = String::new();
-    let mut limited = file.take(16 * 1024 * 1024);
-    limited.read_to_string(&mut text).ok()?;
+    let mut starts_at_line_boundary = start == 0;
+    if start > 0 {
+        // Check the byte immediately before the offset. When it is a newline
+        // the offset is already at a line boundary and the first line must
+        // not be discarded.
+        file.seek(SeekFrom::Start(start - 1)).ok()?;
+        let mut previous = [0u8; 1];
+        file.read_exact(&mut previous).ok()?;
+        starts_at_line_boundary = previous[0] == b'\n';
+    }
+    file.seek(SeekFrom::Start(start)).ok()?;
+    // Read bytes, not a String: Java output on Chinese Windows can be GBK,
+    // and a single invalid byte must not make the whole player list
+    // unreadable. Invalid sequences are replaced, never fatal.
+    let mut bytes = Vec::new();
+    file.take(MAX_READ_BYTES).read_to_end(&mut bytes).ok()?;
+    let mut consumed = 0usize;
+    if start > 0 && !starts_at_line_boundary {
+        // Seeking can land in the middle of a line or a multi-byte character.
+        // Skip the partial prefix and wait for the next poll if the chunk has
+        // no complete line yet.
+        match bytes.iter().position(|&byte| byte == b'\n') {
+            Some(position) => consumed = position + 1,
+            None => return Some(Vec::new()),
+        }
+    }
+    let text = String::from_utf8_lossy(&bytes[consumed..]);
     let date = log_date(&path);
     let mut events = parse_player_events(&text, date);
     for (index, event) in events.iter_mut().enumerate() {
@@ -424,7 +459,8 @@ pub fn read_player_events_incremental(
             entry.status = "offline_inferred".into();
         }
     }
-    checkpoint.offset = checkpoint.offset.saturating_add(text.len() as u64);
+    // Advance by the bytes actually consumed, not by the lossy string length.
+    checkpoint.offset = start.saturating_add(bytes.len() as u64);
     checkpoint.sequence = checkpoint.sequence.saturating_add(events.len() as u64);
     Some(events)
 }
@@ -487,10 +523,26 @@ fn read_log_tail(path: &Path, max_bytes: u64) -> Option<String> {
     let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
     let start = len.saturating_sub(max_bytes);
+    let mut at_line_boundary = start == 0;
+    if start > 0 {
+        file.seek(SeekFrom::Start(start - 1)).ok()?;
+        let mut previous = [0u8; 1];
+        file.read_exact(&mut previous).ok()?;
+        at_line_boundary = previous[0] == b'\n';
+    }
     file.seek(SeekFrom::Start(start)).ok()?;
     let mut bytes = Vec::new();
     file.take(max_bytes).read_to_end(&mut bytes).ok()?;
-    Some(String::from_utf8_lossy(&bytes).into_owned())
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    if at_line_boundary {
+        return Some(text);
+    }
+    // Drop the partial first line of a tail window.
+    Some(
+        text.split_once('\n')
+            .map(|(_, rest)| rest.to_string())
+            .unwrap_or_default(),
+    )
 }
 
 async fn listening_ports(pid: u32, edition: Edition) -> Vec<u16> {
@@ -719,6 +771,67 @@ mod tests {
         assert_eq!(second[0].player, "B");
         assert_eq!(checkpoint.players.len(), 2);
         assert_eq!(checkpoint.players["A"].status, "online_inferred");
+    }
+
+    #[test]
+    fn checkpoint_tolerates_invalid_utf8_and_keeps_advancing() {
+        let dir = tempfile::tempdir().unwrap();
+        let logs = dir.path().to_path_buf();
+        let instance_logs = logs.join("instances");
+        std::fs::create_dir_all(&instance_logs).unwrap();
+        let path = instance_logs.join("abc-20261112-230000.log");
+        let mut bytes = b"[23:59:50] [Server thread/INFO]: A joined the game\n".to_vec();
+        bytes.extend_from_slice(b"\xff\xfe invalid console bytes\n");
+        std::fs::write(&path, &bytes).unwrap();
+
+        let mut checkpoint = PlayerCheckpoint::default();
+        let first = read_player_events_incremental(&logs, "abc", &mut checkpoint).unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!(checkpoint.offset, bytes.len() as u64);
+
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(b"[00:00:10] [Server thread/INFO]: B joined the game\n")
+            .unwrap();
+        let second = read_player_events_incremental(&logs, "abc", &mut checkpoint).unwrap();
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].player, "B");
+    }
+
+    #[test]
+    fn new_log_session_clears_inferred_online_players() {
+        let dir = tempfile::tempdir().unwrap();
+        let logs = dir.path().to_path_buf();
+        let instance_logs = logs.join("instances");
+        std::fs::create_dir_all(&instance_logs).unwrap();
+        std::fs::write(
+            instance_logs.join("abc-20261112-230000.log"),
+            "[23:59:50] [Server thread/INFO]: A joined the game\n",
+        )
+        .unwrap();
+        let mut checkpoint = PlayerCheckpoint::default();
+        assert_eq!(
+            read_player_events_incremental(&logs, "abc", &mut checkpoint)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(checkpoint.players["A"].status, "online_inferred");
+
+        // A new game session starts a new captured log; A cannot still be
+        // online in it, so the ghost entry must be downgraded.
+        std::fs::write(
+            instance_logs.join("abc-20261112-235000.log"),
+            "[23:50:00] [Server thread/INFO]: B joined the game\n",
+        )
+        .unwrap();
+        let events = read_player_events_incremental(&logs, "abc", &mut checkpoint).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].player, "B");
+        assert_eq!(checkpoint.players["A"].status, "offline_inferred");
+        assert_eq!(checkpoint.players["B"].status, "online_inferred");
     }
 
     #[test]

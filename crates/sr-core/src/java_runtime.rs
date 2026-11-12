@@ -476,6 +476,8 @@ async fn download_archive(
                 return Ok(dest);
             }
         }
+        // A runtime whose SHA-256 does not match is not user data and cannot
+        // be used; remove it so the downloader does not size-skip it.
         let _ = tokio::fs::remove_file(&dest).await;
     }
 

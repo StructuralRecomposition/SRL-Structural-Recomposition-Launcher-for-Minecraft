@@ -830,14 +830,23 @@ struct ImportTransactionEntry {
 
 fn write_import_manifest(root: &Path, transaction: &ImportTransaction) -> Result<()> {
     let path = root.join(IMPORT_MANIFEST);
-    let temp = root.join(format!(".{IMPORT_MANIFEST}.tmp"));
     let bytes = serde_json::to_vec_pretty(transaction)?;
-    std::fs::write(&temp, bytes)?;
-    if path.exists() {
-        std::fs::remove_file(&path)?;
+    // A crash between deleting the old manifest and renaming the new one
+    // would lose the only recovery record. Replace atomically instead.
+    crate::util::atomic_write_sync(&path, &bytes)
+}
+
+fn transaction_dir_name(name: &str) -> Result<&str> {
+    if name.starts_with(".srl-import-")
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !name.contains("..")
+        && name != "."
+    {
+        Ok(name)
+    } else {
+        Err(AppError::internal("整合包事务清单中的目录名非法"))
     }
-    std::fs::rename(&temp, &path)?;
-    Ok(())
 }
 
 fn clear_import_manifest(root: &Path) {
@@ -856,20 +865,54 @@ pub fn recover_import_transaction(root: &Path) -> Result<Option<String>> {
             .with_detail(error.to_string())
     })?;
     if transaction.status == "committed" {
-        let _ = std::fs::remove_dir_all(root.join(&transaction.staging_directory));
-        let _ = std::fs::remove_dir_all(root.join(&transaction.backup_directory));
+        if let Ok(name) = transaction_dir_name(&transaction.staging_directory) {
+            let _ = std::fs::remove_dir_all(root.join(name));
+        }
+        if let Ok(name) = transaction_dir_name(&transaction.backup_directory) {
+            let _ = std::fs::remove_dir_all(root.join(name));
+        }
         clear_import_manifest(root);
         return Ok(Some("已清理已完成的整合包事务".into()));
     }
-    let backup_root = root.join(&transaction.backup_directory);
+    let staging_name = transaction_dir_name(&transaction.staging_directory)?;
+    let backup_name = transaction_dir_name(&transaction.backup_directory)?;
+    if transaction.status == "created" {
+        // The commit phase never started, so no destination was touched.
+        // Clean the staging/backup directories instead of treating missing
+        // backups as a rollback failure.
+        let _ = std::fs::remove_dir_all(root.join(staging_name));
+        let _ = std::fs::remove_dir_all(root.join(backup_name));
+        clear_import_manifest(root);
+        return Ok(Some("已清理未开始的整合包事务".into()));
+    }
+    let backup_root = root.join(backup_name);
     let mut failures = Vec::new();
     for entry in &transaction.entries {
-        let dest = root.join(&entry.relative);
-        let backup = backup_root.join(&entry.relative);
+        // The manifest lives inside the instance directory, but it is parsed
+        // from disk and must still be treated as untrusted input.
+        let relative = match safe_relative(&entry.relative) {
+            Ok(value) => value,
+            Err(error) => {
+                failures.push(format!("{}: {}", entry.relative, error.message));
+                continue;
+            }
+        };
+        let dest = root.join(&relative);
+        if let Err(error) = crate::util::ensure_path_within_root(root, &dest) {
+            failures.push(format!("{}: {}", entry.relative, error.message));
+            continue;
+        }
+        let backup = backup_root.join(&relative);
         let result = if backup.exists() {
             std::fs::copy(&backup, &dest).map(|_| ())
         } else if !entry.existed && dest.exists() {
-            std::fs::remove_file(&dest)
+            if dest.is_dir() {
+                Err(std::io::Error::other("目标路径是目录，拒绝删除"))
+            } else {
+                std::fs::remove_file(&dest)
+            }
+        } else if entry.existed {
+            Err(std::io::Error::other("备份文件缺失，无法确认原始文件状态"))
         } else {
             Ok(())
         };
@@ -877,7 +920,7 @@ pub fn recover_import_transaction(root: &Path) -> Result<Option<String>> {
             failures.push(format!("{}: {error}", entry.relative));
         }
     }
-    let _ = std::fs::remove_dir_all(root.join(&transaction.staging_directory));
+    let _ = std::fs::remove_dir_all(root.join(staging_name));
     if failures.is_empty() {
         let _ = std::fs::remove_dir_all(&backup_root);
         clear_import_manifest(root);
@@ -920,7 +963,7 @@ fn extract_overrides_blocking(
     zip_path: &Path,
     instance: &Instance,
     prefixes: &[String],
-) -> Result<u32> {
+) -> Result<(u32, u64)> {
     let file = std::fs::File::open(zip_path)?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| {
         AppError::new(ErrorCode::ZipUnsafe, "整合包不是有效的 ZIP").with_detail(e.to_string())
@@ -950,6 +993,15 @@ fn extract_overrides_blocking(
             .is_some_and(|mode| mode & 0o170000 == 0o120000)
         {
             return Err(AppError::new(ErrorCode::ZipUnsafe, "整合包包含符号链接"));
+        }
+        if entry.compressed_size() > 0
+            && entry.size() > 50 * 1024 * 1024
+            && entry.size() / entry.compressed_size() > 1000
+        {
+            return Err(AppError::new(
+                ErrorCode::ZipUnsafe,
+                format!("整合包条目压缩比异常：{name}"),
+            ));
         }
         let relative = safe_relative(relative)?;
         if relative == Path::new("instance.json") {
@@ -1005,19 +1057,41 @@ fn extract_overrides_blocking(
         entries: manifest_entries,
     };
     write_import_manifest(&instance.game_dir, &transaction)?;
-    for (name, relative, _) in &entries {
-        let mut entry = zip.by_name(name).map_err(|e| {
-            AppError::new(ErrorCode::ZipUnsafe, format!("无法读取整合包条目 {name}"))
-                .with_detail(e.to_string())
-        })?;
-        let staged = staging_root.join(relative);
-        if let Some(parent) = staged.parent() {
-            std::fs::create_dir_all(parent)?;
+    let extraction = (|| -> Result<u64> {
+        let mut actual_total = 0u64;
+        for (name, relative, _) in &entries {
+            let entry = zip.by_name(name).map_err(|e| {
+                AppError::new(ErrorCode::ZipUnsafe, format!("无法读取整合包条目 {name}"))
+                    .with_detail(e.to_string())
+            })?;
+            let staged = staging_root.join(relative);
+            if let Some(parent) = staged.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut output = std::fs::File::create(&staged)?;
+            // Enforce the cap on bytes actually produced, not only on sizes
+            // declared in the ZIP header.
+            let remaining = MAX_OVERRIDE_BYTES.saturating_sub(actual_total);
+            let mut limited = entry.take(remaining.saturating_add(1));
+            let copied = std::io::copy(&mut limited, &mut output)?;
+            if copied > remaining {
+                return Err(AppError::new(ErrorCode::ZipUnsafe, "整合包解压后超过 8GB"));
+            }
+            actual_total = actual_total.saturating_add(copied);
+            output.sync_all()?;
         }
-        let mut output = std::fs::File::create(&staged)?;
-        std::io::copy(&mut entry, &mut output)?;
-        output.sync_all()?;
-    }
+        Ok(actual_total)
+    })();
+    let extracted_bytes = match extraction {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            // Nothing outside the staging directory has been touched yet.
+            let _ = std::fs::remove_dir_all(&staging_root);
+            let _ = std::fs::remove_dir_all(&backup_root);
+            clear_import_manifest(&instance.game_dir);
+            return Err(error);
+        }
+    };
     drop(zip);
 
     // Phase 3: back up every existing target before committing.
@@ -1107,14 +1181,14 @@ fn extract_overrides_blocking(
     let _ = std::fs::remove_dir_all(&backup_root);
     clear_import_manifest(&instance.game_dir);
     let _ = backed_up;
-    Ok(entries.len() as u32)
+    Ok((entries.len() as u32, extracted_bytes))
 }
 
 fn default_override_prefixes() -> Vec<String> {
     vec!["overrides/".into(), "client-overrides/".into()]
 }
 
-async fn extract_overrides(zip_path: &Path, instance: &Instance) -> Result<u32> {
+async fn extract_overrides(zip_path: &Path, instance: &Instance) -> Result<(u32, u64)> {
     let zip_path = zip_path.to_path_buf();
     let instance = instance.clone();
     tokio::task::spawn_blocking(move || {
@@ -1251,52 +1325,17 @@ fn extract_generic_blocking(zip_path: &Path, instance: &Instance) -> Result<(u32
             .iter()
             .next()
             .is_some_and(|root| !known_instance_root(root));
+    drop(zip);
 
-    let mut files = 0u64;
-    let mut total = 0u64;
-    for i in 0..zip.len() {
-        let mut entry = match zip.by_index(i) {
-            Ok(entry) => entry,
-            Err(_) => continue,
-        };
-        if entry.is_dir() {
-            continue;
-        }
-        if entry
-            .unix_mode()
-            .is_some_and(|mode| mode & 0o170000 == 0o120000)
-        {
-            return Err(AppError::new(ErrorCode::ZipUnsafe, "整合包包含符号链接"));
-        }
-        let name = entry.name()?.to_string();
-        let relative_name = if strip_root {
-            name.split_once('/').map(|(_, rest)| rest).unwrap_or(&name)
-        } else {
-            name.as_str()
-        };
-        if relative_name.is_empty() {
-            continue;
-        }
-        let relative = safe_relative(relative_name)?;
-        backup_file_if_exists(instance, &relative)?;
-        total = total.saturating_add(entry.size());
-        if total > MAX_OVERRIDE_BYTES {
-            return Err(AppError::new(ErrorCode::ZipUnsafe, "整合包解压后超过 8GB"));
-        }
-        files += 1;
-        if files > MAX_OVERRIDE_FILES {
-            return Err(AppError::new(ErrorCode::ZipUnsafe, "整合包文件数量过多"));
-        }
-        let dest = instance.game_dir.join(&relative);
-        crate::util::ensure_path_within_root(&instance.game_dir, &dest)?;
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        crate::util::ensure_path_within_root(&instance.game_dir, &dest)?;
-        let mut output = std::fs::File::create(&dest)?;
-        std::io::copy(&mut entry, &mut output)?;
-    }
-    Ok((files as u32, total))
+    // Reuse the overrides transaction: validate everything, extract into a
+    // staging directory, back up existing files, then commit atomically.
+    // A partially extracted generic ZIP must never destroy user files.
+    let prefixes = if strip_root {
+        vec![format!("{}/", roots.iter().next().copied().unwrap_or(""))]
+    } else {
+        vec![String::new()]
+    };
+    extract_overrides_blocking(zip_path, instance, &prefixes)
 }
 
 async fn install_generic_zip(
@@ -1360,13 +1399,13 @@ async fn install_curseforge_pack(
         task.set_current_file("解压 ZIP 内容…").await;
         let zip_path = zip_path.to_path_buf();
         let instance = instance.clone();
-        let count = tokio::task::spawn_blocking(move || {
+        let (count, bytes) = tokio::task::spawn_blocking(move || {
             extract_overrides_blocking(&zip_path, &instance, &prefixes)
         })
         .await
         .map_err(|e| AppError::internal(format!("解压整合包失败：{e}")))??;
         task.set_total_files(count.max(1)).await;
-        task.set_total_bytes(0).await;
+        task.set_total_bytes(bytes).await;
         task.file_finished().await;
         task.complete().await;
         return Ok(());
@@ -1823,13 +1862,14 @@ mod tests {
         let manifest = read_curse_manifest_optional(&zip_path).unwrap().unwrap();
         assert!(validate_curse_manifest(&manifest, &inst, "1.21.1").is_ok());
         assert!(validate_curse_manifest(&manifest, &inst, "1.20.1").is_err());
-        let count = extract_overrides_blocking(
+        let (count, bytes) = extract_overrides_blocking(
             &zip_path,
             &inst,
             &["overrides/".into(), "client-overrides/".into()],
         )
         .unwrap();
         assert_eq!(count, 1);
+        assert_eq!(bytes, 2);
         assert_eq!(
             std::fs::read_to_string(inst.game_dir.join("config/cf.txt")).unwrap(),
             "cf"
@@ -2039,6 +2079,78 @@ mod tests {
         assert!(!root.join(".srl-import-backup-tx").exists());
     }
 
+    #[test]
+    fn recovery_discards_a_transaction_that_never_committed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(root.join("config/a.txt"), b"original").unwrap();
+        std::fs::create_dir_all(root.join(".srl-import-staging-tx/config")).unwrap();
+        std::fs::write(root.join(".srl-import-staging-tx/config/a.txt"), b"staged").unwrap();
+        std::fs::create_dir_all(root.join(".srl-import-backup-tx")).unwrap();
+        let transaction = ImportTransaction {
+            transaction_id: "tx".into(),
+            status: "created".into(),
+            staging_directory: ".srl-import-staging-tx".into(),
+            backup_directory: ".srl-import-backup-tx".into(),
+            entries: vec![ImportTransactionEntry {
+                relative: "config/a.txt".into(),
+                existed: true,
+            }],
+        };
+        write_import_manifest(root, &transaction).unwrap();
+        let message = recover_import_transaction(root).unwrap();
+        assert!(message.is_some());
+        assert_eq!(
+            std::fs::read(root.join("config/a.txt")).unwrap(),
+            b"original"
+        );
+        assert!(!root.join(IMPORT_MANIFEST).exists());
+        assert!(!root.join(".srl-import-staging-tx").exists());
+    }
+
+    #[test]
+    fn recovery_rejects_manifest_path_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("instance");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(root.join(".srl-import-staging-tx")).unwrap();
+        std::fs::create_dir_all(root.join(".srl-import-backup-tx")).unwrap();
+        let outside = dir.path().join("outside.txt");
+        std::fs::write(&outside, b"keep").unwrap();
+        let transaction = ImportTransaction {
+            transaction_id: "tx".into(),
+            status: "committing".into(),
+            staging_directory: ".srl-import-staging-tx".into(),
+            backup_directory: ".srl-import-backup-tx".into(),
+            entries: vec![ImportTransactionEntry {
+                relative: "../outside.txt".into(),
+                existed: false,
+            }],
+        };
+        write_import_manifest(&root, &transaction).unwrap();
+        let result = recover_import_transaction(&root);
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&outside).unwrap(), b"keep");
+        assert!(root.join(IMPORT_MANIFEST).exists());
+    }
+
+    #[test]
+    fn recovery_rejects_unsafe_transaction_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root).unwrap();
+        let transaction = ImportTransaction {
+            transaction_id: "tx".into(),
+            status: "created".into(),
+            staging_directory: "../../elsewhere".into(),
+            backup_directory: ".srl-import-backup-tx".into(),
+            entries: Vec::new(),
+        };
+        write_import_manifest(root, &transaction).unwrap();
+        assert!(recover_import_transaction(root).is_err());
+    }
+
     #[cfg(unix)]
     #[test]
     fn refuses_to_write_through_existing_symlink() {
@@ -2085,9 +2197,10 @@ mod tests {
             zip.write_all(b"no").unwrap();
             zip.finish().unwrap();
         }
-        let count =
+        let (count, bytes) =
             extract_overrides_blocking(&zip_path, &inst, &default_override_prefixes()).unwrap();
         assert_eq!(count, 2);
+        assert_eq!(bytes, b"hello".len() as u64 + b"fov:0.8\n".len() as u64);
         assert_eq!(
             std::fs::read_to_string(inst.game_dir.join("config/test.txt")).unwrap(),
             "hello"

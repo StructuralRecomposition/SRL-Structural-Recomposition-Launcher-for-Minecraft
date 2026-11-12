@@ -77,7 +77,11 @@ impl MultiplayerManager {
         bundled_frpc: Option<std::path::PathBuf>,
     ) -> Self {
         let room = load_room(&paths).await;
-        let frpc = FrpcManager::new_with_bundle(paths.frpc_dir(), http.clone(), bundled_frpc);
+        let frpc_dir = paths.frpc_dir();
+        let frpc = FrpcManager::new_with_bundle(frpc_dir.clone(), http.clone(), bundled_frpc);
+        // One-time cleanup, off the async worker. Never blocks startup or a
+        // later `connect()` call.
+        tokio::spawn(FrpcManager::cleanup_stale_dir(frpc_dir));
         Self {
             paths,
             http,
@@ -331,7 +335,8 @@ impl MultiplayerManager {
             let mut seen = self.seen_player_events.lock().await;
             for event in &events {
                 let key = format!(
-                    "{}|{}|{}|{}|{}",
+                    "{}|{}|{}|{}|{}|{}",
+                    checkpoint.log_path,
                     event.action,
                     event.player,
                     event.at.as_deref().unwrap_or(""),

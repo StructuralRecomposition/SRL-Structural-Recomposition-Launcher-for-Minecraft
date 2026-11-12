@@ -154,7 +154,9 @@ jobs:
           cp "$(find artifacts -type f -name 'SRL_*_windows-x64-portable.zip' | head -1)" "release-assets/SRL_${version}_windows-x64-portable.zip"
           git archive --format=tar.gz --prefix="SRL-${version}/" HEAD > "release-assets/SRL-${version}-source.tar.gz"
           cd release-assets
-          sha256sum SRL_* > SHA256SUMS
+          # Hash every published asset, including the source archive
+          # (`SRL-<version>-source.tar.gz`, which uses a hyphen).
+          sha256sum SRL_* SRL-* > SHA256SUMS
           ls -lh
       - name: Refuse to overwrite an existing release
         env:

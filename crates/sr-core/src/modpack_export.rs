@@ -822,13 +822,10 @@ fn write_pack(
         }
         zip.finish()
             .map_err(|e| AppError::internal(format!("完成整合包失败：{e}")))?;
-        if dest.exists() {
-            if !overwrite {
-                return Err(AppError::new(ErrorCode::AlreadyExists, "导出文件已存在"));
-            }
-            std::fs::remove_file(dest)?;
+        if dest.exists() && !overwrite {
+            return Err(AppError::new(ErrorCode::AlreadyExists, "导出文件已存在"));
         }
-        std::fs::rename(&tmp, dest)?;
+        crate::util::replace_file_sync(&tmp, dest)?;
         Ok(())
     })();
     if result.is_err() {

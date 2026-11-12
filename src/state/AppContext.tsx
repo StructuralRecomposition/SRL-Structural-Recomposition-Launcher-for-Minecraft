@@ -59,6 +59,12 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+/// UI log history is bounded; the backend log file remains the source of
+/// truth. Flushing at 5 Hz keeps a chatty mod from triggering a React update
+/// for every single stdout line.
+const MAX_LAUNCH_EVENTS = 400;
+const LAUNCH_FLUSH_MS = 200;
+
 export function useApp(): AppContextValue {
   const value = useContext(AppContext);
   if (!value) throw new Error("useApp must be used inside AppProvider");
@@ -86,6 +92,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const bootstrapTimer = useRef<number | null>(null);
   const reloadPaused = useRef(false);
   const initialized = useRef(false);
+  const launchBuffer = useRef<LaunchEvent[]>([]);
+  const launchFlushTimer = useRef<number | null>(null);
 
   const pushToast = useCallback((message: string, tone: ToastTone = "info", detail?: string) => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -102,6 +110,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateBootstrap = useCallback((patch: (b: Bootstrap) => Bootstrap) => {
     setBootstrap((prev) => (prev ? patch(prev) : prev));
   }, []);
+
+  const flushLaunchEvents = useCallback(() => {
+    if (launchFlushTimer.current !== null) {
+      window.clearTimeout(launchFlushTimer.current);
+      launchFlushTimer.current = null;
+    }
+    const pending = launchBuffer.current;
+    if (pending.length === 0) return;
+    launchBuffer.current = [];
+    setLaunchEvents((prev) => [...prev, ...pending].slice(-MAX_LAUNCH_EVENTS));
+  }, []);
+
+  const queueLaunchEvent = useCallback(
+    (event: LaunchEvent) => {
+      const buffer = launchBuffer.current;
+      buffer.push(event);
+      // A misbehaving mod must not grow this buffer without bound before the
+      // next flush tick.
+      if (buffer.length > MAX_LAUNCH_EVENTS * 4) {
+        buffer.splice(0, buffer.length - MAX_LAUNCH_EVENTS);
+      }
+      if (launchFlushTimer.current === null) {
+        launchFlushTimer.current = window.setTimeout(flushLaunchEvents, LAUNCH_FLUSH_MS);
+      }
+    },
+    [flushLaunchEvents],
+  );
 
   const reload = useCallback(async () => {
     if (!isTauri()) {
@@ -192,11 +227,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let unlisten: (() => void) | undefined;
     let disposed = false;
     void onEvent<LaunchEvent>("launch://event", (event) => {
-      setLaunchEvents((prev) => {
-        const next = event.kind === "log" ? [...prev, event] : prev;
-        return next.slice(-400);
-      });
+      if (event.kind === "log") {
+        queueLaunchEvent(event);
+        return;
+      }
       if (event.kind === "exit") {
+        flushLaunchEvents();
         setRunning((prev) => {
           const next = new Set(prev);
           next.delete(event.instanceId);
@@ -216,8 +252,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       disposed = true;
       unlisten?.();
+      if (launchFlushTimer.current !== null) {
+        window.clearTimeout(launchFlushTimer.current);
+        launchFlushTimer.current = null;
+      }
+      launchBuffer.current = [];
     };
-  }, [pushToast, reload]);
+  }, [pushToast, reload, queueLaunchEvent, flushLaunchEvents]);
 
 
   const markRunning = useCallback((id: string, isRunning: boolean) => {
@@ -229,7 +270,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const clearLaunchEvents = useCallback(() => setLaunchEvents([]), []);
+  const clearLaunchEvents = useCallback(() => {
+    launchBuffer.current = [];
+    if (launchFlushTimer.current !== null) {
+      window.clearTimeout(launchFlushTimer.current);
+      launchFlushTimer.current = null;
+    }
+    setLaunchEvents([]);
+  }, []);
   const setReloadPaused = useCallback((paused: boolean) => {
     reloadPaused.current = paused;
   }, []);

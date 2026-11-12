@@ -19,7 +19,7 @@
 
 > **Microsoft login:** due to current development constraints, SRL cannot yet offer out-of-the-box Microsoft sign-in. You currently need to register your own Azure application, obtain a `client id` and enter it in Settings; the login entry is explicitly disabled until then.
 
-> **Current version: `v0.2.4` (reliability update)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.4).
+> **Current version: `v0.2.5` (stability, performance and bug-fix release)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.5).
 
 ---
 
@@ -69,6 +69,13 @@
 | Mod dependency graph | 🟡 | Official Modrinth/CurseForge recursion, SVG/list view, installed detection, install plan |
 | Missing-Java install flow | 🟡 | Dynamic required major, Temurin install, rescan, no global-default overwrite |
 
+### What's new in v0.2.5
+
+- **Log reliability.** Game stdout is read as bytes and decoded lossily, so GBK output on Chinese Windows no longer stops log capture. Player checkpoints advance by real byte offsets, and rotated logs/new sessions no longer leave ghost online players.
+- **Cancellation and deadlines.** Cancelling dependency analysis now aborts in-flight HTTP requests, and the 120-second overall deadline is real. Downloads can be cancelled while waiting for response headers and now have a 60-second no-data stall timeout.
+- **File safety.** Generic ZIP modpack imports now use the same validate → stage → backup → commit transaction as overrides. Windows replacements use `MoveFileExW`, so a failed rename no longer deletes the old file first. Transaction manifests are written atomically; recovery re-validates paths and backups.
+- **Resources and performance.** FRPC cleanup is off the constructor path (no more 800 ms async-runtime stall), binary verification streams SHA-256, download target locks are released after use, and frontend launch logs flush at 5 Hz with a bounded buffer. Long mod lists use `content-visibility`.
+
 ### What's new in v0.2.4
 
 - **Dependency correctness.** Unified node IDs and graph integrity checks; local mods distinguish enabled/disabled/version-mismatch/conflict; backend verifies the required closure; bounded concurrent resolution with request budget and cancellation.
@@ -111,10 +118,10 @@
 
 | Platform | File |
 |---|---|
-| macOS 10.15+ | `SRL_0.2.4_universal.dmg` (Intel + Apple Silicon, unsigned) |
-| Windows 10/11 x64 | `SRL_0.2.4_windows-x64-portable.zip` |
-| Linux x64 | `SRL_0.2.4_amd64.deb` |
-| Linux x64 | `SRL_0.2.4_amd64.AppImage` |
+| macOS 10.15+ | `SRL_0.2.5_universal.dmg` (Intel + Apple Silicon, unsigned) |
+| Windows 10/11 x64 | `SRL_0.2.5_windows-x64-portable.zip` |
+| Linux x64 | `SRL_0.2.5_amd64.deb` |
+| Linux x64 | `SRL_0.2.5_amd64.AppImage` |
 
 Checksums: `SHA256SUMS` in the release assets.
 
@@ -133,7 +140,7 @@ Extract the whole ZIP and run `Install.cmd` (no administrator rights required), 
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.2.4_amd64.deb
+sudo apt install ./SRL_0.2.5_amd64.deb
 ```
 
 or run the AppImage. WebKitGTK 4.1 and GTK 3 are required.
@@ -208,6 +215,9 @@ Game files live in the Minecraft directory configured in Settings (default: `min
 - CurseForge search and modpack import/export use a bundled public API key; heavy use may be rate-limited.
 - The macOS build is unsigned and not notarized.
 - Mods that cannot be identified are redistributed inside `overrides/`; make sure their licenses allow it before sharing a pack.
+- Modrinth/CurseForge modpack downloads are not a single transaction: each file is replaced atomically, but a mid-run failure can leave a partial set of mods. Overrides and generic ZIP imports are transactional.
+- Windows `MoveFileExW` replacement and crash recovery have not yet been verified on real hardware.
+- The log viewer reads the newest 400 lines; full logs remain under `logs/instances/` and are not loaded wholesale into the UI.
 
 ## License
 

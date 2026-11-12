@@ -2682,6 +2682,10 @@ textarea {
   gap: 12px;
   padding: 9px 2px;
   border-bottom: 1px solid var(--border);
+  /* Skip layout/paint for offscreen rows in very large mod lists. Browsers
+     that do not support content-visibility simply ignore these two lines. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 52px;
 }
 
 .mod-list li:last-child {

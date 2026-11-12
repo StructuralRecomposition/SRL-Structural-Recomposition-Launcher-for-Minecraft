@@ -82,10 +82,10 @@ struct FrpcState {
 /// Terminate FRPC processes that belong to a previous SRL run. Matching is
 /// scoped to this app's private config directory, never to arbitrary `frpc`
 /// processes owned by the user.
-fn kill_orphan_frpc_processes(dir: &std::path::Path) {
+fn find_orphan_frpc_pids(dir: &std::path::Path) -> Vec<i32> {
     let dir_text = dir.to_string_lossy().into_owned();
     if dir_text.is_empty() {
-        return;
+        return Vec::new();
     }
     #[cfg(unix)]
     {
@@ -93,7 +93,7 @@ fn kill_orphan_frpc_processes(dir: &std::path::Path) {
             .args(["-ax", "-o", "pid=,command="])
             .output()
         else {
-            return;
+            return Vec::new();
         };
         let mut pids = Vec::new();
         for line in String::from_utf8_lossy(&output.stdout).lines() {
@@ -107,20 +107,41 @@ fn kill_orphan_frpc_processes(dir: &std::path::Path) {
                 }
             }
         }
+        pids
+    }
+    #[cfg(not(unix))]
+    {
+        Vec::new()
+    }
+}
+
+/// Terminate FRPC processes that belong to a previous SRL run. Matching is
+/// scoped to this app's private config directory, never to arbitrary `frpc`
+/// processes owned by the user.
+fn kill_orphan_frpc_processes(dir: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        let pids = find_orphan_frpc_pids(dir);
         for pid in &pids {
             unsafe {
                 libc::kill(*pid, libc::SIGTERM);
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(800));
+        // Re-scan before SIGKILL: a PID may have exited and been reused during
+        // the grace period, and it must not be killed without a command match.
+        let still_matching = find_orphan_frpc_pids(dir);
         for pid in pids {
-            unsafe {
-                libc::kill(pid, libc::SIGKILL);
+            if still_matching.contains(&pid) {
+                unsafe {
+                    libc::kill(pid, libc::SIGKILL);
+                }
             }
         }
     }
     #[cfg(windows)]
     {
+        let dir_text = dir.to_string_lossy().into_owned();
         let script = format!(
             "Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -like '*{}*' -and $_.Name -like 'frpc*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}",
             dir_text.replace('\'', "''")
@@ -148,16 +169,6 @@ impl FrpcManager {
         http: reqwest::Client,
         bundled_dir: Option<PathBuf>,
     ) -> Self {
-        kill_orphan_frpc_processes(&dir);
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                if name.starts_with("frpc-") && name.ends_with(".toml") {
-                    let _ = std::fs::remove_file(entry.path());
-                }
-            }
-        }
         Self {
             dir,
             bundled_dir,
@@ -172,6 +183,25 @@ impl FrpcManager {
         }
     }
 
+    /// Remove FRPC processes and stale config files left by a previous run.
+    /// This is deliberately explicit and blocking-isolated: doing it in the
+    /// constructor caused an 800 ms synchronous stall on the async runtime
+    /// every time an account connected.
+    pub async fn cleanup_stale_dir(dir: PathBuf) {
+        let _ = tokio::task::spawn_blocking(move || {
+            kill_orphan_frpc_processes(&dir);
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    if name.starts_with("frpc-") && name.ends_with(".toml") {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
+            }
+        })
+        .await;
+    }
     pub fn bundled_dir_clone(&self) -> Option<PathBuf> {
         self.bundled_dir.clone()
     }
@@ -358,10 +388,10 @@ impl FrpcManager {
             .dir
             .join(format!("{}-{}-{}", meta.version, meta.platform, meta.arch));
         let target = target.join(if cfg!(windows) { "frpc.exe" } else { "frpc" });
-        let bytes = std::fs::read(&target).ok()?;
-        if !executable_magic_ok(&bytes)
-            || !sha256_hex(&bytes).eq_ignore_ascii_case(&meta.exe_sha256)
-        {
+        // Hash in 64 KiB chunks: the FRPC binary is ~20-40 MB and reading it
+        // whole on every room creation caused a needless memory spike.
+        let digest = crate::util::sha256_file_sync(&target).ok()?;
+        if !executable_magic_file(&target) || !digest.eq_ignore_ascii_case(&meta.exe_sha256) {
             return None;
         }
         Some(PreparedFrpc {
@@ -766,8 +796,7 @@ fn bundled_blocking(
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
     }
-    let _ = std::fs::remove_file(&target);
-    if std::fs::rename(&tmp, &target).is_err() {
+    if crate::util::replace_file_sync(&tmp, &target).is_err() {
         let _ = std::fs::remove_file(&tmp);
         return None;
     }
@@ -857,6 +886,18 @@ fn extract_executable(bytes: &[u8], os: &str) -> Result<Vec<u8>> {
     }
     let _ = os;
     Ok(bytes.to_vec())
+}
+
+fn executable_magic_file(path: &Path) -> bool {
+    use std::io::Read as _;
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut magic = [0u8; 4];
+    if file.read_exact(&mut magic).is_err() {
+        return false;
+    }
+    executable_magic_ok(&magic)
 }
 
 fn executable_magic_ok(bytes: &[u8]) -> bool {

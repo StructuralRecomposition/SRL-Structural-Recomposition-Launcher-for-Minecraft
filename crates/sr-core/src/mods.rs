@@ -221,15 +221,9 @@ pub async fn import(instance: &Instance, source: &Path, overwrite: bool) -> Resu
         let _ = tokio::fs::remove_file(&tmp).await;
         return Err(e.into());
     }
-    #[cfg(windows)]
-    {
-        if tokio::fs::try_exists(&dest).await.unwrap_or(false) {
-            tokio::fs::remove_file(&dest).await?;
-        }
-    }
-    if let Err(e) = tokio::fs::rename(&tmp, &dest).await {
+    if let Err(e) = crate::util::replace_file_async(&tmp, &dest).await {
         let _ = tokio::fs::remove_file(&tmp).await;
-        return Err(e.into());
+        return Err(e);
     }
     entry_for(&dest).await
 }

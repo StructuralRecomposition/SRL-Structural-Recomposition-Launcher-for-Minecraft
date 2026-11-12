@@ -162,6 +162,61 @@ pub async fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     }
 }
 
+/// Synchronous atomic write for small transaction manifests. Uses the same
+/// temp-file + fsync + replace sequence as `atomic_write`.
+pub fn atomic_write_sync(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::path_unsafe("目标路径没有父目录"))?;
+    std::fs::create_dir_all(parent)?;
+    let tmp = parent.join(format!(".{}.tmp-{}", file_name(path), uuid::Uuid::new_v4()));
+    {
+        use std::io::Write as _;
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(bytes)?;
+        file.flush()?;
+        file.sync_all()?;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        };
+        let from: Vec<u16> = tmp
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let to: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let ok = unsafe {
+            MoveFileExW(
+                from.as_ptr(),
+                to.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if ok == 0 {
+            let failure = std::io::Error::last_os_error();
+            let _ = std::fs::remove_file(&tmp);
+            return Err(AppError::from(failure));
+        }
+        return Ok(());
+    }
+    #[cfg(not(windows))]
+    {
+        if let Err(error) = std::fs::rename(&tmp, path) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(AppError::from(error));
+        }
+        Ok(())
+    }
+}
+
 pub async fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>> {
     match tokio::fs::read(path).await {
         Ok(bytes) => {
@@ -222,6 +277,61 @@ pub async fn write_private_file(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Replace `to` with `from` in one filesystem operation.
+///
+/// On Windows, deleting `to` before renaming loses the original file if the
+/// rename then fails. `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` keeps the old
+/// file intact until the replacement succeeds.
+pub fn replace_file_sync(from: &Path, to: &Path) -> Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        };
+        let from_wide: Vec<u16> = from
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let to_wide: Vec<u16> = to
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let ok = unsafe {
+            MoveFileExW(
+                from_wide.as_ptr(),
+                to_wide.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if ok == 0 {
+            return Err(AppError::from(std::io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::rename(from, to).map_err(AppError::from)
+    }
+}
+
+pub async fn replace_file_async(from: &Path, to: &Path) -> Result<()> {
+    #[cfg(windows)]
+    {
+        let from = from.to_path_buf();
+        let to = to.to_path_buf();
+        tokio::task::spawn_blocking(move || replace_file_sync(&from, &to))
+            .await
+            .map_err(|error| AppError::internal(format!("替换文件失败：{error}")))?
+    }
+    #[cfg(not(windows))]
+    {
+        tokio::fs::rename(from, to).await.map_err(AppError::from)
+    }
+}
+
 pub async fn sha1_file(path: &Path) -> Result<String> {
     let mut file = tokio::fs::File::open(path).await?;
     let mut hasher = Sha1::new();
@@ -232,6 +342,25 @@ pub async fn sha1_file(path: &Path) -> Result<String> {
             break;
         }
         hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+/// Streaming SHA-256 for large local files (FRPC binaries, archives).
+pub fn sha256_file_sync(path: &Path) -> Result<String> {
+    use sha2::{Digest as _, Sha256};
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let read = {
+            use std::io::Read as _;
+            file.read(&mut buf)?
+        };
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buf[..read]);
     }
     Ok(hex::encode(hasher.finalize()))
 }

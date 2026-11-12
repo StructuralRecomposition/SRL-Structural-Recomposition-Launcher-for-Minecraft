@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::AsyncWriteExt;
 use tokio::process::Child;
 use tokio::sync::{Mutex, RwLock};
 
@@ -40,11 +40,18 @@ pub struct LaunchResult {
 
 const LOG_SHARD_BYTES: u64 = 32 * 1024 * 1024;
 const LOG_SHARDS: u32 = 5;
+/// A single captured line is truncated at this size. Minecraft stack traces
+/// and mod errors are far smaller; this only bounds pathological output.
+const MAX_CAPTURED_LINE_BYTES: usize = 256 * 1024;
+/// If a rotation cannot rename the current shard, retry only after another
+/// 8 MiB instead of attempting every single log line.
+const ROTATION_RETRY_BYTES: u64 = 8 * 1024 * 1024;
 
 struct SessionLogWriter {
     file: Option<tokio::fs::File>,
     path: PathBuf,
     bytes: u64,
+    rotate_at: u64,
 }
 
 impl SessionLogWriter {
@@ -59,18 +66,23 @@ impl SessionLogWriter {
             file: Some(file),
             path,
             bytes,
+            rotate_at: LOG_SHARD_BYTES,
         })
     }
 
     async fn write_line(&mut self, line: &str) -> Result<()> {
-        if self.bytes >= LOG_SHARD_BYTES {
+        if self.bytes >= self.rotate_at {
             self.rotate().await?;
         }
-        if let Some(file) = self.file.as_mut() {
-            file.write_all(line.as_bytes()).await?;
-            file.flush().await?;
-            self.bytes = self.bytes.saturating_add(line.len() as u64);
-        }
+        let Some(file) = self.file.as_mut() else {
+            return Err(AppError::new(
+                ErrorCode::Io,
+                "游戏日志文件不可写，日志写入已暂停",
+            ));
+        };
+        file.write_all(line.as_bytes()).await?;
+        file.flush().await?;
+        self.bytes = self.bytes.saturating_add(line.len() as u64);
         Ok(())
     }
 
@@ -79,15 +91,52 @@ impl SessionLogWriter {
             let _ = file.flush().await;
             drop(file);
         }
-        let _ = tokio::fs::remove_file(self.path.with_extension(format!("log.{LOG_SHARDS}"))).await;
+        let oldest = self.path.with_extension(format!("log.{LOG_SHARDS}"));
+        if let Err(error) = tokio::fs::remove_file(&oldest).await {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(path = %oldest.display(), %error, "failed to remove oldest log shard");
+            }
+        }
         for index in (1..LOG_SHARDS).rev() {
             let from = self.path.with_extension(format!("log.{index}"));
             let to = self.path.with_extension(format!("log.{}", index + 1));
             if tokio::fs::try_exists(&from).await.unwrap_or(false) {
-                let _ = tokio::fs::rename(&from, &to).await;
+                if let Err(error) = tokio::fs::rename(&from, &to).await {
+                    // A failed shift must not abort rotation: the next index
+                    // is still free, and the current shard can be moved to
+                    // `.log.1` unless that slot is the one that failed.
+                    tracing::warn!(
+                        from = %from.display(),
+                        to = %to.display(),
+                        %error,
+                        "failed to shift rotated log shard"
+                    );
+                }
             }
         }
-        let _ = tokio::fs::rename(&self.path, self.path.with_extension("log.1")).await;
+        match tokio::fs::rename(&self.path, self.path.with_extension("log.1")).await {
+            Ok(()) => {
+                self.bytes = 0;
+                self.rotate_at = LOG_SHARD_BYTES;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                // The live shard disappeared (manual cleanup). Recreate it and
+                // keep counting from zero.
+                self.bytes = 0;
+                self.rotate_at = LOG_SHARD_BYTES;
+            }
+            Err(error) => {
+                // Keep appending to the existing shard. The byte counter must
+                // stay truthful, otherwise the next rotation is attempted
+                // after every line and the log can grow without bound.
+                tracing::warn!(
+                    path = %self.path.display(),
+                    %error,
+                    "log rotation failed; keeping the current shard"
+                );
+                self.rotate_at = self.bytes.saturating_add(ROTATION_RETRY_BYTES);
+            }
+        }
         self.file = Some(
             tokio::fs::OpenOptions::new()
                 .create(true)
@@ -95,7 +144,6 @@ impl SessionLogWriter {
                 .open(&self.path)
                 .await?,
         );
-        self.bytes = 0;
         Ok(())
     }
 }
@@ -433,35 +481,7 @@ impl LaunchManager {
     {
         let sink = self.sink.clone();
         tokio::spawn(async move {
-            let mut lines = BufReader::new(reader).lines();
-            loop {
-                match lines.next_line().await {
-                    Ok(Some(line)) => {
-                        let line = util::redact_secrets(&line);
-                        {
-                            let mut writer = log_file.lock().await;
-                            if let Err(error) =
-                                writer.write_line(&format!("[{stream}] {line}\n")).await
-                            {
-                                tracing::warn!(stream, error = %error, "game log write failed");
-                            }
-                        }
-                        (sink)(LaunchEvent {
-                            instance_id: instance_id.clone(),
-                            kind: "log".into(),
-                            stream: Some(stream.into()),
-                            line: Some(line),
-                            code: None,
-                            message: None,
-                        });
-                    }
-                    Ok(None) => break,
-                    Err(e) => {
-                        tracing::warn!(stream, error = %e, "failed reading game output");
-                        break;
-                    }
-                }
-            }
+            pump_lines(instance_id, stream, reader, log_file, sink).await;
         });
     }
 
@@ -503,6 +523,113 @@ impl LaunchManager {
                 }
             }
         });
+    }
+}
+
+/// Read one line as bytes, tolerating invalid UTF-8 and bounding memory.
+///
+/// `AsyncBufReadExt::lines()` rejects the whole stream when a single byte is
+/// not valid UTF-8. Java's stdout uses the platform console encoding on
+/// Windows, so a Chinese system can emit GBK and silently kill log capture.
+/// Reading bytes and converting lossily keeps the stream alive; player names
+/// and join/leave markers are ASCII and still parse correctly.
+async fn read_line_bounded<R>(
+    reader: &mut R,
+    out: &mut Vec<u8>,
+    max_bytes: usize,
+) -> std::io::Result<usize>
+where
+    R: tokio::io::AsyncBufRead + Unpin,
+{
+    use tokio::io::AsyncBufReadExt;
+    out.clear();
+    let mut total = 0usize;
+    loop {
+        let available = reader.fill_buf().await?;
+        if available.is_empty() {
+            return Ok(total);
+        }
+        let newline = available.iter().position(|&byte| byte == b'\n');
+        let chunk_len = newline.map(|pos| pos + 1).unwrap_or(available.len());
+        let remaining = max_bytes.saturating_sub(out.len());
+        let keep = chunk_len.min(remaining);
+        out.extend_from_slice(&available[..keep]);
+        reader.consume(chunk_len);
+        total += chunk_len;
+        if newline.is_some() {
+            if out.last() == Some(&b'\n') {
+                out.pop();
+            }
+            if out.last() == Some(&b'\r') {
+                out.pop();
+            }
+            return Ok(total);
+        }
+        if out.len() >= max_bytes {
+            // Discard the rest of this oversized line so the next call starts
+            // at a real line boundary.
+            loop {
+                let available = reader.fill_buf().await?;
+                if available.is_empty() {
+                    return Ok(total);
+                }
+                match available.iter().position(|&byte| byte == b'\n') {
+                    Some(pos) => {
+                        reader.consume(pos + 1);
+                        total += pos + 1;
+                        if out.last() == Some(&b'\r') {
+                            out.pop();
+                        }
+                        out.extend_from_slice(b" [line truncated]");
+                        return Ok(total);
+                    }
+                    None => {
+                        let len = available.len();
+                        reader.consume(len);
+                        total += len;
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn pump_lines<R>(
+    instance_id: String,
+    stream: &'static str,
+    reader: R,
+    log_file: Arc<Mutex<SessionLogWriter>>,
+    sink: LaunchSink,
+) where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut reader = tokio::io::BufReader::new(reader);
+    let mut buffer = Vec::with_capacity(8 * 1024);
+    loop {
+        match read_line_bounded(&mut reader, &mut buffer, MAX_CAPTURED_LINE_BYTES).await {
+            Ok(0) => break,
+            Ok(_) => {
+                let line = util::redact_secrets(&String::from_utf8_lossy(&buffer));
+                {
+                    let mut writer = log_file.lock().await;
+                    if let Err(error) = writer.write_line(&format!("[{stream}] {line}\n")).await {
+                        tracing::warn!(stream, error = %error, "game log write failed");
+                    }
+                }
+                (sink)(LaunchEvent {
+                    instance_id: instance_id.clone(),
+                    kind: "log".into(),
+                    stream: Some(stream.into()),
+                    line: Some(line),
+                    code: None,
+                    message: None,
+                });
+            }
+            Err(error) => {
+                tracing::warn!(stream, error = %error, "failed reading game output");
+                break;
+            }
+        }
     }
 }
 
@@ -561,6 +688,61 @@ mod tests {
         assert!(path.with_extension("log.1").exists());
         let current = tokio::fs::read_to_string(&path).await.unwrap();
         assert_eq!(current, "after\n");
+    }
+
+    #[tokio::test]
+    async fn captures_non_utf8_output_without_stopping() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.log");
+        let log = SessionLogWriter::open(path.clone()).await.unwrap();
+        let log = Arc::new(Mutex::new(log));
+        let events = Arc::new(std::sync::Mutex::new(Vec::<LaunchEvent>::new()));
+        let sink_events = events.clone();
+        let sink: LaunchSink = Arc::new(move |event| {
+            sink_events.lock().unwrap().push(event);
+        });
+        let (mut client, server) = tokio::io::duplex(4096);
+        let task = tokio::spawn(pump_lines(
+            "inst".into(),
+            "stdout",
+            server,
+            log.clone(),
+            sink,
+        ));
+        client
+            .write_all(b"first line\n\xff\xfe second line\nthird line")
+            .await
+            .unwrap();
+        drop(client);
+        task.await.unwrap();
+
+        let text = tokio::fs::read_to_string(&path).await.unwrap();
+        assert!(text.contains("first line"));
+        assert!(text.contains("second line"));
+        assert!(text.contains("third line"));
+        let captured = events.lock().unwrap();
+        assert_eq!(captured.len(), 3);
+        assert!(captured.iter().all(|event| event.kind == "log"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_rotation_keeps_byte_counter() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.log");
+        let mut writer = SessionLogWriter::open(path.clone()).await.unwrap();
+        writer.write_line("before\n").await.unwrap();
+        writer.bytes = writer.rotate_at;
+        let dir_path = dir.path().to_path_buf();
+        std::fs::set_permissions(&dir_path, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let result = writer.write_line("after\n").await;
+        std::fs::set_permissions(&dir_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(result.is_ok(), "writer must keep appending: {result:?}");
+        assert!(writer.bytes >= LOG_SHARD_BYTES);
+        assert!(writer.rotate_at > LOG_SHARD_BYTES);
+        let text = tokio::fs::read_to_string(&path).await.unwrap();
+        assert!(text.contains("after"));
     }
 
     #[tokio::test]

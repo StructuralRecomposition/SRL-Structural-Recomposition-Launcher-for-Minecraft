@@ -21,7 +21,14 @@
 
 **English:** SRL (Structural Recomposition Launcher) is an independent, local-first Minecraft: Java Edition launcher built with Rust, Tauri 2, React and TypeScript. It focuses on verifiable downloads, real process launching, clear diagnostics, and honest capability boundaries. No telemetry, no proprietary game files, MIT licensed.
 
-> **当前版本：`v0.2.4`（可靠性修复）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.4)。
+> **当前版本：`v0.2.5`（稳定性 · 性能 · Bug 修复）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.5)。
+
+### v0.2.5 更新摘要
+
+- **日志可靠性。** 游戏 stdout 改为按字节读取并容错非 UTF-8；中文 Windows 的 GBK 输出不再导致日志采集中断。玩家检查点按真实字节偏移推进，日志轮转和新会话不再留下“幽灵在线玩家”。
+- **取消与超时。** 依赖解析取消会中断正在进行的 HTTP 请求，120 秒整体截止时间真正生效；下载在等待响应头阶段即可取消，并增加 60 秒无数据停滞超时。
+- **文件安全。** 通用 ZIP 整合包导入也使用“校验 → 暂存 → 备份 → 提交”事务；Windows 文件替换统一使用 `MoveFileExW`，重命名失败不再先删除旧文件；事务清单原子写入，恢复时重新校验路径与备份。
+- **资源与性能。** FRPC 清理移出构造路径（不再阻塞异步线程 800ms），二进制校验改为流式 SHA-256；下载目标锁使用后释放；前端游戏日志按 200ms 批量刷新并限制缓冲，模组长列表启用 `content-visibility`。
 
 ### v0.2.4 更新摘要
 
@@ -244,18 +251,18 @@
 
 ## 下载与安装
 
-### v0.2.4 下载
+### v0.2.5 下载
 
 已构建好的安装包直接放在 GitHub Release，点开即可下载：
 
-**https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.4**
+**https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.5**
 
 | 平台 | 文件 | 说明 |
 |---|---|---|
-| macOS 10.15+ | `SRL_0.2.4_universal.dmg` | Intel + Apple Silicon，未签名、未公证 |
-| Windows 10/11 x64 | `SRL_0.2.4_windows-x64-portable.zip` | 需要 WebView2 Runtime；解压后运行 `Install.cmd` |
-| Linux x64 | `SRL_0.2.4_amd64.deb` | 需要 WebKitGTK 4.1 等运行库 |
-| Linux x64 | `SRL_0.2.4_amd64.AppImage` | 免安装；需要 FUSE 或 `--appimage-extract-and-run` |
+| macOS 10.15+ | `SRL_0.2.5_universal.dmg` | Intel + Apple Silicon，未签名、未公证 |
+| Windows 10/11 x64 | `SRL_0.2.5_windows-x64-portable.zip` | 需要 WebView2 Runtime；解压后运行 `Install.cmd` |
+| Linux x64 | `SRL_0.2.5_amd64.deb` | 需要 WebKitGTK 4.1 等运行库 |
+| Linux x64 | `SRL_0.2.5_amd64.AppImage` | 免安装；需要 FUSE 或 `--appimage-extract-and-run` |
 | 校验 | `SHA256SUMS` | 所有附件的 SHA-256 |
 
 > `release-assets/` 保存本次发布的构建产物，供维护者复核；普通用户直接下载 Release 附件即可。后续版本可以用 [`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) 手动构建，再上传到对应 Release。
@@ -281,7 +288,7 @@ xattr -dr com.apple.quarantine /Applications/SRL.app
 **Linux**
 
 ```bash
-sudo apt install ./SRL_0.2.4_amd64.deb
+sudo apt install ./SRL_0.2.5_amd64.deb
 ```
 
 ### 第一次使用
@@ -470,6 +477,9 @@ crates/sr-core
 10. **自动更新未实现。** 需要签名公钥与更新源，计划在后续版本加入。
 11. **鸦鸭的整合包级操作未完成。** 复制实例、启动测试、清单比较尚未实现。
 12. **第三方接口可能限流。** Modrinth / CurseForge / Adoptium 的可用性受网络与配额影响，失败时会给出明确错误。
+13. **Modrinth / CurseForge 整合包下载不是完整事务。** 每个文件原子替换，但中途失败可能留下部分模组；overrides 与通用 ZIP 已事务化。
+14. **Windows 文件替换与崩溃恢复尚未实机复测。** 代码已统一使用 `MoveFileExW`，真实设备验证仍需完成。
+15. **日志面板只显示尾部。** 游戏日志面板读取最近 400 行；完整日志保存在 `logs/instances/`，不会为了 UI 一次性加载全部内容。
 
 ## 路线图
 

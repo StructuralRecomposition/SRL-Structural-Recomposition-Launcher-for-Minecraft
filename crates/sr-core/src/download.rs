@@ -46,6 +46,10 @@ pub const TRUSTED_HOSTS: &[&str] = &[
 
 pub const MAX_RETRIES: u32 = 3;
 
+/// A response stream that produces no bytes for this long is treated as a
+/// stalled connection instead of relying on the client-wide timeout.
+const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
 pub fn ensure_trusted_url(raw: &str, allow_custom_hosts: bool) -> Result<reqwest::Url> {
     let url = reqwest::Url::parse(raw)
         .map_err(|e| AppError::invalid_input("下载地址格式无效").with_detail(e.to_string()))?;
@@ -352,7 +356,34 @@ pub struct DownloadManager {
     store: Option<PathBuf>,
     permits: Arc<std::sync::RwLock<Arc<Semaphore>>>,
     limit: Arc<AtomicU64>,
-    target_locks: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>>,
+    target_locks: Arc<std::sync::Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>>,
+}
+
+/// Guard for a per-destination download lock. Dropping the last user removes
+/// the map entry so installing many versions does not grow the manager's
+/// memory forever.
+pub struct TargetGuard {
+    guard: Option<OwnedMutexGuard<()>>,
+    locks: Arc<std::sync::Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>>,
+    dest: PathBuf,
+    lock: Arc<Mutex<()>>,
+}
+
+impl Drop for TargetGuard {
+    fn drop(&mut self) {
+        self.guard.take();
+        if let Ok(mut map) = self.locks.lock() {
+            // map + self.lock are the only remaining owners when nobody is
+            // waiting; a waiter would still hold an Arc through its guard.
+            if Arc::strong_count(&self.lock) <= 2
+                && map
+                    .get(&self.dest)
+                    .is_some_and(|value| Arc::ptr_eq(value, &self.lock))
+            {
+                map.remove(&self.dest);
+            }
+        }
+    }
 }
 
 impl DownloadManager {
@@ -384,20 +415,29 @@ impl DownloadManager {
                 concurrency as usize,
             )))),
             limit: Arc::new(AtomicU64::new(concurrency as u64)),
-            target_locks: Arc::new(Mutex::new(HashMap::new())),
+            target_locks: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
     /// Serialize downloads that target the same path so the deterministic
     /// `.srpart` file cannot be written by two tasks at once.
-    pub async fn lock_target(&self, dest: &Path) -> OwnedMutexGuard<()> {
+    pub async fn lock_target(&self, dest: &Path) -> TargetGuard {
         let lock = {
-            let mut map = self.target_locks.lock().await;
+            let mut map = self
+                .target_locks
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
             map.entry(dest.to_path_buf())
                 .or_insert_with(|| Arc::new(Mutex::new(())))
                 .clone()
         };
-        lock.lock_owned().await
+        let guard = lock.clone().lock_owned().await;
+        TargetGuard {
+            guard: Some(guard),
+            locks: self.target_locks.clone(),
+            dest: dest.to_path_buf(),
+            lock,
+        }
     }
 
     /// Acquire a permit from the global download limiter. The permit is
@@ -513,9 +553,11 @@ impl DownloadManager {
     pub async fn cancel_all(&self) {
         let tasks = self.tasks.read().await;
         for handle in tasks.values() {
-            if let Ok(inner) = handle.inner.try_lock() {
-                inner.cancel.cancel();
-            }
+            // `try_lock` can miss a task that is emitting progress at exit;
+            // shutdown must not leave a download running.
+            let inner = handle.inner.lock().await;
+            inner.cancel.cancel();
+            handle.cancel.cancel();
         }
     }
 
@@ -621,11 +663,41 @@ async fn cleanup_partial(tmp: &Path) {
 async fn replace_file(tmp: &Path, dest: &Path) -> Result<()> {
     #[cfg(windows)]
     {
-        if tokio::fs::try_exists(dest).await.unwrap_or(false) {
-            tokio::fs::remove_file(dest).await?;
+        // MoveFileExW replaces the destination in one operation. Deleting the
+        // old file first loses it when the rename fails (antivirus lock,
+        // permission change), so never do that on Windows.
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        };
+        let from: Vec<u16> = tmp
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let to: Vec<u16> = dest
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let ok = unsafe {
+            MoveFileExW(
+                from.as_ptr(),
+                to.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if ok == 0 {
+            let error = std::io::Error::last_os_error();
+            let _ = tokio::fs::remove_file(tmp).await;
+            return Err(AppError::from(error));
         }
+        return Ok(());
     }
-    tokio::fs::rename(tmp, dest).await.map_err(AppError::from)
+    #[cfg(not(windows))]
+    {
+        tokio::fs::rename(tmp, dest).await.map_err(AppError::from)
+    }
 }
 
 fn header_string(
@@ -826,7 +898,10 @@ where
             .header(reqwest::header::RANGE, format!("bytes={}-", state.offset))
             .header(reqwest::header::IF_RANGE, &state.validator);
     }
-    let response = request.send().await?;
+    let response = tokio::select! {
+        result = request.send() => result?,
+        _ = cancel.cancelled() => return Err(AppError::cancelled()),
+    };
     let status = response.status();
 
     if status.as_u16() == 416 {
@@ -851,7 +926,10 @@ where
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse::<u64>().ok())
             {
-                tokio::time::sleep(Duration::from_secs(secs.min(30))).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(secs.min(30))) => {}
+                    _ = cancel.cancelled() => return Err(AppError::cancelled()),
+                }
             }
         }
         return Err(error);
@@ -914,15 +992,22 @@ where
     let mut stream = response.bytes_stream();
     loop {
         tokio::select! {
-            chunk = stream.next() => {
+            chunk = tokio::time::timeout(STREAM_IDLE_TIMEOUT, stream.next()) => {
                 match chunk {
-                    Some(Ok(bytes)) => {
+                    Err(_) => {
+                        file.flush().await.ok();
+                        return Err(AppError::network(
+                            "下载连接超过 60 秒没有收到数据，已中断并等待重试",
+                        )
+                        .retryable(true));
+                    }
+                    Ok(Some(Ok(bytes))) => {
                         file.write_all(&bytes).await?;
                         written += bytes.len() as u64;
                         progress(written);
                     }
-                    Some(Err(e)) => return Err(AppError::from(e)),
-                    None => break,
+                    Ok(Some(Err(e))) => return Err(AppError::from(e)),
+                    Ok(None) => break,
                 }
             }
             _ = cancel.cancelled() => {
@@ -993,6 +1078,67 @@ mod tests {
         assert!(ensure_trusted_url("https://evil.example/x.jar", false).is_err());
         assert!(ensure_trusted_url("https://evil.example/x.jar", true).is_ok());
         assert!(ensure_trusted_url("https://user:pass@piston-meta.mojang.com/x", false).is_err());
+    }
+
+    #[tokio::test]
+    async fn cancel_interrupts_a_pending_response() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        // Accept the connection but never send a response header.
+        let server = tokio::spawn(async move {
+            let mut sockets = Vec::new();
+            for _ in 0..4 {
+                let Ok((socket, _)) = listener.accept().await else {
+                    break;
+                };
+                sockets.push(socket);
+            }
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            drop(sockets);
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("pending.bin");
+        let cancel = CancellationToken::new();
+        let url = format!("http://{addr}/file");
+        let started = Instant::now();
+        let task_cancel = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            task_cancel.cancel();
+        });
+        let result = tokio::time::timeout(
+            Duration::from_secs(3),
+            download_file(
+                &reqwest::Client::new(),
+                &DownloadSpec {
+                    url: &url,
+                    dest: &dest,
+                    sha1: None,
+                    size: None,
+                },
+                &cancel,
+                false,
+                |_| {},
+            ),
+        )
+        .await
+        .expect("cancel must interrupt a request waiting for headers");
+        assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
+        assert!(started.elapsed() < Duration::from_secs(3));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn target_lock_entries_are_removed_after_use() {
+        let sink: TaskSink = Arc::new(|_| {});
+        let manager = DownloadManager::new(sink);
+        let dest = PathBuf::from("/tmp/srl-target-lock-test");
+        {
+            let _guard = manager.lock_target(&dest).await;
+            assert_eq!(manager.target_locks.lock().unwrap().len(), 1);
+        }
+        assert!(manager.target_locks.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

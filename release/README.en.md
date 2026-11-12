@@ -2,16 +2,16 @@
 
 [简体中文](README.md) · **English**
 
-Current source version: **v0.2.4 reliability release** (dependency identity · player checkpoints · log rotation · process identity)
+Current source version: **v0.2.5 stability, performance and bug-fix release** (log resilience · cancellable requests · file transactions · resource cleanup)
 
 GitHub Releases is authoritative; this directory only keeps local verification artifacts and notes.
 
 | Platform | File |
 |---|---|
-| macOS (Intel + Apple Silicon) | `SRL_0.2.4_universal.dmg` |
-| Windows 10/11 x64 | `SRL_0.2.4_windows-x64-portable.zip` |
-| Linux x64 (Debian / Ubuntu) | `SRL_0.2.4_amd64.deb` |
-| Linux x64 (universal) | `SRL_0.2.4_amd64.AppImage` |
+| macOS (Intel + Apple Silicon) | `SRL_0.2.5_universal.dmg` |
+| Windows 10/11 x64 | `SRL_0.2.5_windows-x64-portable.zip` |
+| Linux x64 (Debian / Ubuntu) | `SRL_0.2.5_amd64.deb` |
+| Linux x64 (universal) | `SRL_0.2.5_amd64.AppImage` |
 
 Checksums are in `SHA256SUMS`.
 
@@ -32,17 +32,15 @@ Extract the whole ZIP and run `Install.cmd` (no administrator rights needed), or
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.2.4_amd64.deb
+sudo apt install ./SRL_0.2.5_amd64.deb
 ```
 
 or run the AppImage. WebKitGTK 4.1 and GTK 3 are required.
 
-## v0.2.2 local test build (unreleased)
+## Note
 
-- Multiplayer management center with host/guest modes, separated status, player events, room log, Server List Ping and a stoppable monitor.
-- Mod dependency visualization with recursive Modrinth/CurseForge resolution, SVG graph, installed detection and safe installs.
-- Java auto-completion installs Temurin when missing and continues launching without overwriting the global default.
-- All four installers were built locally; no GitHub Release has been published yet.
+- Installers are built by GitHub Actions on the matching tag. Local files are for verification only and do not replace release assets.
+- This release is unsigned and not notarized; verify downloads against `SHA256SUMS` in the release assets.
 
 ## What's new in v0.2.1
 

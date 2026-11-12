@@ -1,6 +1,6 @@
 # 发布流程
 
-当前版本尚未发布，以下为发布前必须完成的清单。
+以下为发布前必须完成的清单。v0.2.5 已按此流程执行；平台实机项仍需在对应设备上复核。
 
 ## 1. 版本与变更
 
@@ -13,15 +13,15 @@
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy -p sr-core -- -D warnings
-cargo test -p sr-core
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --all-targets
 npx vitest run
 npm run build
 npx tauri build --debug --no-bundle
 ```
 
 - [ ] 无失败测试
-- [ ] 无高危 `cargo audit` / `npm audit` 结果（尚未接入 CI）
+- [ ] 无高危 `cargo audit` / `npm audit` 结果（CI 已接入）
 - [ ] 手动走查：安装 → 校验 → 创建实例 → 启动 → 退出 → 删除
 - [ ] 断网启动已安装版本
 - [ ] 取消安装后无残留 `.srpart` 文件
