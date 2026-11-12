@@ -116,7 +116,18 @@ export function HomePage() {
       await api.stopInstance(instance.id);
       pushToast(tr("正在终止游戏进程"), "warning");
     } catch (e) {
-      pushToast(tr("无法终止进程"), "error", e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      if (message.includes("10 秒") && window.confirm(`${message}\n\n仍要强制结束吗？`)) {
+        try {
+          await api.stopInstance(instance.id, true);
+          pushToast(tr("已强制结束游戏进程"), "warning");
+          return;
+        } catch (forceError) {
+          pushToast(tr("无法终止进程"), "error", forceError instanceof Error ? forceError.message : String(forceError));
+          return;
+        }
+      }
+      pushToast(tr("无法终止进程"), "error", message);
     }
   }
 

@@ -188,16 +188,24 @@ pub async fn install_analysis(
                 node.relation.as_str()
             )));
         }
-        if node.relation == super::model::DependencyRelation::Required
-            && node.installable
-            && !node.installed
-            && node.depth > 0
-            && !requested.contains(node.id.as_str())
+    }
+
+    // Required edges from a requested node form a closure that the backend
+    // must verify independently of the frontend selection.
+    for edge in &analysis.edges {
+        if !requested.contains(edge.from.as_str())
+            || edge.relation != super::model::DependencyRelation::Required
+            || requested.contains(edge.to.as_str())
         {
-            return Err(AppError::invalid_input(format!(
-                "缺少必需依赖：{}",
-                node.title
-            )));
+            continue;
+        }
+        if let Some(node) = analysis.nodes.iter().find(|node| node.id == edge.to) {
+            if !node.installed {
+                return Err(AppError::invalid_input(format!(
+                    "缺少必需依赖：{}",
+                    node.title
+                )));
+            }
         }
     }
 

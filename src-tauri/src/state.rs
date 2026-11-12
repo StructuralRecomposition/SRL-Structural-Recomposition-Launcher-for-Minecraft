@@ -8,7 +8,7 @@ use sr_core::paths::{AppPaths, GamePaths};
 use sr_core::settings::Settings;
 use sr_core::skin::SkinLibrary;
 use sr_core::version::VersionService;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, RwLock};
@@ -31,6 +31,10 @@ pub struct AppState {
     /// Prevents two concurrent installs of the same version writing the same
     /// files. Cleared when the install task ends.
     pub installing: Arc<Mutex<HashSet<String>>>,
+    /// Per-instance lifecycle lock shared by launch/delete/duplicate/update.
+    /// The lock is held for the whole operation so a start cannot race a
+    /// destructive file operation.
+    pub lifecycle: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
 }
 
 impl AppState {
@@ -40,6 +44,13 @@ impl AppState {
 
     pub async fn settings_snapshot(&self) -> Settings {
         self.settings.read().await.clone()
+    }
+
+    pub async fn instance_lock(&self, instance_id: &str) -> Arc<Mutex<()>> {
+        let mut map = self.lifecycle.lock().await;
+        map.entry(instance_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 
     pub async fn rebuild_launch_manager(&self) {

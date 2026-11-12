@@ -2,16 +2,16 @@
 
 **简体中文** · [English](README.en.md)
 
-当前源码版本：**v0.2.2 本地测试版**（联机管理中心 · 依赖可视化 · Java 自动补全）
+当前源码版本：**v0.2.3 稳定性修复版**（数据安全 · 实例锁 · 联机状态 · 依赖校验）
 
 正式发布以 GitHub Releases 为准；本目录仅保留本地验证产物与说明。
 
 | 平台 | 文件 |
 |---|---|
-| macOS（Intel + Apple Silicon） | `SRL_0.2.2_universal.dmg` |
-| Windows 10/11 x64 | `SRL_0.2.2_windows-x64-portable.zip` |
-| Linux x64（Debian / Ubuntu） | `SRL_0.2.2_amd64.deb` |
-| Linux x64（通用） | `SRL_0.2.2_amd64.AppImage` |
+| macOS（Intel + Apple Silicon） | `SRL_0.2.3_universal.dmg` |
+| Windows 10/11 x64 | `SRL_0.2.3_windows-x64-portable.zip` |
+| Linux x64（Debian / Ubuntu） | `SRL_0.2.3_amd64.deb` |
+| Linux x64（通用） | `SRL_0.2.3_amd64.AppImage` |
 
 校验值见 `SHA256SUMS`。
 
@@ -32,7 +32,7 @@ xattr -dr com.apple.quarantine /Applications/SRL.app
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.2.2_amd64.deb
+sudo apt install ./SRL_0.2.3_amd64.deb
 ```
 
 或运行 AppImage；需要 WebKitGTK 4.1 与 GTK 3。

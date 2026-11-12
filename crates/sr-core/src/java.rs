@@ -430,6 +430,26 @@ pub async fn discover_with_managed(
     out
 }
 
+/// Compare a detected runtime architecture with the host. Unknown values are
+/// accepted (legacy scans did not record them), but a known mismatch is not.
+pub fn arch_matches_host(info: &JavaInfo) -> bool {
+    fn normalize(value: &str) -> String {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "amd64" | "x64" | "x86-64" | "x86_64" => "x86_64".into(),
+            "arm64" | "aarch64" => "aarch64".into(),
+            other => other.into(),
+        }
+    }
+    let Some(arch) = info
+        .arch
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return true;
+    };
+    normalize(arch) == normalize(std::env::consts::ARCH)
+}
+
 /// Pick a Java that is safe to launch for `required`.
 ///
 /// Order: exact major (preferred build first), then the user's preferred
@@ -441,9 +461,12 @@ pub fn select_for_launch<'a>(
     required: u32,
     preferred: Option<&Path>,
 ) -> Option<&'a JavaInfo> {
-    let exact = |j: &&JavaInfo| j.major == required;
+    let exact = |j: &&JavaInfo| j.major == required && arch_matches_host(j);
     if let Some(p) = preferred {
-        if let Some(j) = javas.iter().find(|j| j.path == p && j.major == required) {
+        if let Some(j) = javas
+            .iter()
+            .find(|j| j.path == p && j.major == required && arch_matches_host(j))
+        {
             return Some(j);
         }
     }
@@ -453,14 +476,14 @@ pub fn select_for_launch<'a>(
     if let Some(p) = preferred {
         if let Some(j) = javas
             .iter()
-            .find(|j| j.path == p && is_compatible(required, j.major))
+            .find(|j| j.path == p && is_compatible(required, j.major) && arch_matches_host(j))
         {
             return Some(j);
         }
     }
     javas
         .iter()
-        .filter(|j| is_compatible(required, j.major))
+        .filter(|j| is_compatible(required, j.major) && arch_matches_host(j))
         .min_by_key(|j| (j.major - required, std::cmp::Reverse(j.major)))
 }
 
@@ -496,6 +519,18 @@ pub fn choose_for_launch(
         let check = check_compatibility(required, info.major);
         if check.compatibility == JavaCompatibility::Incompatible {
             return Err(JavaSelectionError::PinnedIncompatible(check));
+        }
+        if !arch_matches_host(info) {
+            return Err(JavaSelectionError::PinnedIncompatible(JavaCheck {
+                compatibility: JavaCompatibility::Incompatible,
+                required_major: required,
+                actual_major: info.major,
+                message: format!(
+                    "实例固定的 Java 架构为 {}，与当前设备 {} 不匹配；请改回自动选择或安装对应架构的 Java",
+                    info.arch.as_deref().unwrap_or("未知"),
+                    std::env::consts::ARCH
+                ),
+            }));
         }
         return Ok(info.clone());
     }

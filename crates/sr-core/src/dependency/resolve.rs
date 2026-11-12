@@ -106,7 +106,12 @@ pub async fn analyze(
         ));
     }
 
-    let root_id = format!("{}:{}", root.source.as_str(), root.project_id);
+    let root_id = format!(
+        "{}:{}:{}",
+        root.source.as_str(),
+        root.project_id,
+        root.version_id
+    );
     let root_installed = installed.find(root.source.as_str(), &root.project_id, &root.project_slug);
     let root_installable = root
         .file
@@ -126,8 +131,17 @@ pub async fn analyze(
     index.insert(root_id.clone(), nodes.len());
     nodes.push(root_node);
 
-    // Stack entries: (parent node id, parent title, depth, relation, dependency)
-    let mut stack: Vec<(String, String, u32, DependencyRelation, ResolvedDependency)> = Vec::new();
+    // Stack entries: (parent id, title, depth, relation, dependency, active)
+    // `active` is false below an unselected optional dependency, so its
+    // required children are not auto-installed.
+    let mut stack: Vec<(
+        String,
+        String,
+        u32,
+        DependencyRelation,
+        ResolvedDependency,
+        bool,
+    )> = Vec::new();
     for dependency in root.dependencies.iter().rev() {
         stack.push((
             root_id.clone(),
@@ -135,10 +149,11 @@ pub async fn analyze(
             1,
             dependency.relation,
             dependency.clone(),
+            true,
         ));
     }
 
-    while let Some((parent_id, parent_title, depth, relation, dependency)) = stack.pop() {
+    while let Some((parent_id, parent_title, depth, relation, dependency, active)) = stack.pop() {
         let Some(project_id) = dependency.project_id.clone().filter(|v| !v.is_empty()) else {
             complete = false;
             let message = format!(
@@ -153,20 +168,42 @@ pub async fn analyze(
             warnings.push(message);
             continue;
         };
-        let node_id = format!("{}:{}", adapter.source().as_str(), project_id);
-        if let Some(existing) = index.get(&node_id).copied() {
+        let node_id = format!(
+            "{}:{}:{}",
+            adapter.source().as_str(),
+            project_id,
+            dependency.version_id.as_deref().unwrap_or("any")
+        );
+        let existing = index.get(&node_id).copied().or_else(|| {
+            if dependency.version_id.is_some() {
+                return None;
+            }
+            nodes.iter().position(|node| {
+                node.source == adapter.source().as_str() && node.project_id == project_id
+            })
+        });
+        if let Some(existing) = existing {
+            let existing_id = nodes[existing].id.clone();
             push_edge(
                 &mut edges,
                 &mut edge_keys,
                 &parent_id,
-                &node_id,
+                &existing_id,
                 relation,
                 &dependency.raw_type,
             );
+            if relation == DependencyRelation::Incompatible {
+                let title = nodes[existing].title.clone();
+                blockers.push(format!(
+                    "{} 与目标模组不兼容（{} 官方元数据）",
+                    title,
+                    adapter.source().as_str()
+                ));
+            }
             if relation == DependencyRelation::Required {
                 let node = &mut nodes[existing];
                 node.relation = DependencyRelation::Required;
-                node.selected_by_default = node.compatible && node.installable;
+                node.selected_by_default = active && node.compatible && node.installable;
                 if !node.required_by.iter().any(|value| value == &parent_title) {
                     node.required_by.push(parent_title.clone());
                 }
@@ -219,7 +256,7 @@ pub async fn analyze(
                     vec![parent_title.clone()],
                     compatible,
                     installable,
-                    relation == DependencyRelation::Required && compatible && installable,
+                    active && relation == DependencyRelation::Required && compatible && installable,
                     installed,
                 );
                 let node_id = node.id.clone();
@@ -270,6 +307,7 @@ pub async fn analyze(
                             depth + 1,
                             child.relation,
                             child.clone(),
+                            active && relation == DependencyRelation::Required,
                         ));
                     }
                 }
@@ -288,7 +326,12 @@ pub async fn analyze(
                     blockers.push(message.clone());
                 }
                 warnings.push(message);
-                let node_id = format!("{}:unresolved:{}", adapter.source().as_str(), project_id);
+                let node_id = format!(
+                    "{}:unresolved:{}:{}",
+                    adapter.source().as_str(),
+                    project_id,
+                    dependency.version_id.as_deref().unwrap_or("any")
+                );
                 if !index.contains_key(&node_id) && nodes.len() < limits.max_nodes {
                     nodes.push(DependencyNode {
                         id: node_id.clone(),

@@ -562,7 +562,11 @@ impl FrpcManager {
                 }
             }
         }
-        let log_tail = state.log.lock().await.iter().take(40).cloned().collect();
+        let log_tail = {
+            let log = state.log.lock().await;
+            let skip = log.len().saturating_sub(40);
+            log.iter().skip(skip).cloned().collect()
+        };
         FrpcView {
             running,
             version: state.version.clone(),
@@ -762,7 +766,7 @@ fn extract_executable(bytes: &[u8], os: &str) -> Result<Vec<u8>> {
             if file.is_dir() {
                 continue;
             }
-            let name = file.name().to_ascii_lowercase();
+            let name = file.name()?.to_ascii_lowercase();
             if name.ends_with("/frpc")
                 || name.ends_with("/frpc.exe")
                 || name == "frpc"

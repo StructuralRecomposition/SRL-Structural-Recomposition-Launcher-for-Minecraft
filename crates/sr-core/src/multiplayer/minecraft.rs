@@ -185,6 +185,10 @@ pub struct PlayerEvent {
     /// loopback | lan | public | unknown
     pub ip_kind: String,
     pub source: String,
+    /// 1-based line number inside the captured log file. Used for stable
+    /// de-duplication when a line has no parseable timestamp.
+    #[serde(skip)]
+    pub line: usize,
 }
 
 /// Classify an address observed by the Minecraft server. A loopback address
@@ -224,14 +228,32 @@ fn valid_player_name(name: &str) -> bool {
             .all(|c| !c.is_whitespace() && !c.is_control() && c != '<' && c != '>')
 }
 
+/// SRL wraps every captured stdout/stderr line as `[stdout] ...`.
+/// Parsing must look past that wrapper before reading Minecraft's own
+/// `[HH:MM:SS]` prefix.
+fn strip_stream_prefix(line: &str) -> &str {
+    let mut current = line.trim_start();
+    loop {
+        if let Some(rest) = current.strip_prefix("[stdout]") {
+            current = rest.trim_start();
+        } else if let Some(rest) = current.strip_prefix("[stderr]") {
+            current = rest.trim_start();
+        } else {
+            return current;
+        }
+    }
+}
+
 fn line_clock(line: &str) -> Option<NaiveTime> {
+    let line = strip_stream_prefix(line);
     let start = line.find('[')?;
     let end = line[start + 1..].find(']')? + start + 1;
     NaiveTime::parse_from_str(&line[start + 1..end], "%H:%M:%S").ok()
 }
 
 fn message_of(line: &str) -> Option<&str> {
-    // [12:34:56] [Server thread/INFO]: message
+    // [12:34:56] [Server thread/INFO]: message (possibly wrapped by SRL)
+    let line = strip_stream_prefix(line);
     let first = line.find("]: ")?;
     Some(&line[first + 3..])
 }
@@ -240,7 +262,7 @@ fn message_of(line: &str) -> Option<&str> {
 /// real join/leave/login marker are used; chat text is ignored.
 pub fn parse_player_events(text: &str, date: Option<NaiveDate>) -> Vec<PlayerEvent> {
     let mut events = Vec::new();
-    for line in text.lines() {
+    for (line_no, line) in text.lines().enumerate() {
         let Some(message) = message_of(line) else {
             continue;
         };
@@ -253,8 +275,8 @@ pub fn parse_player_events(text: &str, date: Option<NaiveDate>) -> Vec<PlayerEve
             })
         });
 
-        if let Some(index) = message.find(" logged in with entity id") {
-            let head = message[..index].trim();
+        if let Some(position) = message.find(" logged in with entity id") {
+            let head = message[..position].trim();
             let (name, ip) = match head.split_once('[') {
                 Some((name, rest)) => {
                     let rest = rest.strip_prefix('/').unwrap_or(rest);
@@ -290,6 +312,7 @@ pub fn parse_player_events(text: &str, date: Option<NaiveDate>) -> Vec<PlayerEve
                     observed_ip: ip,
                     ip_kind,
                     source: "minecraft-log".into(),
+                    line: line_no + 1,
                 });
             }
             continue;
@@ -300,8 +323,8 @@ pub fn parse_player_events(text: &str, date: Option<NaiveDate>) -> Vec<PlayerEve
             (" left the game", "leave"),
             (" lost connection:", "leave"),
         ] {
-            if let Some(index) = message.find(marker) {
-                let name = message[..index].trim();
+            if let Some(position) = message.find(marker) {
+                let name = message[..position].trim();
                 let name = name.strip_prefix("Player ").unwrap_or(name);
                 if valid_player_name(name) {
                     events.push(PlayerEvent {
@@ -311,6 +334,7 @@ pub fn parse_player_events(text: &str, date: Option<NaiveDate>) -> Vec<PlayerEve
                         observed_ip: None,
                         ip_kind: "unknown".into(),
                         source: "minecraft-log".into(),
+                        line: line_no + 1,
                     });
                 }
                 break;
@@ -398,8 +422,8 @@ async fn listening_ports(pid: u32, edition: Edition) -> Vec<u16> {
             if !ports.is_empty() {
                 return ports;
             }
-            // lsof returns no output rather than an error when nothing matches.
-            return Vec::new();
+            // lsof can be installed but restricted by permissions. Fall
+            // through to ss instead of reporting "no ports".
         }
 
         let flag = if edition == Edition::Java {
@@ -408,7 +432,10 @@ async fn listening_ports(pid: u32, edition: Edition) -> Vec<u16> {
             "-lunp"
         };
         if let Some(output) = run_command("ss", &["-H", flag]).await {
-            return parse_ss_ports(&output, pid);
+            let ports = parse_ss_ports(&output, pid);
+            if !ports.is_empty() {
+                return ports;
+            }
         }
     }
 
@@ -443,6 +470,42 @@ async fn run_command(program: &str, args: &[&str]) -> Option<String> {
 /// A TCP connect is the cheapest real proof that the local service accepts
 /// connections. UDP has no connect handshake; the detector relies on the
 /// listening-port table instead.
+/// Java Edition health check: a real Server List Ping, not just an open port.
+pub async fn java_protocol_ok(ip: &str, port: u16) -> bool {
+    let host = if ip.contains(':') {
+        format!("[{ip}]:{port}")
+    } else {
+        format!("{ip}:{port}")
+    };
+    let report = super::server_status::ping_with_timeout(&host, Duration::from_secs(3)).await;
+    report.ok
+}
+
+const RAKNET_MAGIC: [u8; 16] = [
+    0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78,
+];
+
+/// Bedrock Edition health check using RakNet Unconnected Ping.
+pub async fn bedrock_protocol_ok(ip: &str, port: u16) -> bool {
+    let Ok(socket) = tokio::net::UdpSocket::bind(("0.0.0.0", 0)).await else {
+        return false;
+    };
+    let mut packet = Vec::with_capacity(33);
+    packet.push(0x01);
+    packet.extend_from_slice(&chrono::Utc::now().timestamp_millis().to_be_bytes());
+    packet.extend_from_slice(&RAKNET_MAGIC);
+    packet.extend_from_slice(&(std::process::id() as i64).to_be_bytes());
+    let target = format!("{ip}:{port}");
+    if socket.send_to(&packet, &target).await.is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 2048];
+    match tokio::time::timeout(Duration::from_secs(2), socket.recv_from(&mut buf)).await {
+        Ok(Ok((len, _))) => len >= 1 && buf[0] == 0x1c,
+        _ => false,
+    }
+}
+
 pub async fn tcp_reachable(ip: &str, port: u16) -> bool {
     tokio::time::timeout(
         Duration::from_millis(1500),
@@ -516,6 +579,20 @@ mod tests {
         assert_eq!(events[1].observed_ip.as_deref(), Some("127.0.0.1"));
         assert_eq!(events[1].ip_kind, "loopback");
         assert_eq!(events[2].action, "leave");
+    }
+
+    #[test]
+    fn parses_srl_wrapped_lines_and_keeps_timestamps() {
+        let text = "\
+[stdout] [12:00:00] [Server thread/INFO]: Steve joined the game\n\
+[stderr] [12:00:05] [Server thread/INFO]: Alex left the game\n";
+        let date = NaiveDate::from_ymd_opt(2026, 11, 12);
+        let events = parse_player_events(text, date);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].player, "Steve");
+        let at = events[0].at.as_deref().expect("timestamp parsed");
+        assert!(at.starts_with("2026-11-12T"), "{at}");
+        assert_ne!(events[0].line, events[1].line);
     }
 
     #[test]

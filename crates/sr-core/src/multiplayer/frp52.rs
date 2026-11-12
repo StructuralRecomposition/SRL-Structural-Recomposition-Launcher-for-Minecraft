@@ -184,17 +184,60 @@ impl TunnelProvider for Frp52Provider {
     }
 
     async fn list_tunnels(&self) -> Result<Vec<ProviderTunnel>> {
-        let data = self
-            .get_data(
-                "/tunnels",
-                &[("page", "1".into()), ("page_size", "100".into())],
-            )
-            .await?;
-        Ok(data
-            .get("list")
-            .and_then(Value::as_array)
-            .map(|list| list.iter().filter_map(parse_tunnel).collect())
-            .unwrap_or_default())
+        let started = std::time::Instant::now();
+        let mut page = 1u64;
+        let mut tunnels: Vec<ProviderTunnel> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        loop {
+            if started.elapsed() > std::time::Duration::from_secs(20) {
+                return Err(AppError::new(ErrorCode::Timeout, "52FRP 隧道列表查询超时"));
+            }
+            let data = self
+                .get_data(
+                    "/tunnels",
+                    &[("page", page.to_string()), ("page_size", "100".into())],
+                )
+                .await?;
+            let list = data.get("list").and_then(Value::as_array).ok_or_else(|| {
+                AppError::new(ErrorCode::Http, "52FRP 隧道列表响应缺少 list 字段")
+            })?;
+            for value in list {
+                if let Some(tunnel) = parse_tunnel(value) {
+                    if seen.insert(tunnel.id) {
+                        tunnels.push(tunnel);
+                    }
+                }
+            }
+            let last_page = data
+                .get("last_page")
+                .and_then(value_u64)
+                .or_else(|| data.get("total_page").and_then(value_u64))
+                .or_else(|| data.get("total_pages").and_then(value_u64))
+                .or_else(|| {
+                    data.get("pagination")
+                        .and_then(|p| p.get("last_page"))
+                        .and_then(value_u64)
+                });
+            if let Some(last) = last_page {
+                if page >= last {
+                    break;
+                }
+                page += 1;
+                continue;
+            }
+            // No pagination metadata: a short page is the only safe terminator.
+            if list.len() < 100 {
+                break;
+            }
+            page += 1;
+            if page > 50 {
+                return Err(AppError::new(
+                    ErrorCode::Http,
+                    "52FRP 隧道列表超过 50 页，已停止读取",
+                ));
+            }
+        }
+        Ok(tunnels)
     }
 
     async fn create_tunnel(&self, request: &TunnelCreate) -> Result<u64> {
@@ -243,7 +286,15 @@ impl TunnelProvider for Frp52Provider {
 
 async fn parse_response(response: reqwest::Response) -> Result<Value> {
     let status = response.status();
-    let text = response.text().await.unwrap_or_default();
+    let text = match response.text().await {
+        Ok(text) => text,
+        Err(error) => {
+            return Err(
+                AppError::new(ErrorCode::Network, format!("读取 52FRP 响应失败：{error}"))
+                    .retryable(true),
+            )
+        }
+    };
     let value: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     if !status.is_success() || value.get("ok").and_then(Value::as_bool) != Some(true) {
         let code = value
@@ -265,8 +316,16 @@ async fn parse_response(response: reqwest::Response) -> Result<Value> {
             (_, "validation_error") => ErrorCode::InvalidInput,
             _ => ErrorCode::Http,
         };
+        let summary: String = crate::util::redact_secrets(&text)
+            .chars()
+            .take(300)
+            .collect();
         return Err(AppError::new(error_code, message)
-            .with_detail(format!("HTTP {} · {code}", status.as_u16()))
+            .with_detail(format!(
+                "HTTP {} · {code} · {}",
+                status.as_u16(),
+                summary.replace('\n', " ")
+            ))
             .retryable(
                 status.as_u16() == 429 || status.is_server_error() || status.as_u16() == 409,
             ));

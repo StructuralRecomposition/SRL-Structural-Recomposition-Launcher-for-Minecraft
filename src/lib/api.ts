@@ -1258,7 +1258,8 @@ export const api = {
   importInstanceArchive: (path: string, name?: string) =>
     command<Instance>("import_instance_archive", { path, name }),
   launchInstance: (instanceId: string) => command<LaunchResult>("launch_instance", { instanceId }),
-  stopInstance: (instanceId: string) => command<void>("stop_instance", { instanceId }),
+  stopInstance: (instanceId: string, force = false) =>
+    command<void>("stop_instance", { instanceId, force }),
   runningInstances: () => command<string[]>("running_instances"),
   listJava: (refresh = false) => command<JavaInfo[]>("list_java", { refresh }),
   addJavaPath: (path: string) => command<JavaInfo>("add_java_path", { path }),

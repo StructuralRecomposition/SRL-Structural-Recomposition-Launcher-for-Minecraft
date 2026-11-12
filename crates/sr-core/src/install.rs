@@ -297,7 +297,7 @@ fn extract_natives_blocking(archive: &Path, dest: &Path, exclude: &[String]) -> 
         let mut entry = zip.by_index(i).map_err(|e| {
             AppError::new(ErrorCode::ZipUnsafe, "无法读取压缩包条目").with_detail(e.to_string())
         })?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         if name.ends_with('/') {
             continue;
         }

@@ -21,7 +21,15 @@
 
 **English:** SRL (Structural Recomposition Launcher) is an independent, local-first Minecraft: Java Edition launcher built with Rust, Tauri 2, React and TypeScript. It focuses on verifiable downloads, real process launching, clear diagnostics, and honest capability boundaries. No telemetry, no proprietary game files, MIT licensed.
 
-> **当前版本：`v0.2.2`（联机管理中心 · 依赖可视化 · Java 自动补全）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.2)。
+> **当前版本：`v0.2.3`（稳定性与可靠性修复）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.3)。
+
+### v0.2.3 更新摘要
+
+- **数据安全。** 运行中的实例禁止删除/复制/修改；整合包导入改为事务式暂存、备份与回滚；解压拒绝已有符号链接越界。
+- **实例与进程。** Windows 停止游戏先请求优雅退出，超时后询问是否强制结束；同一实例的启动与危险文件操作共用后端锁。
+- **联机状态。** 本地服务使用 Java SLP / Bedrock RakNet 协议检测；FRPC 进程、云端隧道、本地服务分别显示，不再把 FRPC 存活当作可连接。
+- **依赖与 Java。** 必需依赖闭包由后端复核，不兼容边不再被节点去重吞掉；Java 选择同时校验 CPU 架构。
+- **发布门禁。** fmt、test、clippy、前端测试/构建、cargo audit、npm audit 与 tag/版本一致性检查进入发布工作流。
 
 ### v0.2.2 更新摘要
 
@@ -229,18 +237,18 @@
 
 ## 下载与安装
 
-### v0.2.2 下载
+### v0.2.3 下载
 
 已构建好的安装包直接放在 GitHub Release，点开即可下载：
 
-**https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.2**
+**https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.3**
 
 | 平台 | 文件 | 说明 |
 |---|---|---|
-| macOS 10.15+ | `SRL_0.2.2_universal.dmg` | Intel + Apple Silicon，未签名、未公证 |
-| Windows 10/11 x64 | `SRL_0.2.2_windows-x64-portable.zip` | 需要 WebView2 Runtime；解压后运行 `Install.cmd` |
-| Linux x64 | `SRL_0.2.2_amd64.deb` | 需要 WebKitGTK 4.1 等运行库 |
-| Linux x64 | `SRL_0.2.2_amd64.AppImage` | 免安装；需要 FUSE 或 `--appimage-extract-and-run` |
+| macOS 10.15+ | `SRL_0.2.3_universal.dmg` | Intel + Apple Silicon，未签名、未公证 |
+| Windows 10/11 x64 | `SRL_0.2.3_windows-x64-portable.zip` | 需要 WebView2 Runtime；解压后运行 `Install.cmd` |
+| Linux x64 | `SRL_0.2.3_amd64.deb` | 需要 WebKitGTK 4.1 等运行库 |
+| Linux x64 | `SRL_0.2.3_amd64.AppImage` | 免安装；需要 FUSE 或 `--appimage-extract-and-run` |
 | 校验 | `SHA256SUMS` | 所有附件的 SHA-256 |
 
 > `release-assets/` 保存本次发布的构建产物，供维护者复核；普通用户直接下载 Release 附件即可。后续版本可以用 [`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) 手动构建，再上传到对应 Release。
@@ -266,7 +274,7 @@ xattr -dr com.apple.quarantine /Applications/SRL.app
 **Linux**
 
 ```bash
-sudo apt install ./SRL_0.2.2_amd64.deb
+sudo apt install ./SRL_0.2.3_amd64.deb
 ```
 
 ### 第一次使用
@@ -330,7 +338,7 @@ npm run tauri build -- --bundles nsis,msi
 ## 测试与质量
 
 ```bash
-cargo test -p sr-core          # 242 项库测试 + 2 项启动集成通过；真实网络/下载测试默认忽略
+cargo test -p sr-core          # 245 项库测试 + 2 项启动集成通过；真实网络/下载测试默认忽略
 npx vitest run                 # 50 项前端测试
 cargo check -p sr-launcher     # Tauri 命令层编译检查
 cargo fmt --all -- --check
@@ -349,7 +357,7 @@ cargo test -p sr-core --test server_status_network -- --ignored --nocapture
 
 当前质量基线：
 
-- Rust：242 项库测试 + 2 项启动集成通过；需真实网络 / 下载的测试默认忽略。
+- Rust：245 项库测试 + 2 项启动集成通过；需真实网络 / 下载的测试默认忽略。
 - 前端：50 项通过（Vitest + Testing Library）。
 - 真实网络冒烟：Modrinth Iris → Sodium required（2 节点 / 4,264,786 字节）；`mc.hypixel.net:25565` 状态协议 47、26906/200000、322 ms。
 - `cargo fmt`、`cargo clippy -D warnings`、`npm run build` 通过。

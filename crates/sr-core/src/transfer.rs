@@ -356,10 +356,10 @@ fn inspect_blocking(path: &Path) -> Result<ImportPreview> {
         let entry = zip.by_index(i).map_err(|e| {
             AppError::new(ErrorCode::ZipUnsafe, "无法读取归档条目").with_detail(e.to_string())
         })?;
-        if entry.name() == MANIFEST_NAME || entry.is_dir() {
+        if entry.name()? == MANIFEST_NAME || entry.is_dir() {
             continue;
         }
-        let name = validate_relative(entry.name())?;
+        let name = validate_relative(&entry.name()?)?;
         if !names.insert(name.clone()) {
             return Err(AppError::new(
                 ErrorCode::ZipUnsafe,
@@ -490,10 +490,10 @@ fn extract_blocking(archive: &Path, staging: &Path) -> Result<()> {
         let mut entry = zip.by_index(i).map_err(|e| {
             AppError::new(ErrorCode::ZipUnsafe, "无法读取归档条目").with_detail(e.to_string())
         })?;
-        if entry.name() == MANIFEST_NAME || entry.is_dir() {
+        if entry.name()? == MANIFEST_NAME || entry.is_dir() {
             continue;
         }
-        let name = validate_relative(entry.name())?;
+        let name = validate_relative(&entry.name()?)?;
         if !seen.insert(name.clone()) {
             return Err(AppError::new(
                 ErrorCode::ZipUnsafe,
@@ -607,7 +607,7 @@ mod tests {
         let file = std::fs::File::open(path).unwrap();
         let mut zip = zip::ZipArchive::new(file).unwrap();
         (0..zip.len())
-            .map(|i| zip.by_index(i).unwrap().name().to_string())
+            .map(|i| zip.by_index(i).unwrap().name().unwrap().to_string())
             .collect()
     }
 

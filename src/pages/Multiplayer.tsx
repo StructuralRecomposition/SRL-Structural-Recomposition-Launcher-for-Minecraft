@@ -48,7 +48,14 @@ function address(room: MultiplayerRoom) {
 
 function stateTone(room: MultiplayerRoom): "success" | "warning" | "neutral" {
   if (room.state === "online") return "success";
-  if (room.state === "retained" || room.state === "local_stopped") return "warning";
+  if (
+    room.state === "retained" ||
+    room.state === "local_stopped" ||
+    room.state === "tunnel_offline" ||
+    room.state === "local_unreachable" ||
+    room.state === "unconfirmed"
+  )
+    return "warning";
   return "neutral";
 }
 
@@ -67,6 +74,9 @@ function roomStateLabel(room: MultiplayerRoom) {
   if (room.state === "online") return t("联机在线");
   if (room.state === "retained") return t("隧道保留");
   if (room.state === "local_stopped") return t("本地游戏已退出");
+  if (room.state === "tunnel_offline") return t("隧道未在线");
+  if (room.state === "local_unreachable") return t("本地服务异常");
+  if (room.state === "unconfirmed") return t("状态未确认");
   return t("FRPC 离线");
 }
 
@@ -188,9 +198,40 @@ export function MultiplayerPage() {
   }
 
   useEffect(() => {
-    void loadStatus();
-    const timer = window.setInterval(() => void loadStatus(), 15000);
-    return () => window.clearInterval(timer);
+    let disposed = false;
+    let inFlight = false;
+    let delay = 15000;
+    let timer: number | undefined;
+    const tick = async () => {
+      if (disposed || inFlight) return;
+      inFlight = true;
+      try {
+        const next = await api.multiplayerStatus();
+        if (!disposed) {
+          setStatus(next);
+          setError(null);
+          setLoading(false);
+          delay = 15000;
+        }
+      } catch (e) {
+        if (!disposed) {
+          setError(e instanceof Error ? e.message : String(e));
+          setLoading(false);
+        }
+        delay = Math.min(delay * 2, 60000);
+      } finally {
+        inFlight = false;
+        if (!disposed) {
+          const jitter = Math.floor(Math.random() * 1500);
+          timer = window.setTimeout(() => void tick(), delay + jitter);
+        }
+      }
+    };
+    void tick();
+    return () => {
+      disposed = true;
+      if (timer) window.clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {

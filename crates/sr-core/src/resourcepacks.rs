@@ -304,7 +304,7 @@ fn validate_zip<R: Read + Seek>(reader: R) -> Result<()> {
             Ok(entry) => entry,
             Err(_) => continue,
         };
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         if name.starts_with('/') || name.contains('\\') || name.split('/').any(|part| part == "..")
         {
             return Err(AppError::new(
@@ -329,7 +329,7 @@ fn validate_zip<R: Read + Seek>(reader: R) -> Result<()> {
                 "材质包解压后超过 4GB，已拒绝",
             ));
         }
-        if entry.name() == "pack.mcmeta" {
+        if entry.name()? == "pack.mcmeta" {
             has_meta = true;
             let mut meta = Vec::new();
             entry

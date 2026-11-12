@@ -728,7 +728,7 @@ fn extract_default_skins(jar: &Path) -> Result<Vec<(String, SkinModel, Vec<u8>)>
             Ok(v) => v,
             Err(_) => continue,
         };
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         let Some(rest) = name.strip_prefix("assets/minecraft/textures/entity/player/") else {
             continue;
         };

@@ -513,6 +513,14 @@ pub async fn update_instance(
     instance_id: String,
     request: UpdateInstanceRequest,
 ) -> Result<Instance> {
+    let lock = state.instance_lock(&instance_id).await;
+    let _guard = lock.lock().await;
+    if state.launches.read().await.is_running(&instance_id).await {
+        return Err(AppError::new(
+            ErrorCode::InvalidState,
+            "实例正在运行，不能修改实例配置；请先停止游戏",
+        ));
+    }
     let game = state.game_snapshot().await;
     let inst = InstanceManager::new(game)
         .update(&instance_id, request)
@@ -526,6 +534,14 @@ pub async fn delete_instance(
     instance_id: String,
     delete_files: bool,
 ) -> Result<()> {
+    let lock = state.instance_lock(&instance_id).await;
+    let _guard = lock.lock().await;
+    if state.launches.read().await.is_running(&instance_id).await {
+        return Err(AppError::new(
+            ErrorCode::InvalidState,
+            "实例正在运行，不能删除；请先停止游戏",
+        ));
+    }
     let game = state.game_snapshot().await;
     InstanceManager::new(game)
         .delete(&instance_id, delete_files)
@@ -538,6 +554,14 @@ pub async fn duplicate_instance(
     instance_id: String,
     new_name: Option<String>,
 ) -> Result<Instance> {
+    let lock = state.instance_lock(&instance_id).await;
+    let _guard = lock.lock().await;
+    if state.launches.read().await.is_running(&instance_id).await {
+        return Err(AppError::new(
+            ErrorCode::InvalidState,
+            "实例正在运行，不能复制；请先停止游戏",
+        ));
+    }
     let game = state.game_snapshot().await;
     InstanceManager::new(game)
         .duplicate(&instance_id, new_name)
@@ -549,6 +573,8 @@ pub async fn launch_instance(
     state: State<'_, AppState>,
     instance_id: String,
 ) -> Result<LaunchResult> {
+    let lock = state.instance_lock(&instance_id).await;
+    let _guard = lock.lock().await;
     let game = state.game_snapshot().await;
     let manager = InstanceManager::new(game.clone());
     let instance = manager.get(&instance_id).await?;
@@ -702,8 +728,17 @@ pub async fn launch_instance(
 }
 
 #[tauri::command]
-pub async fn stop_instance(state: State<'_, AppState>, instance_id: String) -> Result<()> {
-    state.launches.read().await.stop(&instance_id).await
+pub async fn stop_instance(
+    state: State<'_, AppState>,
+    instance_id: String,
+    force: Option<bool>,
+) -> Result<()> {
+    state
+        .launches
+        .read()
+        .await
+        .stop(&instance_id, force.unwrap_or(false))
+        .await
 }
 
 #[tauri::command]
@@ -1199,6 +1234,18 @@ pub async fn install_resource(
     } else {
         format!("{verb} {} {}", project.title, version.version_number)
     };
+    let lifecycle = match &action {
+        Action::Instance { instance, .. } => {
+            if state.launches.read().await.is_running(&instance.id).await {
+                return Err(AppError::new(
+                    ErrorCode::InvalidState,
+                    "实例正在运行，不能安装资源；请先停止游戏",
+                ));
+            }
+            Some(state.instance_lock(&instance.id).await)
+        }
+        Action::Directory(_) => None,
+    };
     let task = state.downloads.create("resource", &title, 0, 0).await;
     let task_id = task.id.clone();
     let _ = state.downloads.save().await;
@@ -1209,6 +1256,10 @@ pub async fn install_resource(
     let file_clone = file.clone();
     let spawn_title = title.clone();
     tauri::async_runtime::spawn(async move {
+        let _guard = match &lifecycle {
+            Some(lock) => Some(lock.lock().await),
+            None => None,
+        };
         let cancel = task.cancel_token();
         let result = match action {
             Action::Instance { instance, base } => {
@@ -1265,6 +1316,13 @@ pub async fn import_modpack(
     path: String,
     allow_incomplete: bool,
 ) -> Result<ResourceTaskAccepted> {
+    let lifecycle = state.instance_lock(&instance_id).await;
+    if state.launches.read().await.is_running(&instance_id).await {
+        return Err(AppError::new(
+            ErrorCode::InvalidState,
+            "实例正在运行，不能导入整合包；请先停止游戏",
+        ));
+    }
     let game = state.game_snapshot().await;
     let instance = InstanceManager::new(game.clone()).get(&instance_id).await?;
     let base = instance_base_version(&state, &game, &instance).await?;
@@ -1286,6 +1344,7 @@ pub async fn import_modpack(
     let state = state.inner().clone();
     let spawn_title = title.clone();
     tauri::async_runtime::spawn(async move {
+        let _guard = lifecycle.lock().await;
         let cancel = task.cancel_token();
         if let Err(error) = resource_install::import_modpack(
             &state.http,
@@ -1317,6 +1376,13 @@ pub async fn import_modpack_bytes(
     if bytes.len() > 512 * 1024 * 1024 {
         return Err(AppError::invalid_input("本地整合包超过 512MB"));
     }
+    let lifecycle = state.instance_lock(&instance_id).await;
+    if state.launches.read().await.is_running(&instance_id).await {
+        return Err(AppError::new(
+            ErrorCode::InvalidState,
+            "实例正在运行，不能导入整合包；请先停止游戏",
+        ));
+    }
     let game = state.game_snapshot().await;
     let instance = InstanceManager::new(game.clone()).get(&instance_id).await?;
     let base = instance_base_version(&state, &game, &instance).await?;
@@ -1332,6 +1398,7 @@ pub async fn import_modpack_bytes(
     let state = state.inner().clone();
     let spawn_title = title.clone();
     tauri::async_runtime::spawn(async move {
+        let _guard = lifecycle.lock().await;
         let cancel = task.cancel_token();
         if let Err(error) = resource_install::import_modpack(
             &state.http,

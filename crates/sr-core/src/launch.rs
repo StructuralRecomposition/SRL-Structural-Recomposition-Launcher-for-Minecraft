@@ -90,10 +90,12 @@ impl LaunchManager {
         self.running.read().await.get(instance_id).map(|p| p.pid)
     }
 
-    /// Stop a running instance. On Unix this sends SIGTERM first so the JVM can
-    /// run shutdown hooks (saving worlds); a forced kill follows after 8s.
-    /// Only the child process started by this launcher is signalled.
-    pub async fn stop(&self, instance_id: &str) -> Result<()> {
+    /// Stop a running instance. The first attempt asks the game to exit
+    /// gracefully (SIGTERM on Unix, WM_CLOSE via taskkill on Windows). If it
+    /// is still alive after the bounded wait, `force=false` returns an error
+    /// so the UI can ask before discarding unsaved progress; `force=true`
+    /// terminates only this launcher-owned process.
+    pub async fn stop(&self, instance_id: &str, force: bool) -> Result<()> {
         let (pid, child) = {
             let map = self.running.read().await;
             let Some(proc) = map.get(instance_id) else {
@@ -102,37 +104,64 @@ impl LaunchManager {
             (proc.pid, proc.child.clone())
         };
 
+        // If the child already exited, there is nothing to signal.
+        {
+            let mut c = child.lock().await;
+            if c.try_wait().map_err(AppError::from)?.is_some() {
+                return Ok(());
+            }
+        }
+
         #[cfg(unix)]
         {
             let rc = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
             if rc != 0 {
-                let mut c = child.lock().await;
-                c.start_kill().map_err(|e| {
-                    AppError::new(ErrorCode::ProcessFailed, "无法终止游戏进程")
-                        .with_detail(e.to_string())
-                })?;
+                let error = std::io::Error::last_os_error();
+                if error.raw_os_error() != Some(libc::ESRCH) {
+                    tracing::warn!(pid, error = %error, "SIGTERM failed");
+                }
             }
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
         {
-            let mut c = child.lock().await;
-            c.start_kill().map_err(|e| {
-                AppError::new(ErrorCode::ProcessFailed, "无法终止游戏进程")
-                    .with_detail(e.to_string())
-            })?;
+            // taskkill without /F posts WM_CLOSE to GUI applications. It is
+            // scoped to the single PID created by this launcher.
+            let _ = tokio::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string()])
+                .output()
+                .await;
         }
 
-        // Escalate if the JVM ignores SIGTERM.
-        let running = self.running.clone();
-        let id = instance_id.to_string();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(8)).await;
-            let map = running.read().await;
-            if let Some(proc) = map.get(&id) {
-                let mut c = proc.child.lock().await;
-                let _ = c.start_kill();
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            let exited = {
+                let mut c = child.lock().await;
+                c.try_wait().map_err(AppError::from)?.is_some()
+            };
+            if exited {
+                return Ok(());
             }
-        });
+        }
+
+        if !force {
+            return Err(AppError::new(
+                ErrorCode::InvalidState,
+                "游戏未在 10 秒内退出。可以强制结束，但未保存的世界进度可能丢失。",
+            ));
+        }
+
+        #[cfg(windows)]
+        {
+            let _ = tokio::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .output()
+                .await;
+        }
+        let mut c = child.lock().await;
+        c.start_kill().map_err(|e| {
+            AppError::new(ErrorCode::ProcessFailed, "无法强制终止游戏进程")
+                .with_detail(e.to_string())
+        })?;
         Ok(())
     }
 

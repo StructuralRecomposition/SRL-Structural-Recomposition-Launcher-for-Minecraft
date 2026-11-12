@@ -106,6 +106,9 @@ pub fn run() {
                 installing: std::sync::Arc::new(tokio::sync::Mutex::new(
                     std::collections::HashSet::new(),
                 )),
+                lifecycle: std::sync::Arc::new(tokio::sync::Mutex::new(
+                    std::collections::HashMap::new(),
+                )),
             };
             app.manage(state.clone());
 

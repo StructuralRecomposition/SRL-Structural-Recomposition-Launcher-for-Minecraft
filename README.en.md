@@ -19,7 +19,7 @@
 
 > **Microsoft login:** due to current development constraints, SRL cannot yet offer out-of-the-box Microsoft sign-in. You currently need to register your own Azure application, obtain a `client id` and enter it in Settings; the login entry is explicitly disabled until then.
 
-> **Current version: `v0.2.2` (multiplayer center · dependency graph · Java auto-install)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.2).
+> **Current version: `v0.2.3` (stability and reliability update)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.3).
 
 ---
 
@@ -69,6 +69,14 @@
 | Mod dependency graph | 🟡 | Official Modrinth/CurseForge recursion, SVG/list view, installed detection, install plan |
 | Missing-Java install flow | 🟡 | Dynamic required major, Temurin install, rescan, no global-default overwrite |
 
+### What's new in v0.2.3
+
+- **Data safety.** Running instances cannot be deleted, copied or reconfigured; modpack imports use staging, backups and rollback; extraction refuses existing symlink escapes.
+- **Process lifecycle.** Windows asks the game to exit gracefully before offering a force stop; launch and destructive file operations share a backend lock.
+- **Multiplayer accuracy.** Local services are verified with Java SLP / Bedrock RakNet; FRPC process, cloud tunnel and local protocol health are shown separately.
+- **Dependencies and Java.** The backend verifies the required-dependency closure; incompatible edges are no longer swallowed by node de-duplication; Java selection checks CPU architecture.
+- **Release gates.** fmt, tests, clippy, frontend test/build, cargo audit, npm audit and tag/version consistency now gate releases.
+
 ### What's new in v0.2.2
 
 - **Multiplayer management center.** Host and guest modes share one entry. The host view separates local Minecraft service, 52FRP tunnel, FRPC, and confirmed player-log state; it adds confirmed joins/leaves, IP-source classification, room history, and a unified log. The guest view performs a real Rust-side Minecraft Server List Ping (DNS, TCP, VarInt, status JSON, MOTD, version, latency, error stage) and detects whether the server requires premium authentication through a credential-free login handshake, so offline-join failures can be diagnosed; the monitor appears only after diagnostics finish and can be stopped. Guests still join inside Minecraft manually.
@@ -96,10 +104,10 @@
 
 | Platform | File |
 |---|---|
-| macOS 10.15+ | `SRL_0.2.2_universal.dmg` (Intel + Apple Silicon, unsigned) |
-| Windows 10/11 x64 | `SRL_0.2.2_windows-x64-portable.zip` |
-| Linux x64 | `SRL_0.2.2_amd64.deb` |
-| Linux x64 | `SRL_0.2.2_amd64.AppImage` |
+| macOS 10.15+ | `SRL_0.2.3_universal.dmg` (Intel + Apple Silicon, unsigned) |
+| Windows 10/11 x64 | `SRL_0.2.3_windows-x64-portable.zip` |
+| Linux x64 | `SRL_0.2.3_amd64.deb` |
+| Linux x64 | `SRL_0.2.3_amd64.AppImage` |
 
 Checksums: `SHA256SUMS` in the release assets.
 
@@ -118,7 +126,7 @@ Extract the whole ZIP and run `Install.cmd` (no administrator rights required), 
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.2.2_amd64.deb
+sudo apt install ./SRL_0.2.3_amd64.deb
 ```
 
 or run the AppImage. WebKitGTK 4.1 and GTK 3 are required.

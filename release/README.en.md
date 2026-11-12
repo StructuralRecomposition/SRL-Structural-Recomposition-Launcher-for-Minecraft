@@ -2,16 +2,16 @@
 
 [简体中文](README.md) · **English**
 
-Current source version: **v0.2.2 local test build** (multiplayer center · dependency graph · Java auto-install)
+Current source version: **v0.2.3 stability release** (data safety · instance locks · multiplayer state · dependency checks)
 
 GitHub Releases is authoritative; this directory only keeps local verification artifacts and notes.
 
 | Platform | File |
 |---|---|
-| macOS (Intel + Apple Silicon) | `SRL_0.2.2_universal.dmg` |
-| Windows 10/11 x64 | `SRL_0.2.2_windows-x64-portable.zip` |
-| Linux x64 (Debian / Ubuntu) | `SRL_0.2.2_amd64.deb` |
-| Linux x64 (universal) | `SRL_0.2.2_amd64.AppImage` |
+| macOS (Intel + Apple Silicon) | `SRL_0.2.3_universal.dmg` |
+| Windows 10/11 x64 | `SRL_0.2.3_windows-x64-portable.zip` |
+| Linux x64 (Debian / Ubuntu) | `SRL_0.2.3_amd64.deb` |
+| Linux x64 (universal) | `SRL_0.2.3_amd64.AppImage` |
 
 Checksums are in `SHA256SUMS`.
 
@@ -32,7 +32,7 @@ Extract the whole ZIP and run `Install.cmd` (no administrator rights needed), or
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.2.2_amd64.deb
+sudo apt install ./SRL_0.2.3_amd64.deb
 ```
 
 or run the AppImage. WebKitGTK 4.1 and GTK 3 are required.

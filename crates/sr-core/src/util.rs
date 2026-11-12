@@ -49,6 +49,32 @@ pub fn safe_join(base: &Path, relative: &str) -> Result<PathBuf> {
     Ok(joined)
 }
 
+/// Reject writes that would escape through an existing symlink/reparse point.
+/// Canonicalising the nearest existing ancestor catches links created before
+/// extraction as well as parent-directory links.
+pub fn ensure_path_within_root(root: &Path, dest: &Path) -> Result<()> {
+    let root = root
+        .canonicalize()
+        .map_err(|e| AppError::path_unsafe(format!("无法解析实例目录：{e}")))?;
+    let mut current = dest.parent();
+    while let Some(path) = current {
+        if path.exists() {
+            let resolved = path
+                .canonicalize()
+                .map_err(|e| AppError::path_unsafe(format!("无法解析目标路径：{e}")))?;
+            if !resolved.starts_with(&root) {
+                return Err(AppError::path_unsafe(format!(
+                    "目标路径经符号链接越界：{}",
+                    dest.display()
+                )));
+            }
+            return Ok(());
+        }
+        current = path.parent();
+    }
+    Err(AppError::path_unsafe("目标路径没有可用的父目录"))
+}
+
 /// Best-effort sanitisation for a single filename component (instance names,
 /// log names). Never used for untrusted relative paths.
 pub fn safe_component(input: &str, fallback: &str) -> String {
@@ -96,16 +122,44 @@ pub async fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     }
     #[cfg(windows)]
     {
-        // std::fs::rename cannot replace an existing file on Windows.
-        if tokio::fs::try_exists(path).await.unwrap_or(false) {
-            tokio::fs::remove_file(path).await?;
+        // MoveFileExW replaces an existing file without deleting it first.
+        // If the call fails, the old file is left untouched.
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        };
+        let from: Vec<u16> = tmp
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let to: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let ok = unsafe {
+            MoveFileExW(
+                from.as_ptr(),
+                to.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if ok == 0 {
+            let failure = std::io::Error::last_os_error();
+            let _ = tokio::fs::remove_file(&tmp).await;
+            return Err(AppError::from(failure));
         }
+        return Ok(());
     }
-    if let Err(e) = tokio::fs::rename(&tmp, path).await {
-        let _ = tokio::fs::remove_file(&tmp).await;
-        return Err(AppError::from(e));
+    #[cfg(not(windows))]
+    {
+        if let Err(e) = tokio::fs::rename(&tmp, path).await {
+            let _ = tokio::fs::remove_file(&tmp).await;
+            return Err(AppError::from(e));
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 pub async fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>> {

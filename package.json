@@ -1,7 +1,7 @@
 {
   "name": "sr-launcher",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -28,5 +28,8 @@
     "jsdom": "^26.0.0",
     "@testing-library/react": "^16.3.0",
     "@testing-library/jest-dom": "^6.8.0"
+  },
+  "overrides": {
+    "tinypool": "2.2.0"
   }
 }

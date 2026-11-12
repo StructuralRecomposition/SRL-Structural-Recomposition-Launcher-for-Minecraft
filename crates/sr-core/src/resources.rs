@@ -136,7 +136,14 @@ fn validate_file_name(name: &str) -> Result<()> {
 }
 
 fn safe_relative(path: &str) -> Result<PathBuf> {
-    if path.is_empty() || path.len() > 512 || path.starts_with('/') || path.contains('\\') {
+    if path.is_empty()
+        || path.len() > 512
+        || path.starts_with('/')
+        || path.starts_with('\\')
+        || path.contains('\\')
+        || path.contains(':')
+        || path.contains('\0')
+    {
         return Err(AppError::new(ErrorCode::ZipUnsafe, "整合包文件路径非法"));
     }
     const RESERVED: &[&str] = &[
@@ -373,7 +380,7 @@ fn extract_world_zip_blocking(
     let mut roots: HashSet<String> = HashSet::new();
     for i in 0..zip.len() {
         let Ok(entry) = zip.by_index(i) else { continue };
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         if name == "level.dat" || name.ends_with("/level.dat") {
             let root = name.strip_suffix("level.dat").unwrap_or_default();
             roots.insert(root.trim_end_matches('/').to_string());
@@ -439,7 +446,7 @@ fn extract_world_zip_blocking(
         {
             return Err(AppError::new(ErrorCode::ZipUnsafe, "地图包含符号链接"));
         }
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         let Some(relative) = name.strip_prefix(&prefix) else {
             continue;
         };
@@ -811,18 +818,24 @@ fn extract_overrides_blocking(
     let mut zip = zip::ZipArchive::new(file).map_err(|e| {
         AppError::new(ErrorCode::ZipUnsafe, "整合包不是有效的 ZIP").with_detail(e.to_string())
     })?;
-    let mut files = 0u64;
+
+    // Phase 1: validate the complete manifest before touching the instance.
+    let mut entries: Vec<(String, PathBuf, u64)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     let mut total = 0u64;
     for i in 0..zip.len() {
-        let mut entry = match zip.by_index(i) {
+        let entry = match zip.by_index(i) {
             Ok(entry) => entry,
             Err(_) => continue,
         };
-        let name = entry.name().to_string();
+        if entry.is_dir() {
+            continue;
+        }
+        let name = entry.name()?.to_string();
         let Some(relative) = prefixes.iter().find_map(|prefix| name.strip_prefix(prefix)) else {
             continue;
         };
-        if relative.is_empty() || entry.is_dir() {
+        if relative.is_empty() {
             continue;
         }
         if entry
@@ -838,7 +851,12 @@ fn extract_overrides_blocking(
                 "整合包不得覆盖 instance.json",
             ));
         }
-        backup_file_if_exists(instance, &relative)?;
+        if !seen.insert(relative.clone()) {
+            return Err(AppError::new(
+                ErrorCode::ZipUnsafe,
+                format!("整合包包含重复文件：{}", relative.display()),
+            ));
+        }
         total = total.saturating_add(entry.size());
         if total > MAX_OVERRIDE_BYTES {
             return Err(AppError::new(
@@ -846,18 +864,112 @@ fn extract_overrides_blocking(
                 "整合包 overrides 超过 8GB",
             ));
         }
-        files += 1;
-        if files > MAX_OVERRIDE_FILES {
+        if entries.len() as u64 >= MAX_OVERRIDE_FILES {
             return Err(AppError::new(ErrorCode::ZipUnsafe, "整合包文件数量过多"));
         }
-        let dest = instance.game_dir.join(&relative);
-        if let Some(parent) = dest.parent() {
+        entries.push((name, relative, entry.size()));
+    }
+
+    // Phase 2: extract everything into a staging directory.
+    let stamp = crate::util::short_id();
+    let staging_root = instance
+        .game_dir
+        .join(format!(".srl-import-staging-{stamp}"));
+    let backup_root = instance
+        .game_dir
+        .join(format!(".srl-import-backup-{stamp}"));
+    std::fs::create_dir_all(&staging_root)?;
+    std::fs::create_dir_all(&backup_root)?;
+    for (name, relative, _) in &entries {
+        let mut entry = zip.by_name(name).map_err(|e| {
+            AppError::new(ErrorCode::ZipUnsafe, format!("无法读取整合包条目 {name}"))
+                .with_detail(e.to_string())
+        })?;
+        let staged = staging_root.join(relative);
+        if let Some(parent) = staged.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let mut output = std::fs::File::create(&dest)?;
+        let mut output = std::fs::File::create(&staged)?;
         std::io::copy(&mut entry, &mut output)?;
+        output.sync_all()?;
     }
-    Ok(files as u32)
+    drop(zip);
+
+    // Phase 3: back up every existing target before committing.
+    let mut backed_up: Vec<PathBuf> = Vec::new();
+    for (_, relative, _) in &entries {
+        let dest = instance.game_dir.join(relative);
+        crate::util::ensure_path_within_root(&instance.game_dir, &dest)?;
+        if dest.exists() {
+            if dest.is_dir() {
+                return Err(AppError::new(
+                    ErrorCode::ZipUnsafe,
+                    format!("目标路径是目录，拒绝用文件覆盖：{}", relative.display()),
+                ));
+            }
+            let backup = backup_root.join(relative);
+            if let Some(parent) = backup.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(&dest, &backup)?;
+            backed_up.push(relative.clone());
+        }
+    }
+
+    // Phase 4: commit. Any failure triggers a best-effort rollback.
+    let mut committed: Vec<PathBuf> = Vec::new();
+    let commit = (|| -> Result<()> {
+        for (_, relative, _) in &entries {
+            let dest = instance.game_dir.join(relative);
+            crate::util::ensure_path_within_root(&instance.game_dir, &dest)?;
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            if dest.exists() {
+                std::fs::remove_file(&dest)?;
+            }
+            committed.push(relative.clone());
+            std::fs::rename(staging_root.join(relative), &dest)?;
+        }
+        Ok(())
+    })();
+
+    if let Err(error) = commit {
+        let mut rollback_failures = Vec::new();
+        for relative in committed.iter().rev() {
+            let dest = instance.game_dir.join(relative);
+            let backup = backup_root.join(relative);
+            let result = if backup.exists() {
+                std::fs::copy(&backup, &dest).map(|_| ())
+            } else if dest.exists() {
+                std::fs::remove_file(&dest)
+            } else {
+                Ok(())
+            };
+            if let Err(failure) = result {
+                rollback_failures.push(format!("{}: {failure}", relative.display()));
+            }
+        }
+        let _ = std::fs::remove_dir_all(&staging_root);
+        if rollback_failures.is_empty() {
+            let _ = std::fs::remove_dir_all(&backup_root);
+            return Err(error);
+        }
+        return Err(AppError::new(
+            ErrorCode::Io,
+            "整合包导入失败，且自动回滚未完全成功；恢复材料已保留",
+        )
+        .with_detail(format!(
+            "备份目录：{}；回滚失败：{}",
+            backup_root.display(),
+            rollback_failures.join("; ")
+        )));
+    }
+
+    let _ = std::fs::remove_dir_all(&staging_root);
+    let _ = std::fs::remove_dir_all(&backup_root);
+    let _ = backed_up;
+    Ok(entries.len() as u32)
 }
 
 fn default_override_prefixes() -> Vec<String> {
@@ -987,7 +1099,7 @@ fn extract_generic_blocking(zip_path: &Path, instance: &Instance) -> Result<(u32
     let mut names = Vec::new();
     for i in 0..zip.len() {
         if let Ok(entry) = zip.by_index(i) {
-            names.push(entry.name().to_string());
+            names.push(entry.name()?.to_string());
         }
     }
     let roots: HashSet<&str> = names
@@ -1018,7 +1130,7 @@ fn extract_generic_blocking(zip_path: &Path, instance: &Instance) -> Result<(u32
         {
             return Err(AppError::new(ErrorCode::ZipUnsafe, "整合包包含符号链接"));
         }
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         let relative_name = if strip_root {
             name.split_once('/').map(|(_, rest)| rest).unwrap_or(&name)
         } else {
@@ -1038,9 +1150,11 @@ fn extract_generic_blocking(zip_path: &Path, instance: &Instance) -> Result<(u32
             return Err(AppError::new(ErrorCode::ZipUnsafe, "整合包文件数量过多"));
         }
         let dest = instance.game_dir.join(&relative);
+        crate::util::ensure_path_within_root(&instance.game_dir, &dest)?;
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        crate::util::ensure_path_within_root(&instance.game_dir, &dest)?;
         let mut output = std::fs::File::create(&dest)?;
         std::io::copy(&mut entry, &mut output)?;
     }
@@ -1760,8 +1874,32 @@ mod tests {
         assert!(safe_relative("mods/foo").is_ok());
     }
 
+    #[cfg(unix)]
     #[test]
-    fn extracts_overrides_and_backs_up_options() {
+    fn refuses_to_write_through_existing_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let inst = test_instance(dir.path());
+        std::fs::create_dir_all(&inst.game_dir).unwrap();
+        std::fs::create_dir_all(outside.path()).unwrap();
+        std::os::unix::fs::symlink(outside.path(), inst.game_dir.join("config")).unwrap();
+        let zip_path = dir.path().join("pack.mrpack");
+        {
+            let file = std::fs::File::create(&zip_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+            zip.start_file("overrides/config/escape.txt", options)
+                .unwrap();
+            zip.write_all(b"owned").unwrap();
+            zip.finish().unwrap();
+        }
+        let result = extract_overrides_blocking(&zip_path, &inst, &default_override_prefixes());
+        assert!(result.is_err());
+        assert!(!outside.path().join("escape.txt").exists());
+    }
+
+    #[test]
+    fn extracts_overrides_transactionally() {
         let dir = tempfile::tempdir().unwrap();
         let inst = test_instance(dir.path());
         std::fs::create_dir_all(&inst.game_dir).unwrap();
@@ -1794,15 +1932,14 @@ mod tests {
             "fov:0.8\n"
         );
         assert!(!inst.game_dir.join("server.properties").exists());
-        let backups: Vec<_> = std::fs::read_dir(&inst.game_dir)
+        let leftovers: Vec<_> = std::fs::read_dir(&inst.game_dir)
             .unwrap()
             .filter_map(|e| e.ok())
             .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with("options.txt.sr-backup-")
+                let name = e.file_name().to_string_lossy().into_owned();
+                name.starts_with(".srl-import-staging-") || name.starts_with(".srl-import-backup-")
             })
             .collect();
-        assert_eq!(backups.len(), 1);
+        assert!(leftovers.is_empty());
     }
 }

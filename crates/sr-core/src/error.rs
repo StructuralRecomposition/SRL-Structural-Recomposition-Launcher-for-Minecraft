@@ -10,6 +10,8 @@ pub enum ErrorCode {
     PathUnsafe,
     NotFound,
     AlreadyExists,
+    /// The requested operation is not allowed in the current lifecycle state.
+    InvalidState,
     Io,
     Network,
     Http,
@@ -156,6 +158,12 @@ impl fmt::Display for AppError {
 }
 
 impl std::error::Error for AppError {}
+
+impl From<zip::result::ZipError> for AppError {
+    fn from(e: zip::result::ZipError) -> Self {
+        Self::new(ErrorCode::ZipUnsafe, format!("ZIP 操作失败：{e}")).with_detail(e.to_string())
+    }
+}
 
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {

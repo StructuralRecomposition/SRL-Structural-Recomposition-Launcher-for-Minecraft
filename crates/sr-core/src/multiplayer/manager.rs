@@ -8,6 +8,36 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 
+/// Bounded insertion-ordered set used for player-event de-duplication.
+/// Old keys are evicted once the cap is reached so new events keep flowing.
+#[derive(Default)]
+struct SeenEvents {
+    order: std::collections::VecDeque<String>,
+    set: std::collections::HashSet<String>,
+}
+
+impl SeenEvents {
+    const LIMIT: usize = 10_000;
+
+    fn insert(&mut self, key: String) -> bool {
+        if !self.set.insert(key.clone()) {
+            return false;
+        }
+        self.order.push_back(key);
+        while self.order.len() > Self::LIMIT {
+            if let Some(old) = self.order.pop_front() {
+                self.set.remove(&old);
+            }
+        }
+        true
+    }
+
+    fn clear(&mut self) {
+        self.order.clear();
+        self.set.clear();
+    }
+}
+
 use super::frp52::{parse_port_ranges, port_in_ranges, Frp52Provider};
 use super::frpc::{DownloadProgress, FrpcManager};
 use super::journal;
@@ -33,7 +63,7 @@ pub struct MultiplayerManager {
     last_error: RwLock<Option<String>>,
     tunnel_cache: RwLock<Option<(Instant, TunnelStateView)>>,
     last_room_state: RwLock<Option<String>>,
-    seen_player_events: Mutex<std::collections::HashSet<String>>,
+    seen_player_events: Mutex<SeenEvents>,
 }
 
 impl MultiplayerManager {
@@ -60,7 +90,7 @@ impl MultiplayerManager {
             last_error: RwLock::new(None),
             tunnel_cache: RwLock::new(None),
             last_room_state: RwLock::new(None),
-            seen_player_events: Mutex::new(std::collections::HashSet::new()),
+            seen_player_events: Mutex::new(SeenEvents::default()),
         }
     }
 
@@ -111,9 +141,11 @@ impl MultiplayerManager {
         let local_service_ok = match stored_room.as_ref() {
             Some(stored) => Some(match stored.edition {
                 Edition::Java => {
-                    minecraft::tcp_reachable(&stored.local_ip, stored.local_port).await
+                    minecraft::java_protocol_ok(&stored.local_ip, stored.local_port).await
                 }
-                Edition::Bedrock => minecraft::udp_port_in_use(stored.local_port),
+                Edition::Bedrock => {
+                    minecraft::bedrock_protocol_ok(&stored.local_ip, stored.local_port).await
+                }
             }),
             None => None,
         };
@@ -122,14 +154,21 @@ impl MultiplayerManager {
             _ => None,
         };
         let room = stored_room.map(|stored| {
+            let tunnel_online = tunnel.as_ref().map(|value| value.online);
             let state = if stored.retained {
                 "retained"
             } else if stored.local_pid.is_some() && !local_alive {
                 "local_stopped"
-            } else if frpc.running {
-                "online"
-            } else {
+            } else if !frpc.running {
                 "offline"
+            } else if tunnel_online == Some(false) {
+                "tunnel_offline"
+            } else if local_service_ok == Some(false) {
+                "local_unreachable"
+            } else if tunnel_online.is_none() {
+                "unconfirmed"
+            } else {
+                "online"
             };
             RoomView {
                 tunnel_id: stored.tunnel_id,
@@ -160,8 +199,15 @@ impl MultiplayerManager {
                     )
                 } else if !frpc.running {
                     Some("FRPC 未运行。可以重启 FRPC 或停止并删除隧道。".into())
+                } else if tunnel_online == Some(false) {
+                    Some("FRPC 在运行，但云端隧道尚未在线；当前不能确认玩家可连接。".into())
                 } else if local_service_ok == Some(false) {
-                    Some("FRPC 在运行，但本地 Minecraft 端口当前不可连接。".into())
+                    Some(
+                        "FRPC 在运行，但本地 Minecraft 协议检测失败；当前不能确认玩家可连接。"
+                            .into(),
+                    )
+                } else if tunnel_online.is_none() {
+                    Some("FRPC 在运行，但无法查询云端隧道状态；连接可用性未知。".into())
                 } else {
                     None
                 },
@@ -270,14 +316,13 @@ impl MultiplayerManager {
         {
             let mut seen = self.seen_player_events.lock().await;
             for event in &events {
-                if seen.len() >= 5000 {
-                    break;
-                }
                 let key = format!(
-                    "{}|{}|{}",
+                    "{}|{}|{}|{}|{}",
                     event.action,
                     event.player,
-                    event.at.as_deref().unwrap_or("")
+                    event.at.as_deref().unwrap_or(""),
+                    event.observed_ip.as_deref().unwrap_or(""),
+                    event.line
                 );
                 if !seen.insert(key) {
                     continue;
@@ -618,16 +663,20 @@ impl MultiplayerManager {
             return Err(AppError::invalid_input("本地端口必须大于 0"));
         }
         if request.edition == Edition::Java {
-            if !minecraft::tcp_reachable(&local_ip, local_port).await {
+            if !minecraft::java_protocol_ok(&local_ip, local_port).await {
                 return Err(AppError::new(
                     ErrorCode::LanPortNotFound,
-                    format!("本地 TCP 端口 {local_ip}:{local_port} 未在监听"),
+                    format!(
+                        "本地端口 {local_ip}:{local_port} 没有返回 Minecraft 状态；请确认已开放局域网，且该端口不是其他程序"
+                    ),
                 ));
             }
-        } else if !minecraft::udp_port_in_use(local_port) {
+        } else if !minecraft::bedrock_protocol_ok(&local_ip, local_port).await {
             return Err(AppError::new(
                 ErrorCode::LanPortNotFound,
-                format!("本地 UDP 端口 {local_port} 未在监听"),
+                format!(
+                    "本地 UDP 端口 {local_port} 没有返回 RakNet 响应；请确认基岩版世界已开放且端口正确"
+                ),
             ));
         }
         self.emit(
@@ -729,7 +778,12 @@ impl MultiplayerManager {
         let occupied = provider
             .occupied_ports(node.id, request.edition.tunnel_type())
             .await
-            .unwrap_or_default();
+            .map_err(|error| {
+                AppError::new(
+                    error.code,
+                    format!("无法获取节点已占用端口：{}", error.message),
+                )
+            })?;
         let allowed = parse_port_ranges(&node.proxies_allowed);
         let denied = parse_port_ranges(&node.proxies_denied);
         let ranges = if allowed.is_empty() {
@@ -739,19 +793,31 @@ impl MultiplayerManager {
         };
         let mut remote_port = None;
         let salt = uuid::Uuid::new_v4().as_u128() as u64;
+        let port_deadline = std::time::Instant::now() + Duration::from_secs(15);
         for attempt in 0..40u64 {
+            if std::time::Instant::now() >= port_deadline {
+                break;
+            }
             let Some(candidate) =
                 choose_port(&ranges, &denied, &occupied, salt.wrapping_add(attempt))
             else {
                 continue;
             };
-            if provider
+            match provider
                 .check_port(node.id, request.edition.tunnel_type(), candidate)
                 .await
-                .unwrap_or(false)
             {
-                remote_port = Some(candidate);
-                break;
+                Ok(true) => {
+                    remote_port = Some(candidate);
+                    break;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    return Err(AppError::new(
+                        error.code,
+                        format!("检查远程端口失败：{}", error.message),
+                    ));
+                }
             }
         }
         let remote_port = remote_port.ok_or_else(|| {
@@ -979,7 +1045,24 @@ impl MultiplayerManager {
         )
         .await;
         *self.tunnel_cache.write().await = None;
-        Ok(self.frpc.status().await)
+        // A spawned process is not a restored tunnel. Confirm with the
+        // provider before reporting success.
+        let mut last = String::from("云端隧道尚未返回状态");
+        for _ in 0..10 {
+            match provider.tunnel_state(room.tunnel_id).await {
+                Ok(state) if state.online => {
+                    *self.tunnel_cache.write().await = Some((Instant::now(), state));
+                    return Ok(self.frpc.status().await);
+                }
+                Ok(_) => last = "云端隧道仍显示离线".into(),
+                Err(error) => last = error.message,
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        Err(AppError::new(
+            ErrorCode::Timeout,
+            format!("FRPC 已启动，但未能在 10 秒内确认云端隧道恢复：{last}"),
+        ))
     }
 
     pub async fn shutdown(&self) {
