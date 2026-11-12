@@ -63,6 +63,19 @@ impl InstalledIndex {
             .and_then(|index| self.mods.get(*index))
     }
 
+    /// All local files that claim to provide a project. Multiple matches are a
+    /// conflict that the caller must surface instead of picking one silently.
+    pub fn matches(&self, source: &str, project_id: &str, slug: &str) -> Vec<&InstalledMod> {
+        if source.eq_ignore_ascii_case("curseforge") {
+            return self.find(source, project_id, slug).into_iter().collect();
+        }
+        let key = slug.trim().to_ascii_lowercase();
+        self.mods
+            .iter()
+            .filter(|item| item.mod_ids.iter().any(|id| id.to_ascii_lowercase() == key))
+            .collect()
+    }
+
     pub fn len(&self) -> usize {
         self.mods.len()
     }

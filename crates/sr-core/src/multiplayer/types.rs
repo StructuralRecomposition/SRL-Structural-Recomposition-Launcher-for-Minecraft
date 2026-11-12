@@ -76,6 +76,8 @@ pub struct NodeView {
     pub latency_ms: Option<u64>,
     pub clients: Option<u32>,
     pub load: Option<f64>,
+    /// True only when the provider actually returned load for this node.
+    pub load_available: bool,
     pub score: f64,
     pub available: bool,
     pub reason: Option<String>,
@@ -269,6 +271,10 @@ pub struct StoredRoom {
     pub local_port: u16,
     #[serde(default)]
     pub local_pid: Option<u32>,
+    /// Unix seconds when the local game process started. Used to reject PID
+    /// reuse; absent for rooms created before v0.2.4.
+    #[serde(default)]
+    pub local_started_at: Option<u64>,
     pub latency_ms: Option<u64>,
     pub created_at: String,
     #[serde(default)]

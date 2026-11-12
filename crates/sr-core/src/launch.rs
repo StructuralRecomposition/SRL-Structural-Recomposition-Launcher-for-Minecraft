@@ -38,6 +38,68 @@ pub struct LaunchResult {
     pub warnings: Vec<String>,
 }
 
+const LOG_SHARD_BYTES: u64 = 32 * 1024 * 1024;
+const LOG_SHARDS: u32 = 5;
+
+struct SessionLogWriter {
+    file: Option<tokio::fs::File>,
+    path: PathBuf,
+    bytes: u64,
+}
+
+impl SessionLogWriter {
+    async fn open(path: PathBuf) -> Result<Self> {
+        let file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .await?;
+        let bytes = file.metadata().await.map(|meta| meta.len()).unwrap_or(0);
+        Ok(Self {
+            file: Some(file),
+            path,
+            bytes,
+        })
+    }
+
+    async fn write_line(&mut self, line: &str) -> Result<()> {
+        if self.bytes >= LOG_SHARD_BYTES {
+            self.rotate().await?;
+        }
+        if let Some(file) = self.file.as_mut() {
+            file.write_all(line.as_bytes()).await?;
+            file.flush().await?;
+            self.bytes = self.bytes.saturating_add(line.len() as u64);
+        }
+        Ok(())
+    }
+
+    async fn rotate(&mut self) -> Result<()> {
+        if let Some(mut file) = self.file.take() {
+            let _ = file.flush().await;
+            drop(file);
+        }
+        let _ = tokio::fs::remove_file(self.path.with_extension(format!("log.{LOG_SHARDS}"))).await;
+        for index in (1..LOG_SHARDS).rev() {
+            let from = self.path.with_extension(format!("log.{index}"));
+            let to = self.path.with_extension(format!("log.{}", index + 1));
+            if tokio::fs::try_exists(&from).await.unwrap_or(false) {
+                let _ = tokio::fs::rename(&from, &to).await;
+            }
+        }
+        let _ = tokio::fs::rename(&self.path, self.path.with_extension("log.1")).await;
+        self.file = Some(
+            tokio::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.path)
+                .await?,
+        );
+        self.bytes = 0;
+        Ok(())
+    }
+}
+
 #[allow(dead_code)]
 struct RunningProcess {
     child: Arc<Mutex<Child>>,
@@ -271,11 +333,7 @@ impl LaunchManager {
         if let Some(parent) = log_path.parent() {
             util::ensure_dir(parent).await?;
         }
-        let log_file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)
-            .await?;
+        let log_file = SessionLogWriter::open(log_path.clone()).await?;
 
         let (pid, child) = self
             .spawn_plan(
@@ -322,7 +380,7 @@ impl LaunchManager {
         java: &Path,
         plan: &LaunchPlan,
         cwd: &Path,
-        log_file: tokio::fs::File,
+        log_file: SessionLogWriter,
     ) -> Result<(u32, Arc<Mutex<Child>>)> {
         let mut cmd = tokio::process::Command::new(java);
         cmd.args(&plan.arguments)
@@ -369,7 +427,7 @@ impl LaunchManager {
         instance_id: String,
         stream: &'static str,
         reader: R,
-        log_file: Arc<Mutex<tokio::fs::File>>,
+        log_file: Arc<Mutex<SessionLogWriter>>,
     ) where
         R: tokio::io::AsyncRead + Unpin + Send + 'static,
     {
@@ -381,9 +439,12 @@ impl LaunchManager {
                     Ok(Some(line)) => {
                         let line = util::redact_secrets(&line);
                         {
-                            let mut f = log_file.lock().await;
-                            let _ = f.write_all(format!("[{stream}] {line}\n").as_bytes()).await;
-                            let _ = f.flush().await;
+                            let mut writer = log_file.lock().await;
+                            if let Err(error) =
+                                writer.write_line(&format!("[{stream}] {line}\n")).await
+                            {
+                                tracing::warn!(stream, error = %error, "game log write failed");
+                            }
                         }
                         (sink)(LaunchEvent {
                             instance_id: instance_id.clone(),
@@ -490,6 +551,19 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[tokio::test]
+    async fn rotates_session_log_shards() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.log");
+        let mut writer = SessionLogWriter::open(path.clone()).await.unwrap();
+        writer.write_line("before\n").await.unwrap();
+        writer.bytes = LOG_SHARD_BYTES;
+        writer.write_line("after\n").await.unwrap();
+        assert!(path.with_extension("log.1").exists());
+        let current = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(current, "after\n");
+    }
+
+    #[tokio::test]
     async fn spawns_process_and_captures_output() {
         let dir = tempfile::tempdir().unwrap();
         let game = GamePaths::new(dir.path());
@@ -508,7 +582,7 @@ mod tests {
             sink,
         );
         let log_path = dir.path().join("test.log");
-        let log = tokio::fs::File::create(&log_path).await.unwrap();
+        let log = SessionLogWriter::open(log_path.clone()).await.unwrap();
         let plan = LaunchPlan {
             arguments: vec!["hello-sr".into()],
             warnings: vec![],

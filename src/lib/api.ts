@@ -843,6 +843,7 @@ export interface MultiplayerNode {
   latencyMs: number | null;
   clients: number | null;
   load: number | null;
+  loadAvailable: boolean;
   score: number;
   available: boolean;
   reason: string | null;
@@ -1069,6 +1070,7 @@ export interface DependencyNode {
   parent: string | null;
   requiredBy: string[];
   installed: boolean;
+  installedState: string;
   installedFile: string | null;
   installedVersion: string | null;
   compatible: boolean;

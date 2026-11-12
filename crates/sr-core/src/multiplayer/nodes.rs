@@ -75,6 +75,7 @@ pub fn rank_nodes(
                 latency_ms: latency,
                 clients: Some(node.proxy_count),
                 load: load_value,
+                load_available: load_value.is_some(),
                 score: if available {
                     score_node(node, latency, load_value)
                 } else {
@@ -98,7 +99,11 @@ fn score_node(node: &ProviderNode, latency: Option<u64>, load: Option<f64>) -> f
         Some(ms) => 1.0 / (1.0 + ms as f64 / 120.0),
         None => 0.05,
     };
-    let load_score = 1.0 / (1.0 + load.unwrap_or(30.0).clamp(0.0, 100.0) / 35.0);
+    // Unknown load must not be treated as a healthy 30%. Use a neutral score
+    // slightly below the midpoint so missing data cannot win by default.
+    let load_score = load
+        .map(|value| 1.0 / (1.0 + value.clamp(0.0, 100.0) / 35.0))
+        .unwrap_or(0.45);
     let quota_score = if node.max_proxies < 0 {
         1.0
     } else {

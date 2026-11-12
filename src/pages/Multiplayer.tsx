@@ -710,6 +710,9 @@ export function MultiplayerPage() {
                           <option key={node.id} value={node.id} disabled={!node.available}>
                             {node.name}
                             {node.latencyMs != null ? ` · ${node.latencyMs} ms` : ""}
+                            {node.loadAvailable && node.load != null
+                              ? ` · ${Math.round(node.load)}%`
+                              : ` · ${t("负载未知")}`}
                             {!node.available ? ` · ${node.reason ?? t("不可用")}` : ""}
                           </option>
                         ))}

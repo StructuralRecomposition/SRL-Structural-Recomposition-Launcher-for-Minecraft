@@ -57,6 +57,9 @@ pub fn run() {
                 let settings = settings::load_or_default(&paths).await?;
                 let game = GamePaths::new(settings.game_dir.clone());
                 game.ensure_layout().await?;
+                for message in sr_core::resources::recover_import_transactions(&game) {
+                    tracing::warn!(%message, "recovered an interrupted modpack transaction");
+                }
                 Ok::<_, sr_core::AppError>((settings, game))
             })?;
             let multiplayer = std::sync::Arc::new(tauri::async_runtime::block_on(

@@ -262,17 +262,31 @@ fn message_of(line: &str) -> Option<&str> {
 /// real join/leave/login marker are used; chat text is ignored.
 pub fn parse_player_events(text: &str, date: Option<NaiveDate>) -> Vec<PlayerEvent> {
     let mut events = Vec::new();
+    let mut current_date = date;
+    let mut previous_time: Option<NaiveTime> = None;
     for (line_no, line) in text.lines().enumerate() {
         let Some(message) = message_of(line) else {
             continue;
         };
-        let at = date.and_then(|date| {
-            line_clock(line).and_then(|time| {
-                chrono::Local
-                    .from_local_datetime(&date.and_time(time))
-                    .single()
-                    .map(|local| local.with_timezone(&Utc).to_rfc3339())
-            })
+        let clock = line_clock(line);
+        if let (Some(previous), Some(current)) = (previous_time, clock) {
+            // A large backwards jump is a midnight rollover, not a clock
+            // rollback. Small rollbacks are left on the same date and marked
+            // by the caller as low-confidence if needed.
+            if previous.signed_duration_since(current) > chrono::Duration::hours(12) {
+                if let Some(next) = current_date.and_then(|value| value.succ_opt()) {
+                    current_date = Some(next);
+                }
+            }
+        }
+        if let Some(clock) = clock {
+            previous_time = Some(clock);
+        }
+        let at = current_date.zip(clock).and_then(|(date, time)| {
+            chrono::Local
+                .from_local_datetime(&date.and_time(time))
+                .single()
+                .map(|local| local.with_timezone(&Utc).to_rfc3339())
         });
 
         if let Some(position) = message.find(" logged in with entity id") {
@@ -485,6 +499,23 @@ const RAKNET_MAGIC: [u8; 16] = [
     0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78,
 ];
 
+/// Validate a RakNet Unconnected Pong. Only the first byte is not enough:
+/// magic, timestamp/guid width, MOTD length and UTF-8 must all be sane.
+pub fn valid_raknet_pong(buf: &[u8]) -> bool {
+    if buf.len() < 35 || buf[0] != 0x1c {
+        return false;
+    }
+    if buf[17..33] != RAKNET_MAGIC {
+        return false;
+    }
+    let length = u16::from_be_bytes([buf[33], buf[34]]) as usize;
+    let end = 35usize.saturating_add(length);
+    if end > buf.len() || length == 0 {
+        return false;
+    }
+    std::str::from_utf8(&buf[35..end]).is_ok()
+}
+
 /// Bedrock Edition health check using RakNet Unconnected Ping.
 pub async fn bedrock_protocol_ok(ip: &str, port: u16) -> bool {
     let Ok(socket) = tokio::net::UdpSocket::bind(("0.0.0.0", 0)).await else {
@@ -501,7 +532,15 @@ pub async fn bedrock_protocol_ok(ip: &str, port: u16) -> bool {
     }
     let mut buf = [0u8; 2048];
     match tokio::time::timeout(Duration::from_secs(2), socket.recv_from(&mut buf)).await {
-        Ok(Ok((len, _))) => len >= 1 && buf[0] == 0x1c,
+        Ok(Ok((len, source))) => {
+            let expected: Option<std::net::IpAddr> = ip.parse().ok();
+            if let Some(expected) = expected {
+                if source.ip() != expected {
+                    return false;
+                }
+            }
+            valid_raknet_pong(&buf[..len])
+        }
         _ => false,
     }
 }
@@ -582,6 +621,19 @@ mod tests {
     }
 
     #[test]
+    fn rolls_event_date_across_midnight() {
+        let text = "\
+[23:59:50] [Server thread/INFO]: A joined the game\n\
+[00:00:10] [Server thread/INFO]: B joined the game\n";
+        let date = NaiveDate::from_ymd_opt(2026, 11, 12);
+        let events = parse_player_events(text, date);
+        assert_eq!(events.len(), 2);
+        let first = DateTime::parse_from_rfc3339(events[0].at.as_deref().unwrap()).unwrap();
+        let second = DateTime::parse_from_rfc3339(events[1].at.as_deref().unwrap()).unwrap();
+        assert_eq!((second - first).num_seconds(), 20);
+    }
+
+    #[test]
     fn parses_srl_wrapped_lines_and_keeps_timestamps() {
         let text = "\
 [stdout] [12:00:00] [Server thread/INFO]: Steve joined the game\n\
@@ -593,6 +645,32 @@ mod tests {
         let at = events[0].at.as_deref().expect("timestamp parsed");
         assert!(at.starts_with("2026-11-12T"), "{at}");
         assert_ne!(events[0].line, events[1].line);
+    }
+
+    #[test]
+    fn validates_raknet_pong_strictly() {
+        let mut packet = vec![0x1c];
+        packet.extend_from_slice(&1i64.to_be_bytes());
+        packet.extend_from_slice(&2i64.to_be_bytes());
+        packet.extend_from_slice(&RAKNET_MAGIC);
+        packet.extend_from_slice(&5u16.to_be_bytes());
+        packet.extend_from_slice(b"MCPE;");
+        assert!(valid_raknet_pong(&packet));
+        assert!(!valid_raknet_pong(&packet[..10]));
+        assert!(!valid_raknet_pong(&[]));
+        let mut bad_magic = packet.clone();
+        bad_magic[17] = 0xff;
+        assert!(!valid_raknet_pong(&bad_magic));
+        let mut bad_len = packet.clone();
+        bad_len[33] = 0xff;
+        bad_len[34] = 0xff;
+        assert!(!valid_raknet_pong(&bad_len));
+        let mut bad_utf8 = packet.clone();
+        bad_utf8[35] = 0xff;
+        assert!(!valid_raknet_pong(&bad_utf8));
+        let mut bad_id = packet;
+        bad_id[0] = 0x1d;
+        assert!(!valid_raknet_pong(&bad_id));
     }
 
     #[test]

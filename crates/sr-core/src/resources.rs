@@ -809,6 +809,113 @@ fn backup_file_if_exists(instance: &Instance, relative: &Path) -> Result<()> {
     Ok(())
 }
 
+const IMPORT_MANIFEST: &str = ".srl-import-transaction.json";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportTransaction {
+    transaction_id: String,
+    status: String,
+    staging_directory: String,
+    backup_directory: String,
+    entries: Vec<ImportTransactionEntry>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportTransactionEntry {
+    relative: String,
+    existed: bool,
+}
+
+fn write_import_manifest(root: &Path, transaction: &ImportTransaction) -> Result<()> {
+    let path = root.join(IMPORT_MANIFEST);
+    let temp = root.join(format!(".{IMPORT_MANIFEST}.tmp"));
+    let bytes = serde_json::to_vec_pretty(transaction)?;
+    std::fs::write(&temp, bytes)?;
+    if path.exists() {
+        std::fs::remove_file(&path)?;
+    }
+    std::fs::rename(&temp, &path)?;
+    Ok(())
+}
+
+fn clear_import_manifest(root: &Path) {
+    let _ = std::fs::remove_file(root.join(IMPORT_MANIFEST));
+}
+
+/// Roll back an interrupted modpack transaction found in an instance root.
+/// This runs before any new import and at application startup.
+pub fn recover_import_transaction(root: &Path) -> Result<Option<String>> {
+    let path = root.join(IMPORT_MANIFEST);
+    let Ok(bytes) = std::fs::read(&path) else {
+        return Ok(None);
+    };
+    let transaction: ImportTransaction = serde_json::from_slice(&bytes).map_err(|error| {
+        AppError::internal(format!("整合包事务清单损坏：{}", path.display()))
+            .with_detail(error.to_string())
+    })?;
+    if transaction.status == "committed" {
+        let _ = std::fs::remove_dir_all(root.join(&transaction.staging_directory));
+        let _ = std::fs::remove_dir_all(root.join(&transaction.backup_directory));
+        clear_import_manifest(root);
+        return Ok(Some("已清理已完成的整合包事务".into()));
+    }
+    let backup_root = root.join(&transaction.backup_directory);
+    let mut failures = Vec::new();
+    for entry in &transaction.entries {
+        let dest = root.join(&entry.relative);
+        let backup = backup_root.join(&entry.relative);
+        let result = if backup.exists() {
+            std::fs::copy(&backup, &dest).map(|_| ())
+        } else if !entry.existed && dest.exists() {
+            std::fs::remove_file(&dest)
+        } else {
+            Ok(())
+        };
+        if let Err(error) = result {
+            failures.push(format!("{}: {error}", entry.relative));
+        }
+    }
+    let _ = std::fs::remove_dir_all(root.join(&transaction.staging_directory));
+    if failures.is_empty() {
+        let _ = std::fs::remove_dir_all(&backup_root);
+        clear_import_manifest(root);
+        Ok(Some(format!(
+            "已回滚未完成的整合包事务 {}",
+            transaction.transaction_id
+        )))
+    } else {
+        Err(
+            AppError::new(ErrorCode::Io, "整合包事务恢复未完全成功，已保留备份").with_detail(
+                format!(
+                    "备份目录：{}；失败：{}",
+                    backup_root.display(),
+                    failures.join("; ")
+                ),
+            ),
+        )
+    }
+}
+
+pub fn recover_import_transactions(game: &crate::paths::GamePaths) -> Vec<String> {
+    let mut messages = Vec::new();
+    let Ok(entries) = std::fs::read_dir(game.instances_dir()) else {
+        return messages;
+    };
+    for entry in entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        match recover_import_transaction(&entry.path()) {
+            Ok(Some(message)) => messages.push(format!("{}：{message}", entry.path().display())),
+            Ok(None) => {}
+            Err(error) => messages.push(format!("{}：{}", entry.path().display(), error.message)),
+        }
+    }
+    messages
+}
+
 fn extract_overrides_blocking(
     zip_path: &Path,
     instance: &Instance,
@@ -870,6 +977,9 @@ fn extract_overrides_blocking(
         entries.push((name, relative, entry.size()));
     }
 
+    // A previous interrupted transaction must be recovered before a new one.
+    recover_import_transaction(&instance.game_dir)?;
+
     // Phase 2: extract everything into a staging directory.
     let stamp = crate::util::short_id();
     let staging_root = instance
@@ -880,6 +990,21 @@ fn extract_overrides_blocking(
         .join(format!(".srl-import-backup-{stamp}"));
     std::fs::create_dir_all(&staging_root)?;
     std::fs::create_dir_all(&backup_root)?;
+    let manifest_entries: Vec<ImportTransactionEntry> = entries
+        .iter()
+        .map(|(_, relative, _)| ImportTransactionEntry {
+            relative: relative.to_string_lossy().into_owned(),
+            existed: instance.game_dir.join(relative).exists(),
+        })
+        .collect();
+    let mut transaction = ImportTransaction {
+        transaction_id: stamp.clone(),
+        status: "created".into(),
+        staging_directory: format!(".srl-import-staging-{stamp}"),
+        backup_directory: format!(".srl-import-backup-{stamp}"),
+        entries: manifest_entries,
+    };
+    write_import_manifest(&instance.game_dir, &transaction)?;
     for (name, relative, _) in &entries {
         let mut entry = zip.by_name(name).map_err(|e| {
             AppError::new(ErrorCode::ZipUnsafe, format!("无法读取整合包条目 {name}"))
@@ -916,7 +1041,12 @@ fn extract_overrides_blocking(
         }
     }
 
-    // Phase 4: commit. Any failure triggers a best-effort rollback.
+    transaction.status = "prepared".into();
+    write_import_manifest(&instance.game_dir, &transaction)?;
+
+    // Phase 4: commit. Any failure triggers a rollback.
+    transaction.status = "committing".into();
+    write_import_manifest(&instance.game_dir, &transaction)?;
     let mut committed: Vec<PathBuf> = Vec::new();
     let commit = (|| -> Result<()> {
         for (_, relative, _) in &entries {
@@ -935,6 +1065,8 @@ fn extract_overrides_blocking(
     })();
 
     if let Err(error) = commit {
+        transaction.status = "rolling_back".into();
+        let _ = write_import_manifest(&instance.game_dir, &transaction);
         let mut rollback_failures = Vec::new();
         for relative in committed.iter().rev() {
             let dest = instance.game_dir.join(relative);
@@ -953,8 +1085,11 @@ fn extract_overrides_blocking(
         let _ = std::fs::remove_dir_all(&staging_root);
         if rollback_failures.is_empty() {
             let _ = std::fs::remove_dir_all(&backup_root);
+            clear_import_manifest(&instance.game_dir);
             return Err(error);
         }
+        transaction.status = "recovery_required".into();
+        let _ = write_import_manifest(&instance.game_dir, &transaction);
         return Err(AppError::new(
             ErrorCode::Io,
             "整合包导入失败，且自动回滚未完全成功；恢复材料已保留",
@@ -966,8 +1101,11 @@ fn extract_overrides_blocking(
         )));
     }
 
+    transaction.status = "committed".into();
+    write_import_manifest(&instance.game_dir, &transaction)?;
     let _ = std::fs::remove_dir_all(&staging_root);
     let _ = std::fs::remove_dir_all(&backup_root);
+    clear_import_manifest(&instance.game_dir);
     let _ = backed_up;
     Ok(entries.len() as u32)
 }
@@ -1872,6 +2010,33 @@ mod tests {
         assert!(safe_relative("mods/NUL.txt").is_err());
         assert!(safe_relative("mods/foo.").is_err());
         assert!(safe_relative("mods/foo").is_ok());
+    }
+
+    #[test]
+    fn recovers_an_interrupted_commit_from_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::create_dir_all(root.join(".srl-import-staging-tx")).unwrap();
+        std::fs::create_dir_all(root.join(".srl-import-backup-tx/config")).unwrap();
+        std::fs::write(root.join("config/a.txt"), b"new").unwrap();
+        std::fs::write(root.join(".srl-import-backup-tx/config/a.txt"), b"old").unwrap();
+        let transaction = ImportTransaction {
+            transaction_id: "tx".into(),
+            status: "committing".into(),
+            staging_directory: ".srl-import-staging-tx".into(),
+            backup_directory: ".srl-import-backup-tx".into(),
+            entries: vec![ImportTransactionEntry {
+                relative: "config/a.txt".into(),
+                existed: true,
+            }],
+        };
+        write_import_manifest(root, &transaction).unwrap();
+        let message = recover_import_transaction(root).unwrap();
+        assert!(message.is_some());
+        assert_eq!(std::fs::read(root.join("config/a.txt")).unwrap(), b"old");
+        assert!(!root.join(IMPORT_MANIFEST).exists());
+        assert!(!root.join(".srl-import-backup-tx").exists());
     }
 
     #[cfg(unix)]

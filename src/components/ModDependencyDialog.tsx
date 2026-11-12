@@ -31,6 +31,30 @@ interface Props {
   onClose: () => void;
 }
 
+function installedStateLabel(state: string) {
+  switch (state) {
+    case "enabled_satisfied":
+      return t("已启用且版本匹配");
+    case "disabled":
+      return t("已禁用");
+    case "version_mismatch":
+      return t("版本不匹配");
+    case "version_unknown":
+      return t("版本未知");
+    case "conflict":
+      return t("多个文件冲突");
+    default:
+      return "";
+  }
+}
+
+function installedStateTone(state: string): "success" | "warning" | "danger" | "neutral" {
+  if (state === "enabled_satisfied") return "success";
+  if (state === "disabled" || state === "version_mismatch") return "warning";
+  if (state === "conflict") return "danger";
+  return "neutral";
+}
+
 function relationLabel(relation: DependencyRelation) {
   switch (relation) {
     case "required":
@@ -186,7 +210,7 @@ export function ModDependencyDialog({
       setSelected(
         new Set(
           result.nodes
-            .filter((node) => node.relation === "required" || node.depth === 0)
+            .filter((node) => node.selectedByDefault || node.depth === 0)
             .map((node) => node.id),
         ),
       );
@@ -217,7 +241,7 @@ export function ModDependencyDialog({
 
   function toggle(node: DependencyNode) {
     if (node.installed || !node.installable || node.relation === "incompatible") return;
-    if (node.relation === "required" || node.depth === 0) return;
+    if (node.depth === 0) return;
     setSelected((current) => {
       const next = new Set(current);
       if (next.has(node.id)) next.delete(node.id);
@@ -508,7 +532,7 @@ export function ModDependencyDialog({
           {view === "list" ? (
             <div className="dep-list">
               {analysis.nodes.map((node) => {
-                const required = node.relation === "required" || node.depth === 0;
+                const required = node.depth === 0 || (node.relation === "required" && node.selectedByDefault);
                 const checked = required || selected.has(node.id);
                 return (
                   <div
@@ -534,7 +558,11 @@ export function ModDependencyDialog({
                       <div className="dep-row__title">
                         <strong>{node.title}</strong>
                         {relationBadge(node.relation)}
-                        {node.installed ? <Badge tone="success">{t("已安装")}</Badge> : null}
+                        {node.installedState && node.installedState !== "not_installed" ? (
+                          <Badge tone={installedStateTone(node.installedState)}>
+                            {installedStateLabel(node.installedState)}
+                          </Badge>
+                        ) : null}
                         {!node.compatible ? <Badge tone="danger">{t("版本不匹配")}</Badge> : null}
                       </div>
                       <span className="muted small">

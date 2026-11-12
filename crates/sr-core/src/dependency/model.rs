@@ -158,6 +158,9 @@ pub struct DependencyNode {
     pub parent: Option<String>,
     pub required_by: Vec<String>,
     pub installed: bool,
+    /// enabled_satisfied | disabled | version_mismatch | version_unknown |
+    /// not_installed | conflict | metadata_unavailable
+    pub installed_state: String,
     pub installed_file: Option<String>,
     pub installed_version: Option<String>,
     pub compatible: bool,

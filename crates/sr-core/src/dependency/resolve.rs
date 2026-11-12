@@ -106,13 +106,14 @@ pub async fn analyze(
         ));
     }
 
-    let root_id = format!(
-        "{}:{}:{}",
+    let root_id = dependency_node_id(
         root.source.as_str(),
-        root.project_id,
-        root.version_id
+        &root.project_id,
+        Some(root.version_id.as_str()),
     );
-    let root_installed = installed.find(root.source.as_str(), &root.project_id, &root.project_slug);
+    let root_candidates =
+        installed.matches(root.source.as_str(), &root.project_id, &root.project_slug);
+    let (root_state, root_installed) = evaluate_installed(&root_candidates, &root);
     let root_installable = root
         .file
         .as_ref()
@@ -127,6 +128,7 @@ pub async fn analyze(
         root_installable,
         true,
         root_installed,
+        root_state,
     );
     index.insert(root_id.clone(), nodes.len());
     nodes.push(root_node);
@@ -168,11 +170,10 @@ pub async fn analyze(
             warnings.push(message);
             continue;
         };
-        let node_id = format!(
-            "{}:{}:{}",
+        let node_id = dependency_node_id(
             adapter.source().as_str(),
-            project_id,
-            dependency.version_id.as_deref().unwrap_or("any")
+            &project_id,
+            dependency.version_id.as_deref(),
         );
         let existing = index.get(&node_id).copied().or_else(|| {
             if dependency.version_id.is_some() {
@@ -246,8 +247,9 @@ pub async fn analyze(
                 let installable = item.file.as_ref().is_some_and(|file| {
                     file.sha1.as_deref().is_some_and(|value| !value.is_empty())
                 });
-                let installed =
-                    installed.find(item.source.as_str(), &item.project_id, &item.project_slug);
+                let candidates =
+                    installed.matches(item.source.as_str(), &item.project_id, &item.project_slug);
+                let (installed_state, installed) = evaluate_installed(&candidates, &item);
                 let node = make_node(
                     &item,
                     relation,
@@ -258,6 +260,7 @@ pub async fn analyze(
                     installable,
                     active && relation == DependencyRelation::Required && compatible && installable,
                     installed,
+                    installed_state,
                 );
                 let node_id = node.id.clone();
                 index.insert(node_id.clone(), nodes.len());
@@ -327,10 +330,12 @@ pub async fn analyze(
                 }
                 warnings.push(message);
                 let node_id = format!(
-                    "{}:unresolved:{}:{}",
-                    adapter.source().as_str(),
-                    project_id,
-                    dependency.version_id.as_deref().unwrap_or("any")
+                    "{}:unresolved",
+                    dependency_node_id(
+                        adapter.source().as_str(),
+                        &project_id,
+                        dependency.version_id.as_deref()
+                    )
                 );
                 if !index.contains_key(&node_id) && nodes.len() < limits.max_nodes {
                     nodes.push(DependencyNode {
@@ -352,6 +357,7 @@ pub async fn analyze(
                         parent: Some(parent_id.clone()),
                         required_by: vec![parent_title.clone()],
                         installed: false,
+                        installed_state: "not_installed".into(),
                         installed_file: None,
                         installed_version: None,
                         compatible: false,
@@ -376,6 +382,22 @@ pub async fn analyze(
     // Deduplicate messages while preserving order.
     dedup(&mut warnings);
     dedup(&mut blockers);
+
+    // Final graph integrity check: every edge endpoint must resolve to exactly
+    // one node. A broken graph must never reach the install step.
+    let mut ids = HashSet::new();
+    for node in &nodes {
+        if !ids.insert(node.id.as_str()) {
+            complete = false;
+            blockers.push(format!("依赖图包含重复节点 ID：{}", node.id));
+        }
+    }
+    for edge in &edges {
+        if !ids.contains(edge.from.as_str()) || !ids.contains(edge.to.as_str()) {
+            complete = false;
+            blockers.push(format!("依赖边端点不存在：{} -> {}", edge.from, edge.to));
+        }
+    }
 
     let default_plan = nodes
         .iter()
@@ -435,6 +457,43 @@ pub async fn analyze(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The single source of truth for dependency node identity.
+pub fn dependency_node_id(source: &str, project_id: &str, version: Option<&str>) -> String {
+    format!(
+        "{}:{}:{}",
+        source,
+        project_id,
+        version.filter(|value| !value.is_empty()).unwrap_or("any")
+    )
+}
+
+fn evaluate_installed(
+    candidates: &[&crate::dependency::InstalledMod],
+    item: &ResolvedItem,
+) -> (String, Option<crate::dependency::InstalledMod>) {
+    if candidates.is_empty() {
+        return ("not_installed".into(), None);
+    }
+    if candidates.len() > 1 {
+        return ("conflict".into(), Some(candidates[0].clone()));
+    }
+    let installed = candidates[0];
+    if !installed.enabled {
+        return ("disabled".into(), Some(installed.clone()));
+    }
+    match installed.version.as_deref() {
+        Some(version)
+            if version.eq_ignore_ascii_case(&item.version_number)
+                || version.eq_ignore_ascii_case(&item.version_id) =>
+        {
+            ("enabled_satisfied".into(), Some(installed.clone()))
+        }
+        Some(_) => ("version_mismatch".into(), Some(installed.clone())),
+        None => ("version_unknown".into(), Some(installed.clone())),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn make_node(
     item: &ResolvedItem,
     relation: DependencyRelation,
@@ -444,21 +503,36 @@ fn make_node(
     compatible: bool,
     installable: bool,
     selected_by_default: bool,
-    installed: Option<&crate::dependency::InstalledMod>,
+    installed: Option<crate::dependency::InstalledMod>,
+    installed_state: String,
 ) -> DependencyNode {
     let file = item.file.as_ref();
     let mut notes = item.notes.clone();
-    if let Some(installed) = installed {
+    if let Some(installed) = installed.as_ref() {
         let installed_version = installed.version.as_deref().unwrap_or("未知");
-        notes.push(format!(
-            "本地已安装版本 {installed_version}；SRL 未验证该版本是否满足当前依赖要求"
-        ));
+        notes.push(match installed_state.as_str() {
+            "enabled_satisfied" => format!("本地已启用且版本匹配：{installed_version}"),
+            "disabled" => {
+                format!("本地版本 {installed_version} 已禁用（.disabled），不能视为满足依赖")
+            }
+            "version_mismatch" => format!(
+                "本地版本 {installed_version} 与目标版本 {} 不匹配，需要更新",
+                item.version_number
+            ),
+            "version_unknown" => "本地模组版本未知，不能视为满足依赖".into(),
+            "conflict" => "本地存在多个同项目模组文件，请先处理冲突".into(),
+            _ => format!("本地文件：{}", installed.file_name),
+        });
         if !installed.enabled {
             notes.push("本地模组文件处于禁用状态（.disabled）".into());
         }
     }
     DependencyNode {
-        id: format!("{}:{}", item.source.as_str(), item.project_id),
+        id: dependency_node_id(
+            item.source.as_str(),
+            &item.project_id,
+            Some(item.version_id.as_str()),
+        ),
         source: item.source.as_str().into(),
         project_id: item.project_id.clone(),
         title: item.project_title.clone(),
@@ -481,9 +555,10 @@ fn make_node(
         depth,
         parent,
         required_by,
-        installed: installed.is_some(),
-        installed_file: installed.map(|item| item.file_name.clone()),
-        installed_version: installed.and_then(|item| item.version.clone()),
+        installed: installed_state == "enabled_satisfied",
+        installed_state,
+        installed_file: installed.as_ref().map(|item| item.file_name.clone()),
+        installed_version: installed.as_ref().and_then(|item| item.version.clone()),
         compatible,
         installable,
         selected_by_default,
@@ -943,6 +1018,67 @@ mod tests {
                 })
                 .collect(),
             notes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn installed_states_do_not_treat_disabled_or_mismatched_as_satisfied() {
+        let target = item("a", vec![]);
+        let mk = |enabled: bool, version: Option<&str>| crate::dependency::InstalledMod {
+            file_name: "a.jar".into(),
+            mod_ids: vec!["a".into()],
+            version: version.map(str::to_string),
+            fingerprint: None,
+            enabled,
+        };
+        let satisfied = mk(true, Some("1.0.0"));
+        assert_eq!(
+            evaluate_installed(&[&satisfied], &target).0,
+            "enabled_satisfied"
+        );
+        let disabled = mk(false, Some("1.0.0"));
+        assert_eq!(evaluate_installed(&[&disabled], &target).0, "disabled");
+        let mismatch = mk(true, Some("0.9.0"));
+        assert_eq!(
+            evaluate_installed(&[&mismatch], &target).0,
+            "version_mismatch"
+        );
+        let unknown = mk(true, None);
+        assert_eq!(
+            evaluate_installed(&[&unknown], &target).0,
+            "version_unknown"
+        );
+        assert_eq!(evaluate_installed(&[], &target).0, "not_installed");
+        let conflict = mk(true, Some("0.9.0"));
+        assert_eq!(
+            evaluate_installed(&[&satisfied, &conflict], &target).0,
+            "conflict"
+        );
+    }
+
+    #[tokio::test]
+    async fn root_and_edges_use_the_canonical_node_id() {
+        let adapter = adapter(vec![
+            item("root", vec![("a", DependencyRelation::Required)]),
+            item("a", vec![("b", DependencyRelation::Required)]),
+            item("b", vec![]),
+        ]);
+        let analysis = analyze(
+            &request("root"),
+            &adapter,
+            &InstalledIndex::default(),
+            &ResolveLimits::default(),
+        )
+        .await
+        .unwrap();
+        let root = analysis.nodes.iter().find(|node| node.depth == 0).unwrap();
+        assert_eq!(
+            root.id,
+            dependency_node_id("modrinth", "root", Some("root-v1"))
+        );
+        for edge in &analysis.edges {
+            assert!(analysis.nodes.iter().any(|node| node.id == edge.from));
+            assert!(analysis.nodes.iter().any(|node| node.id == edge.to));
         }
     }
 

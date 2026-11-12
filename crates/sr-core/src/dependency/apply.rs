@@ -311,6 +311,12 @@ mod tests {
             parent: None,
             required_by: Vec::new(),
             installed,
+            installed_state: if installed {
+                "enabled_satisfied"
+            } else {
+                "not_installed"
+            }
+            .into(),
             installed_file: None,
             installed_version: None,
             compatible: true,

@@ -22,6 +22,7 @@ function node(id: string, depth: number, parent: string | null = null): Dependen
     parent,
     requiredBy: parent ? [parent] : [],
     installed: false,
+    installedState: "not_installed",
     installedFile: null,
     installedVersion: null,
     compatible: true,

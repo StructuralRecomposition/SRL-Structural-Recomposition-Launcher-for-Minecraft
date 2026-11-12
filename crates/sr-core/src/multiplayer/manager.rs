@@ -134,8 +134,12 @@ impl MultiplayerManager {
         let frpc = self.frpc.status().await;
         let frpc_pid = self.frpc.pid().await;
         let stored_room = self.room.read().await.clone();
-        let local_alive = match stored_room.as_ref().and_then(|r| r.local_pid) {
-            Some(pid) => process_alive(pid).await,
+        let local_alive = match stored_room
+            .as_ref()
+            .and_then(|room| room.local_pid.map(|pid| (pid, room.local_started_at)))
+        {
+            Some((pid, Some(started_at))) => process_matches(pid, started_at).await,
+            Some((pid, None)) => process_alive(pid).await,
             None => true,
         };
         let local_service_ok = match stored_room.as_ref() {
@@ -888,6 +892,10 @@ impl MultiplayerManager {
         }
         self.emit("verify", "等待 52FRP 云端确认", "ok", None);
 
+        let local_started_at = match pid {
+            Some(pid) => process_start_time(pid).await,
+            None => None,
+        };
         Ok(StoredRoom {
             tunnel_id,
             tunnel_name: name,
@@ -902,6 +910,7 @@ impl MultiplayerManager {
             local_ip,
             local_port,
             local_pid: pid,
+            local_started_at,
             latency_ms: selected.latency_ms,
             created_at: chrono::Utc::now().to_rfc3339(),
             retained: false,
@@ -1047,17 +1056,27 @@ impl MultiplayerManager {
         *self.tunnel_cache.write().await = None;
         // A spawned process is not a restored tunnel. Confirm with the
         // provider before reporting success.
+        let deadline = Instant::now() + Duration::from_secs(10);
         let mut last = String::from("云端隧道尚未返回状态");
-        for _ in 0..10 {
-            match provider.tunnel_state(room.tunnel_id).await {
-                Ok(state) if state.online => {
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match tokio::time::timeout(remaining, provider.tunnel_state(room.tunnel_id)).await {
+                Ok(Ok(state)) if state.online => {
                     *self.tunnel_cache.write().await = Some((Instant::now(), state));
                     return Ok(self.frpc.status().await);
                 }
-                Ok(_) => last = "云端隧道仍显示离线".into(),
-                Err(error) => last = error.message,
+                Ok(Ok(_)) => last = "云端隧道仍显示离线".into(),
+                Ok(Err(error)) => last = error.message,
+                Err(_) => last = "查询云端隧道超时".into(),
             }
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            tokio::time::sleep(remaining.min(Duration::from_secs(1))).await;
         }
         Err(AppError::new(
             ErrorCode::Timeout,
@@ -1129,6 +1148,74 @@ pub fn choose_port(
     None
 }
 
+/// Read the process start time so a reused PID is not mistaken for the
+/// original game process. Returns Unix seconds.
+#[allow(clippy::needless_return)]
+async fn process_start_time(pid: u32) -> Option<u64> {
+    #[cfg(unix)]
+    {
+        let output = tokio::process::Command::new("ps")
+            .args(["-o", "etime=", "-p", &pid.to_string()])
+            .output()
+            .await
+            .ok()?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let elapsed = parse_ps_etime(text.trim())?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_secs();
+        return Some(now.saturating_sub(elapsed));
+    }
+    #[cfg(windows)]
+    {
+        let script = format!(
+            "(Get-Process -Id {pid} -ErrorAction Stop).StartTime.ToUniversalTime().Subtract([datetime]'1970-01-01').TotalSeconds"
+        );
+        let output = tokio::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .output()
+            .await
+            .ok()?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        return text.trim().parse::<f64>().ok().map(|v| v as u64);
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
+fn parse_ps_etime(value: &str) -> Option<u64> {
+    // [[DD-]HH:]MM:SS
+    let (days, rest) = match value.split_once('-') {
+        Some((days, rest)) => (days.parse::<u64>().ok()?, rest),
+        None => (0, value),
+    };
+    let parts: Vec<&str> = rest.split(':').collect();
+    let (hours, minutes, seconds) = match parts.as_slice() {
+        [h, m, s] => (
+            h.parse::<u64>().ok()?,
+            m.parse::<u64>().ok()?,
+            s.parse::<u64>().ok()?,
+        ),
+        [m, s] => (0, m.parse::<u64>().ok()?, s.parse::<u64>().ok()?),
+        _ => return None,
+    };
+    Some(days * 86400 + hours * 3600 + minutes * 60 + seconds)
+}
+
+async fn process_matches(pid: u32, started_at: u64) -> bool {
+    if !process_alive(pid).await {
+        return false;
+    }
+    match process_start_time(pid).await {
+        Some(actual) => actual.abs_diff(started_at) <= 3,
+        None => false,
+    }
+}
+
 async fn process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
@@ -1185,6 +1272,14 @@ mod tests {
         assert_eq!(choose_port(&allowed, &denied, &[], 7), Some(20002));
     }
 
+    #[test]
+    fn parses_unix_ps_elapsed_time() {
+        assert_eq!(parse_ps_etime("00:05"), Some(5));
+        assert_eq!(parse_ps_etime("01:02:03"), Some(3723));
+        assert_eq!(parse_ps_etime("2-01:02:03"), Some(176523));
+        assert_eq!(parse_ps_etime("bad"), None);
+    }
+
     #[tokio::test]
     async fn loads_and_saves_room() {
         let dir = tempfile::tempdir().unwrap();
@@ -1203,6 +1298,7 @@ mod tests {
             local_ip: "127.0.0.1".into(),
             local_port: 25565,
             local_pid: Some(123),
+            local_started_at: None,
             latency_ms: Some(30),
             created_at: "2026-11-07T00:00:00Z".into(),
             retained: false,
