@@ -133,6 +133,7 @@
 | `scripts/verify-no-secrets.mjs` | PASS | | |
 | `cargo audit`（2026-11-13 advisory DB，1490 条） | PASS | 0 vulnerability；5 个 warning | glib/zBus 等 unmaintained/unsound 警告见 E |
 | `npm audit --audit-level=high` | PASS | 2 moderate（vitest 开发依赖） | 无 high/critical；升级 vitest 5 为破坏性变更，未在本次执行 |
+| GitHub Actions v0.2.5 | PASS | quality / audit / Linux / Windows / macOS / release 全部成功 | https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/actions/runs/43314777627 |
 | `npx tauri build --no-bundle`（release） | PASS | macOS 本地 release 构建于 8m 完成 | 未生成 DMG；CI 生成三平台产物 |
 | macOS release 二进制启动 smoke | PASS | 启动 8 秒，发现 5 个 Java，无 panic | 仅启动；未执行完整安装/启动游戏 |
 | 真实 Windows 构建 | BLOCKED | 当前 macOS 主机 | 由 GitHub Actions `windows-latest` 执行 |
@@ -156,8 +157,36 @@
 
 ## F. 发布情况
 
-发布状态、commit SHA、tag、CI 结果与产物校验值在推送 tag 后补充于此文件与最终交付说明。
-
 - 版本：v0.2.5
-- 发布工作流：`.github/workflows/release.yml`
-- 必要条件：quality job（版本一致性、npm test/build、cargo fmt/test/clippy、cargo audit、npm audit）与三平台 build job 全部成功。
+- 最终提交：`569df0e002e41eb653e2d9d23cd29b36b4b71d7f`
+- Tag：`v0.2.5`（annotated tag `bd3b4db9279e895e03d766861bb59ad0af37e93f`）
+- GitHub Release：https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.5
+- CI run：https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/actions/runs/43314777627
+- CI 结果：quality ✅、Security audit ✅、Linux ✅、Windows ✅、macOS universal ✅、release ✅
+
+### 发布产物
+
+| 文件 | 大小 |
+|---|---:|
+| `SRL_0.2.5_universal.dmg` | 40,380,691 |
+| `SRL_0.2.5_windows-x64-portable.zip` | 21,350,532 |
+| `SRL_0.2.5_amd64.deb` | 20,545,826 |
+| `SRL_0.2.5_amd64.AppImage` | 98,662,904 |
+| `SRL-0.2.5-source.tar.gz` | 5,340,998 |
+| `SHA256SUMS` | 458 |
+
+### 校验
+
+- `SHA256SUMS` 覆盖全部 5 个发布文件（含源码归档）。
+- 逐项比对 GitHub Release API 返回的 `sha256` digest 与 `SHA256SUMS`：全部一致。
+- 额外下载 AppImage 并本地 `shasum -a 256`：`0f4a3aa4…7c1c`，与清单一致。
+
+### CI 过程说明
+
+发布前 tag 共重打两次，均发生在 Release 创建之前：
+
+1. 首次：`rustsec/audit-check` 缺少 `checks: write`，无法创建 check run。已补权限。
+2. 第二次：诊断页“删除并清理日志”前端测试存在时序竞态（删除未完成时点击清理按钮）。已改为等待按钮可用。
+3. 第三次：全部 job 成功并发布。
+
+没有覆盖任何已发布的正式版本标签；v0.2.5 Release 是在最终成功 CI 对应提交上创建的。
