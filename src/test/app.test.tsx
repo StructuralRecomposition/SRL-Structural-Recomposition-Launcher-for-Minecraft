@@ -906,6 +906,12 @@ describe("SR Launcher UI", () => {
         path: "/tmp/sr-test/logs/a.log",
       }),
     );
+    // `deleteLog` sets `logBusy` and disables the cleanup button until the
+    // delete finishes; clicking while it is busy is a no-op and made this
+    // test timing-dependent.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "清理旧日志" })).toBeEnabled(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "清理旧日志" }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("cleanup_logs", undefined));
   });

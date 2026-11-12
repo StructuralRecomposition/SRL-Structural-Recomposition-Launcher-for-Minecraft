@@ -131,7 +131,7 @@
 | `cargo fmt --all -- --check` | PASS | | |
 | `cargo clippy --workspace --all-targets -- -D warnings` | PASS | 0 warning | |
 | `scripts/verify-no-secrets.mjs` | PASS | | |
-| `cargo audit --no-fetch --stale` | PASS | 0 vulnerability；5 个 warning | 使用本地缓存；glib/zBus 等 unmaintained/unsound 警告见 E |
+| `cargo audit`（2026-11-13 advisory DB，1490 条） | PASS | 0 vulnerability；5 个 warning | glib/zBus 等 unmaintained/unsound 警告见 E |
 | `npm audit --audit-level=high` | PASS | 2 moderate（vitest 开发依赖） | 无 high/critical；升级 vitest 5 为破坏性变更，未在本次执行 |
 | `npx tauri build --no-bundle`（release） | PASS | macOS 本地 release 构建于 8m 完成 | 未生成 DMG；CI 生成三平台产物 |
 | macOS release 二进制启动 smoke | PASS | 启动 8 秒，发现 5 个 Java，无 panic | 仅启动；未执行完整安装/启动游戏 |
@@ -152,7 +152,7 @@
 6. **未签名/未公证。** macOS 与 Windows 产物均无代码签名；未伪造签名验证结果。
 7. **RustSec 警告。** `glib 0.18.5` 的 `VariantStrIter` unsound（RUSTSEC-2024-0429）来自 Tauri Linux/WebKitGTK 依赖；升级到 0.20 会牵动整条 GTK 栈，本次不改。`proc-macro-error`、`zbus_names`、`zvariant` 为 unmaintained warning，无已知可利用漏洞。`rustix` 已从 1.1.5 升级到 1.1.6 修复 RUSTSEC-2026-0486。
 8. **npm 开发依赖告警。** `npm audit` 报告 2 个 moderate（`@vitest/mocker` 路径穿越/代码注入），仅影响测试工具链；修复需要 vitest 5 的破坏性升级，本次未执行，`--audit-level=high` 通过。
-9. **本地 cargo audit 新鲜度。** 本机访问 RustSec git 仓库超时，只能使用本地缓存的 advisory DB（`--no-fetch --stale`）；CI 会拉取最新数据库重新执行。
+9. **RustSec 数据库获取方式。** 本机 `git` 访问 RustSec 仓库会超时；改用 GitHub codeload 下载 2026-11-13 快照（1490 条）并执行 `cargo audit --no-fetch`，结果 0 vulnerability。CI 会自行拉取最新数据库。
 
 ## F. 发布情况
 
