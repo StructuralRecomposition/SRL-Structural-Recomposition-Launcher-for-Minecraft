@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: write
+  # rustsec/audit-check publishes its result as a check run.
+  checks: write
 
 env:
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
