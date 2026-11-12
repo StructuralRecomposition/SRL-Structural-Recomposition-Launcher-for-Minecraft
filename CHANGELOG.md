@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.2.4 — 2026-11-12
+
+可靠性修复版本，继续收敛依赖管理、玩家状态、日志、进程身份与联机恢复。
+
+### 依赖管理
+
+- 依赖节点 ID 统一为 `source:project:version`；根节点、普通节点、边和未解析节点使用同一生成函数。
+- 生成依赖图后强制校验节点 ID 唯一、所有边端点存在，否则阻止安装。
+- 本地模组状态拆分为 `enabled_satisfied` / `disabled` / `version_mismatch` / `version_unknown` / `conflict` / `not_installed`；只有已启用且版本匹配才算满足依赖。
+- 前端默认选择改用后端 `selectedByDefault`，并显示安装状态徽章。
+- 依赖解析增加 4 路受控并发预取、15 秒单请求超时、120 秒整体 deadline、真实请求计数与缓存去重；支持通过取消键中止分析。
+- 未选中可选依赖的必需子依赖不再自动勾选；Incompatible 边不再被节点去重吞掉。
+
+### 玩家状态与日志
+
+- 新增持久化 `PlayerCheckpoint`：日志路径、读取偏移、事件序号、玩家推断状态；增量读取追加日志，重启后可恢复。
+- 恢复的在线玩家标记为“日志推断”，不再因为 4 MiB 日志窗口截断而消失。
+- 跨午夜日志按相邻事件时间递增日期。
+- Minecraft 日志增加 32 MiB 分片轮转，最多保留 5 个历史分片；写入失败产生诊断，不阻塞 stdout/stderr。
+- 房间日志继续按文件串行写入，严格 2 MB 字节裁剪。
+
+### 进程与联机
+
+- 保存本地游戏进程启动时间；PID 存活检查同时核对启动时间，降低 PID 复用误判。
+- Windows 停止游戏保持“优雅关闭 → 10 秒等待 → 用户确认后强制结束”的流程。
+- FRPC 启动时清理本应用私有配置目录对应的遗留进程，不匹配其他用户的 `frpc`。
+- 房间增加 `lifecycleState`：`running` / `paused` / `cleanup_required`，UI 显示“已暂停”“待清理”。
+- 52FRP 恢复使用绝对 10 秒 deadline；隧道列表分页请求共享 20 秒预算。
+- 本地 Java/Bedrock 服务分别使用 Server List Ping / RakNet 严格校验；未知节点负载不再按 30% 计算。
+
+### 文件事务
+
+- 整合包 overrides 使用持久化事务清单，状态覆盖 created/prepared/committing/committed/rolling_back/recovery_required。
+- SRL 启动时扫描实例目录，按备份恢复中断事务；恢复失败保留备份并报告路径。
+- Windows 原子替换继续使用 `MoveFileExW`，失败不删除旧文件。
+
+### 已知限制 / 需要真实验证
+
+- Windows 优雅退出、`MoveFileExW`、事务崩溃恢复尚未在真实 Windows 设备复测。
+- 真实 52FRP 账户、Bedrock 服务端和跨平台联机仍需实机验证。
+- 依赖并发为受控预取，不是完全无序并发；取消在批次之间生效，单请求由 15 秒超时约束。
+
 ## 0.2.3 — 2026-11-12
 
 稳定性修复版本，保持 v0.2.2 的功能与界面，不新增大型功能。

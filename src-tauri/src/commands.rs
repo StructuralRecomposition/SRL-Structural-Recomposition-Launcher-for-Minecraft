@@ -1861,6 +1861,7 @@ fn instance_loader_kind(instance: &Instance) -> Option<String> {
 pub async fn analyze_mod_dependencies(
     state: State<'_, AppState>,
     request: DependencyRequest,
+    cancel_key: Option<String>,
 ) -> Result<DependencyAnalysis> {
     let game = state.game_snapshot().await;
     let mut request = request;
@@ -1929,13 +1930,26 @@ pub async fn analyze_mod_dependencies(
     };
     let adapter =
         dependency_service::resolve::adapter_for(&request, &state.modrinth, curseforge.as_ref())?;
-    let mut analysis = dependency_service::analyze(
+    let token = tokio_util::sync::CancellationToken::new();
+    if let Some(key) = cancel_key.as_ref() {
+        state
+            .dependency_cancels
+            .lock()
+            .await
+            .insert(key.clone(), token.clone());
+    }
+    let result = dependency_service::analyze_with_cancel(
         &request,
         adapter.as_adapter(),
         &installed,
         &ResolveLimits::default(),
+        Some(&token),
     )
-    .await?;
+    .await;
+    if let Some(key) = cancel_key.as_ref() {
+        state.dependency_cancels.lock().await.remove(key);
+    }
+    let mut analysis = result?;
     if let Some(instance) = instance.as_ref() {
         analysis.instance_name = Some(instance.name.clone());
     }
@@ -1945,6 +1959,17 @@ pub async fn analyze_mod_dependencies(
     }
     dependency_service::apply::save_analysis(&state.paths, &analysis).await?;
     Ok(analysis)
+}
+
+#[tauri::command]
+pub async fn cancel_dependency_analysis(
+    state: State<'_, AppState>,
+    cancel_key: String,
+) -> Result<()> {
+    if let Some(token) = state.dependency_cancels.lock().await.remove(&cancel_key) {
+        token.cancel();
+    }
+    Ok(())
 }
 
 #[tauri::command]

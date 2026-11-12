@@ -19,7 +19,7 @@
 
 > **Microsoft login:** due to current development constraints, SRL cannot yet offer out-of-the-box Microsoft sign-in. You currently need to register your own Azure application, obtain a `client id` and enter it in Settings; the login entry is explicitly disabled until then.
 
-> **Current version: `v0.2.3` (stability and reliability update)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.3).
+> **Current version: `v0.2.4` (reliability update)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.4).
 
 ---
 
@@ -69,6 +69,13 @@
 | Mod dependency graph | 🟡 | Official Modrinth/CurseForge recursion, SVG/list view, installed detection, install plan |
 | Missing-Java install flow | 🟡 | Dynamic required major, Temurin install, rescan, no global-default overwrite |
 
+### What's new in v0.2.4
+
+- **Dependency correctness.** Unified node IDs and graph integrity checks; local mods distinguish enabled/disabled/version-mismatch/conflict; backend verifies the required closure; bounded concurrent resolution with request budget and cancellation.
+- **Player state.** Persisted checkpoints read appended log bytes and survive restarts; midnight rollover is handled.
+- **Logs and processes.** 32 MiB log shards with rotation; process identity checks PID plus start time; startup cleans up SRL-owned orphan FRPC processes.
+- **Multiplayer and transactions.** Explicit room lifecycle; absolute 52FRP recovery deadline; strict RakNet validation; recoverable modpack transactions.
+
 ### What's new in v0.2.3
 
 - **Data safety.** Running instances cannot be deleted, copied or reconfigured; modpack imports use staging, backups and rollback; extraction refuses existing symlink escapes.
@@ -104,10 +111,10 @@
 
 | Platform | File |
 |---|---|
-| macOS 10.15+ | `SRL_0.2.3_universal.dmg` (Intel + Apple Silicon, unsigned) |
-| Windows 10/11 x64 | `SRL_0.2.3_windows-x64-portable.zip` |
-| Linux x64 | `SRL_0.2.3_amd64.deb` |
-| Linux x64 | `SRL_0.2.3_amd64.AppImage` |
+| macOS 10.15+ | `SRL_0.2.4_universal.dmg` (Intel + Apple Silicon, unsigned) |
+| Windows 10/11 x64 | `SRL_0.2.4_windows-x64-portable.zip` |
+| Linux x64 | `SRL_0.2.4_amd64.deb` |
+| Linux x64 | `SRL_0.2.4_amd64.AppImage` |
 
 Checksums: `SHA256SUMS` in the release assets.
 
@@ -126,7 +133,7 @@ Extract the whole ZIP and run `Install.cmd` (no administrator rights required), 
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.2.3_amd64.deb
+sudo apt install ./SRL_0.2.4_amd64.deb
 ```
 
 or run the AppImage. WebKitGTK 4.1 and GTK 3 are required.

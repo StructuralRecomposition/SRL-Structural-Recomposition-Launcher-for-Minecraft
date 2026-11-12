@@ -16,4 +16,4 @@ pub use model::{
     DependencySource, DependencyStats, PlannedEntry, ResolvedDependency, ResolvedFile,
     ResolvedItem,
 };
-pub use resolve::{analyze, Adapter, ResolveLimits};
+pub use resolve::{analyze, analyze_with_cancel, Adapter, ResolveLimits};

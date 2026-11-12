@@ -35,6 +35,9 @@ pub struct AppState {
     /// The lock is held for the whole operation so a start cannot race a
     /// destructive file operation.
     pub lifecycle: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    /// Cancellation tokens for in-flight dependency analyses, keyed by the
+    /// renderer-generated cancel key.
+    pub dependency_cancels: Arc<Mutex<HashMap<String, tokio_util::sync::CancellationToken>>>,
 }
 
 impl AppState {

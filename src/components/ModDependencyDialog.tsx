@@ -185,6 +185,20 @@ export function ModDependencyDialog({
   }, [analysis, selected]);
   const selectedBytes = selectedNew.reduce((sum, node) => sum + node.size, 0);
 
+  const analysisCancelKey = useRef("");
+
+  async function cancelAnalysis() {
+    if (!analysisCancelKey.current) return;
+    try {
+      await api.cancelDependencyAnalysis(analysisCancelKey.current);
+      setError(t("依赖分析已取消"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
   async function analyze() {
     if (!effectiveGame.trim() || !effectiveLoader.trim()) {
       setError(t("请选择目标 Minecraft 版本和加载器"));
@@ -197,6 +211,7 @@ export function ModDependencyDialog({
     setActiveNode(null);
     completed.current = false;
     try {
+      analysisCancelKey.current = crypto.randomUUID();
       const result = await api.analyzeModDependencies({
         source: project.source,
         projectId: project.id,
@@ -205,7 +220,7 @@ export function ModDependencyDialog({
         instanceId: target?.id ?? null,
         gameVersion: effectiveGame,
         loader: effectiveLoader,
-      });
+      }, analysisCancelKey.current);
       setAnalysis(result);
       setSelected(
         new Set(
@@ -363,6 +378,11 @@ export function ModDependencyDialog({
           >
             {analysis ? t("重新分析") : t("开始分析")}
           </Button>
+          {analyzing ? (
+            <Button variant="ghost" onClick={() => void cancelAnalysis()}>
+              {t("取消分析")}
+            </Button>
+          ) : null}
         </div>
       </div>
 

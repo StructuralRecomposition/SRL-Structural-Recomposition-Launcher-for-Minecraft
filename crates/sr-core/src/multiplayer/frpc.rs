@@ -79,6 +79,58 @@ struct FrpcState {
     log: Arc<Mutex<VecDeque<String>>>,
 }
 
+/// Terminate FRPC processes that belong to a previous SRL run. Matching is
+/// scoped to this app's private config directory, never to arbitrary `frpc`
+/// processes owned by the user.
+fn kill_orphan_frpc_processes(dir: &std::path::Path) {
+    let dir_text = dir.to_string_lossy().into_owned();
+    if dir_text.is_empty() {
+        return;
+    }
+    #[cfg(unix)]
+    {
+        let Ok(output) = std::process::Command::new("ps")
+            .args(["-ax", "-o", "pid=,command="])
+            .output()
+        else {
+            return;
+        };
+        let mut pids = Vec::new();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let line = line.trim();
+            let Some((pid, command)) = line.split_once(char::is_whitespace) else {
+                continue;
+            };
+            if command.contains(&dir_text) && command.contains("frpc-") {
+                if let Ok(pid) = pid.trim().parse::<i32>() {
+                    pids.push(pid);
+                }
+            }
+        }
+        for pid in &pids {
+            unsafe {
+                libc::kill(*pid, libc::SIGTERM);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        for pid in pids {
+            unsafe {
+                libc::kill(pid, libc::SIGKILL);
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        let script = format!(
+            "Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -like '*{}*' -and $_.Name -like 'frpc*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}",
+            dir_text.replace('\'', "''")
+        );
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .output();
+    }
+}
+
 pub struct FrpcManager {
     dir: PathBuf,
     bundled_dir: Option<PathBuf>,
@@ -96,6 +148,7 @@ impl FrpcManager {
         http: reqwest::Client,
         bundled_dir: Option<PathBuf>,
     ) -> Self {
+        kill_orphan_frpc_processes(&dir);
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name();

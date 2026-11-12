@@ -1312,8 +1312,10 @@ export const api = {
     command<ResourceVersion[]>("get_resource_versions", { id, gameVersion, loader }),
   installResource: (projectId: string, versionId: string, target: ResourceTarget) =>
     command<ResourceTaskAccepted>("install_resource", { projectId, versionId, target }),
-  analyzeModDependencies: (request: DependencyRequest) =>
-    command<DependencyAnalysis>("analyze_mod_dependencies", { request }),
+  analyzeModDependencies: (request: DependencyRequest, cancelKey: string) =>
+    command<DependencyAnalysis>("analyze_mod_dependencies", { request, cancelKey }),
+  cancelDependencyAnalysis: (cancelKey: string) =>
+    command<void>("cancel_dependency_analysis", { cancelKey }),
   installModDependencies: (instanceId: string, selection: DependencyInstallSelection) =>
     command<ResourceTaskAccepted>("install_mod_dependencies", { instanceId, selection }),
   importModpack: (instanceId: string, path: string, allowIncomplete: boolean) =>

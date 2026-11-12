@@ -112,6 +112,9 @@ pub fn run() {
                 lifecycle: std::sync::Arc::new(tokio::sync::Mutex::new(
                     std::collections::HashMap::new(),
                 )),
+                dependency_cancels: std::sync::Arc::new(tokio::sync::Mutex::new(
+                    std::collections::HashMap::new(),
+                )),
             };
             app.manage(state.clone());
 
@@ -246,6 +249,7 @@ pub fn run() {
             commands::test_curseforge_api_key,
             commands::default_resource_dir,
             commands::analyze_mod_dependencies,
+            commands::cancel_dependency_analysis,
             commands::install_mod_dependencies,
             commands::list_skins,
             commands::import_skin_file,

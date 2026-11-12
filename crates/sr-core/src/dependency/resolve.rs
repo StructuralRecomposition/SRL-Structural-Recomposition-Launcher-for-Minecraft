@@ -9,8 +9,12 @@ use crate::error::{AppError, Result};
 use crate::modrinth::{ModrinthService, ResourceProject, ResourceVersion};
 use crate::util;
 use async_trait::async_trait;
+use futures_util::future::join_all;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
 pub struct ResolveLimits {
@@ -79,6 +83,16 @@ pub async fn analyze(
     installed: &InstalledIndex,
     limits: &ResolveLimits,
 ) -> Result<DependencyAnalysis> {
+    analyze_with_cancel(request, adapter, installed, limits, None).await
+}
+
+pub async fn analyze_with_cancel(
+    request: &DependencyRequest,
+    adapter: &dyn Adapter,
+    installed: &InstalledIndex,
+    limits: &ResolveLimits,
+    cancel: Option<&CancellationToken>,
+) -> Result<DependencyAnalysis> {
     if request.game_version.trim().is_empty() {
         return Err(AppError::invalid_input("请选择目标 Minecraft 版本"));
     }
@@ -97,6 +111,8 @@ pub async fn analyze(
     let mut index: HashMap<String, usize> = HashMap::new();
     let mut requests = 1usize;
     let mut complete = true;
+    let deadline = Instant::now() + Duration::from_secs(120);
+    let mut cache: HashMap<String, ResolvedItem> = HashMap::new();
 
     if !root.supports(game_version, loader) {
         complete = false;
@@ -232,17 +248,61 @@ pub async fn analyze(
             warnings.push(message);
             continue;
         }
-        requests += 1;
-        let fetched = adapter
-            .fetch(
-                &project_id,
-                dependency.version_id.as_deref(),
-                game_version,
-                loader,
+        if cancel.is_some_and(|token| token.is_cancelled()) {
+            return Err(AppError::new(
+                crate::error::ErrorCode::Cancelled,
+                "依赖分析已取消",
+            ));
+        }
+        if Instant::now() >= deadline {
+            complete = false;
+            blockers.push("依赖分析超过 120 秒，已停止继续请求".into());
+            continue;
+        }
+        let cache_key = dep_cache_key(&project_id, dependency.version_id.as_deref());
+        let fetched = if let Some(hit) = cache.get(&cache_key).cloned() {
+            Ok(hit)
+        } else {
+            if requests >= limits.max_requests {
+                complete = false;
+                blockers.push(format!("依赖 HTTP 请求达到 {} 次上限", limits.max_requests));
+                continue;
+            }
+            requests += 1;
+            match tokio::time::timeout(
+                Duration::from_secs(15),
+                adapter.fetch(
+                    &project_id,
+                    dependency.version_id.as_deref(),
+                    game_version,
+                    loader,
+                ),
             )
-            .await;
+            .await
+            {
+                Ok(result) => result,
+                Err(_) => Err(AppError::new(
+                    crate::error::ErrorCode::Timeout,
+                    format!("依赖 {project_id} 请求超过 15 秒"),
+                )),
+            }
+        };
         match fetched {
             Ok(item) => {
+                // Prefetch this item's dependencies with bounded concurrency so
+                // the sequential graph walk reuses completed requests.
+                prefetch_dependencies(
+                    adapter,
+                    &item.dependencies,
+                    game_version,
+                    loader,
+                    &mut cache,
+                    &mut requests,
+                    limits.max_requests,
+                    deadline,
+                    cancel,
+                )
+                .await;
                 let compatible = item.supports(game_version, loader);
                 let installable = item.file.as_ref().is_some_and(|file| {
                     file.sha1.as_deref().is_some_and(|value| !value.is_empty())
@@ -490,6 +550,64 @@ fn evaluate_installed(
         }
         Some(_) => ("version_mismatch".into(), Some(installed.clone())),
         None => ("version_unknown".into(), Some(installed.clone())),
+    }
+}
+
+fn dep_cache_key(project_id: &str, version_id: Option<&str>) -> String {
+    format!("{project_id}:{}", version_id.unwrap_or("any"))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn prefetch_dependencies(
+    adapter: &dyn Adapter,
+    dependencies: &[ResolvedDependency],
+    game_version: &str,
+    loader: &str,
+    cache: &mut HashMap<String, ResolvedItem>,
+    requests: &mut usize,
+    max_requests: usize,
+    deadline: Instant,
+    cancel: Option<&CancellationToken>,
+) {
+    let mut jobs: Vec<(String, Option<String>, String)> = Vec::new();
+    for dependency in dependencies {
+        let Some(project_id) = dependency.project_id.clone().filter(|v| !v.is_empty()) else {
+            continue;
+        };
+        let key = dep_cache_key(&project_id, dependency.version_id.as_deref());
+        if cache.contains_key(&key) || jobs.iter().any(|(_, _, existing)| existing == &key) {
+            continue;
+        }
+        jobs.push((project_id, dependency.version_id.clone(), key));
+    }
+    let remaining = max_requests.saturating_sub(*requests);
+    jobs.truncate(remaining);
+    if jobs.is_empty() || Instant::now() >= deadline {
+        return;
+    }
+    *requests += jobs.len();
+    let semaphore = Arc::new(Semaphore::new(4));
+    let futures = jobs.into_iter().map(|(project_id, version_id, key)| {
+        let semaphore = semaphore.clone();
+        async move {
+            if cancel.is_some_and(|token| token.is_cancelled()) {
+                return (key, None);
+            }
+            let Ok(_permit) = semaphore.acquire().await else {
+                return (key, None);
+            };
+            let result = tokio::time::timeout(
+                Duration::from_secs(15),
+                adapter.fetch(&project_id, version_id.as_deref(), game_version, loader),
+            )
+            .await;
+            (key, result.ok().and_then(|value| value.ok()))
+        }
+    });
+    for (key, item) in join_all(futures).await {
+        if let Some(item) = item {
+            cache.insert(key, item);
+        }
     }
 }
 
@@ -1080,6 +1198,30 @@ mod tests {
             assert!(analysis.nodes.iter().any(|node| node.id == edge.from));
             assert!(analysis.nodes.iter().any(|node| node.id == edge.to));
         }
+        let calls = adapter.calls.lock().unwrap();
+        assert_eq!(calls.iter().filter(|value| *value == "a").count(), 1);
+    }
+
+    #[tokio::test]
+    async fn cancellation_stops_before_dependency_requests() {
+        let adapter = adapter(vec![
+            item("root", vec![("a", DependencyRelation::Required)]),
+            item("a", vec![]),
+        ]);
+        let token = CancellationToken::new();
+        token.cancel();
+        let result = analyze_with_cancel(
+            &request("root"),
+            &adapter,
+            &InstalledIndex::default(),
+            &ResolveLimits::default(),
+            Some(&token),
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(error) if error.code == crate::error::ErrorCode::Cancelled
+        ));
     }
 
     fn adapter(items: Vec<ResolvedItem>) -> MockAdapter {

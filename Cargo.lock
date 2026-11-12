@@ -3753,7 +3753,7 @@ dependencies = [
 
 [[package]]
 name = "sr-core"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3785,7 +3785,7 @@ dependencies = [
 
 [[package]]
 name = "sr-launcher"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "chrono",
  "percent-encoding",
@@ -3796,6 +3796,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",

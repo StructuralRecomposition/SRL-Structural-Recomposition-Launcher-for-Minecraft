@@ -31,3 +31,4 @@ sr-core = { path = "../crates/sr-core" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 uuid = { version = "1", features = ["v4"] }
 percent-encoding = "2"
+tokio-util = { version = "0.7", features = ["rt"] }
