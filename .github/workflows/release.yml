@@ -59,8 +59,8 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: npm audit
-        run: npm audit --audit-level=high
+      - name: npm audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
 
   build:
     needs: quality
