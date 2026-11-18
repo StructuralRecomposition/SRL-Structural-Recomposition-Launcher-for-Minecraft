@@ -625,7 +625,7 @@ describe("SR Launcher UI", () => {
     render(<App />);
     expect(await screen.findByText("生存世界", {}, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.getAllByText("SRL").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Minecraft 1\.20\.4/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Minecraft 1\.20\.4/).length).toBeGreaterThan(0);
   });
 
   it("launches through the real IPC command and reports the pid", async () => {
