@@ -1,4 +1,4 @@
-import { useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "./Icon";
 import { t } from "../lib/i18n";
@@ -55,6 +55,130 @@ export function IconButton({
       <Icon name={icon} size={17} />
     </button>
   );
+}
+
+export function Menu({
+  label,
+  children,
+  icon = "chevron",
+}: {
+  label: string;
+  children: ReactNode;
+  icon?: IconName;
+}) {
+  const button = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; above: boolean } | null>(null);
+
+  useEffect(() => {
+    if (!pos) return;
+    const onPointer = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (button.current?.contains(target) || target.closest(".menu")) return;
+      setPos(null);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPos(null);
+        button.current?.focus();
+      }
+    };
+    const close = () => setPos(null);
+    window.addEventListener("mousedown", onPointer);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onPointer);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pos]);
+
+  useEffect(() => {
+    if (pos) panel.current?.querySelector<HTMLElement>(".menu__item")?.focus();
+  }, [pos]);
+
+  function toggle() {
+    if (pos) {
+      setPos(null);
+      return;
+    }
+    const rect = button.current?.getBoundingClientRect();
+    if (!rect) return;
+    const above = window.innerHeight - rect.bottom < 260;
+    setPos({
+      left: Math.min(rect.right, window.innerWidth - 12),
+      top: above ? rect.top - 4 : rect.bottom + 4,
+      above,
+    });
+  }
+
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        className="icon-btn"
+        aria-label={label}
+        title={label}
+        aria-haspopup="menu"
+        aria-expanded={pos ? true : undefined}
+        onClick={toggle}
+      >
+        <Icon name={icon} size={16} />
+      </button>
+      {pos
+        ? createPortal(
+            <div
+              ref={panel}
+              className={`menu ${pos.above ? "menu--above" : ""}`}
+              style={{ left: pos.left, top: pos.top }}
+              role="menu"
+              aria-label={label}
+              onClick={(event) => {
+                if ((event.target as HTMLElement).closest(".menu__item")) setPos(null);
+              }}
+            >
+              {children}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
+export function MenuItem({
+  icon,
+  label,
+  onClick,
+  danger,
+  disabled,
+}: {
+  icon?: IconName;
+  label: string;
+  onClick?: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={`menu__item ${danger ? "menu__item--danger" : ""}`}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {icon ? <Icon name={icon} size={15} /> : <span className="menu__icon-gap" />}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+export function MenuSeparator() {
+  return <div className="menu__separator" role="separator" />;
 }
 
 export function Badge({

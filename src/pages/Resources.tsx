@@ -347,7 +347,7 @@ export function ResourcesPage() {
         <div>
           <h2>{tr("资源")}</h2>
           <p className="muted">
-            {tr("搜索 Modrinth / CurseForge 社区资源，或选择 Minecraft 版本下载 / 安装 Fabric、Quilt、Forge、NeoForge、Iris、OptiFine。")}</p>
+            {tr("搜索社区资源，或为指定版本安装加载器与光影方案。")}</p>
         </div>
         <div className="toolbar__actions">
           <Badge tone="success">{tr("Modrinth + CurseForge + 加载器")}</Badge>

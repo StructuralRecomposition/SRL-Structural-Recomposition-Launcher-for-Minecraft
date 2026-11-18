@@ -21,23 +21,17 @@
 
 **English:** SRL (Structural Recomposition Launcher) is an independent, local-first Minecraft: Java Edition launcher built with Rust, Tauri 2, React and TypeScript. It focuses on verifiable downloads, real process launching, clear diagnostics, and honest capability boundaries. No telemetry, no proprietary game files, MIT licensed.
 
-> **当前版本：`v0.2.5`（稳定性 · 性能 · Bug 修复）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.5)。
+> **当前版本：`v0.2.6`（界面系统重构）** · 使用 52FRP 开放 API；安装包、截图与校验值见 [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.6)。
 
-### v0.2.2 → v0.2.5 累计更新摘要
+### v0.2.6 更新内容
 
-- **稳定性与数据安全。** 实例启动/停止与删除、复制、配置修改共用生命周期锁；整合包 overrides、通用 ZIP 与中断恢复使用“校验 → 暂存 → 备份 → 提交/回滚”事务；Windows 文件替换统一使用 `MoveFileExW`，失败不再先删除旧文件；事务清单原子写入，恢复时重新校验路径与备份。
-- **日志、玩家与进程。** 游戏 stdout 按字节读取并容错非 UTF-8，中文 Windows 的 GBK 输出不再中断采集；玩家检查点按真实字节偏移推进，日志轮转/新会话不再产生幽灵在线玩家；日志 32 MiB 分片，轮转失败保留真实计数；游戏进程身份同时校验 PID 与启动时间。
-- **依赖与模组。** 依赖节点 ID 统一为 `source:project:version` 并校验图完整性；区分已启用/禁用/版本不匹配/冲突；解析使用受控并发、真实请求预算、120 秒整体 deadline，取消会中断在途 HTTP；依赖图提供 SVG/列表、已安装检测与安装计划。
-- **联机。** 房主/游客管理中心分离本地服务、52FRP 隧道、FRPC 与玩家日志；Java 使用 Server List Ping，基岩版使用 RakNet 严格校验；房间生命周期显式化，52FRP 恢复使用绝对 deadline；FRPC 遗留清理移出启动阻塞路径，缓存校验改为流式 SHA-256。
-- **Java 与资源。** 启动前读取真实 `javaVersion.majorVersion`，缺失时按版本安装 Temurin 并重新扫描，不覆盖全局默认 Java；模组、材质包与光影导入使用原子替换。
-- **发布工程。** fmt、test、clippy、前端测试/构建、cargo audit、npm audit 与 tag/版本一致性检查进入 CI；v0.2.5 三平台构建与 Release 发布全部通过，`SHA256SUMS` 覆盖源码归档与全部平台产物。
+- **全新界面。** 统一字体、间距、颜色与组件；首页以启动按钮为唯一重点，实例改为列表，弹窗与菜单更稳定。
+- **设置更简洁。** 设置改为单列分组；下载、网络、API 与存储按需展开，52FRP / CurseForge / DeepSeek 收进同一个“API 与集成”栏目。
+- **更好用的小细节。** 账号头像完整显示；路径复制按钮不再溢出；导入实例时直接选择 ZIP，自动检查，不用手动填路径。
+- **启动器更新。** 每次启动自动检查 GitHub 最新 Release；发现新版本时询问是否更新，支持镜像下载、SHA-256 校验，并按平台安装和重启。设置里也可以手动检查。
+- **构建。** macOS Universal DMG、Windows x64 便携 ZIP、Linux amd64 deb / AppImage。
 
-### v0.2.1 更新摘要
-
-- **中英双语界面。** 设置中新增语言切换，默认简体中文；切换后界面重新加载。
-- **FRPC 安装包内置。** 按平台/架构携带官方 frp 客户端并锁定 SHA-256，创建房间不再等待 GitHub；网络下载仅作为内置缺失时的回退。
-- **整合包导出。** 支持 Modrinth `.mrpack` 与 CurseForge `manifest.json` ZIP；Modrinth 走 SHA-1，CurseForge 走官方 Murmur2 指纹，未识别模组进入 `overrides/`。
-- **三平台安装包。** macOS DMG、Windows x64 便携 ZIP、Linux deb / AppImage。
+历史更新见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
@@ -232,21 +226,21 @@
 
 ## 下载与安装
 
-### v0.2.5 下载
+### v0.2.6 下载
 
 已构建好的安装包直接放在 GitHub Release，点开即可下载：
 
-**https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.5**
+**https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.6**
 
 | 平台 | 文件 | 说明 |
 |---|---|---|
-| macOS 10.15+ | `SRL_0.2.5_universal.dmg` | Intel + Apple Silicon，未签名、未公证 |
-| Windows 10/11 x64 | `SRL_0.2.5_windows-x64-portable.zip` | 需要 WebView2 Runtime；解压后运行 `Install.cmd` |
-| Linux x64 | `SRL_0.2.5_amd64.deb` | 需要 WebKitGTK 4.1 等运行库 |
-| Linux x64 | `SRL_0.2.5_amd64.AppImage` | 免安装；需要 FUSE 或 `--appimage-extract-and-run` |
+| macOS 10.15+ | `SRL_0.2.6_universal.dmg` | Intel + Apple Silicon，未签名、未公证 |
+| Windows 10/11 x64 | `SRL_0.2.6_windows-x64-portable.zip` | 需要 WebView2 Runtime；解压后运行 `Install.cmd` |
+| Linux x64 | `SRL_0.2.6_amd64.deb` | 需要 WebKitGTK 4.1 等运行库 |
+| Linux x64 | `SRL_0.2.6_amd64.AppImage` | 免安装；需要 FUSE 或 `--appimage-extract-and-run` |
 | 校验 | `SHA256SUMS` | 所有附件的 SHA-256 |
 
-> `release-assets/` 保存本次发布的构建产物，供维护者复核；普通用户直接下载 Release 附件即可。后续版本可以用 [`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) 手动构建，再上传到对应 Release。
+> 维护者复核用构建产物保存在本地 `release/v0.2.6/`；普通用户直接下载 Release 附件即可。后续版本可用 [`.github/workflows/build-installers.yml`](.github/workflows/build-installers.yml) 构建。
 
 ### 首次运行
 
@@ -269,7 +263,7 @@ xattr -dr com.apple.quarantine /Applications/SRL.app
 **Linux**
 
 ```bash
-sudo apt install ./SRL_0.2.5_amd64.deb
+sudo apt install ./SRL_0.2.6_amd64.deb
 ```
 
 ### 第一次使用

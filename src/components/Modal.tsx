@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { IconButton } from "./ui";
 import { t } from "../lib/i18n";
 
@@ -50,7 +51,7 @@ export function Modal({
   }, [open]);
 
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div
         className={`modal ${wide ? "modal--wide" : ""}`}
@@ -70,6 +71,7 @@ export function Modal({
         <div className="modal__body">{children}</div>
         {footer ? <footer className="modal__footer">{footer}</footer> : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

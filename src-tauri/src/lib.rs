@@ -1,5 +1,6 @@
 mod commands;
 mod state;
+mod update;
 
 use sr_core::account::AccountStore;
 use sr_core::diagnostics;
@@ -37,6 +38,7 @@ fn init_logging(logs_dir: &std::path::Path) -> Result<(), Box<dyn std::error::Er
 
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle().clone();
             let data_dir = app.path().app_data_dir()?;
@@ -263,6 +265,9 @@ pub fn run() {
             commands::poll_microsoft_login,
             commands::get_loader_recommendations,
             commands::open_trusted_url,
+            update::check_update,
+            update::download_update,
+            update::apply_update,
             commands::list_fabric_loaders,
             commands::install_fabric,
             commands::list_quilt_loaders,

@@ -29,6 +29,7 @@ export type IconName =
   | "cpu"
   | "info"
   | "edit"
+  | "more"
   | "map"
   | "palette"
   | "globe";
@@ -63,6 +64,7 @@ const paths: Record<IconName, string> = {
   cpu: "M8 8h8v8H8V8Zm-3 3H3m2 5H3m2-9H3m18 4h-2m2 5h-2m2-9h-2M8 5V3m4 2V3m4 2V3M8 21v-2m4 2v-2m4 2v-2",
   info: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-13v.5m0 3v6",
   edit: "M4 20h4l11-11-4-4L4 16v4Zm9-15 4 4",
+  more: "M5 12h.01M12 12h.01M19 12h.01",
   map: "M3 6.5 9 3l6 3 6-3v14.5L15 21l-6-3-6 3V6.5ZM9 3v15m6-12v15",
   palette:
     "M12 3a9 9 0 1 0 0 18h1.2a2.3 2.3 0 0 0 0-4.6h-1a1.7 1.7 0 0 1 0-3.4h3.1A4.7 4.7 0 0 0 20 8.3C20 5.4 16.4 3 12 3ZM7.5 8h.01M10 6h.01M14 6h.01M6.5 11h.01",

@@ -304,7 +304,7 @@ export function AccountsPage() {
                 <div className="account-card__main">
                   <div className="account-avatar" aria-hidden="true">
                     {skin ? (
-                      <SkinHead src={skin.preview} size={44} />
+                      <SkinHead src={skin.preview} size={40} />
                     ) : (
                       a.username.slice(0, 1).toUpperCase()
                     )}

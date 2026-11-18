@@ -285,6 +285,31 @@ export interface PathsView {
   logsDir: string;
 }
 
+
+export interface UpdateAsset {
+  name: string;
+  url: string;
+  size: number;
+  sha256: string | null;
+}
+
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  installKind: string;
+  available: boolean;
+  releaseUrl: string;
+  notes: string;
+  publishedAt: string | null;
+  assets: UpdateAsset[];
+}
+
+export interface UpdateProgress {
+  downloaded: number;
+  total: number;
+  percent: number;
+}
+
 export interface Bootstrap {
   appVersion: string;
   platform: string;
@@ -1484,4 +1509,9 @@ export const api = {
     command<CrashAnalysis>("analyze_crash", { instanceId, fileName }),
   deleteCrashReport: (instanceId: string, fileName: string) =>
     command<void>("delete_crash_report", { instanceId, fileName }),
+  checkUpdate: () => command<UpdateInfo>("check_update"),
+  downloadUpdate: (url: string, name: string, sha256?: string | null) =>
+    command<string>("download_update", { url, name, sha256: sha256 ?? null }),
+  applyUpdate: (path: string, name: string) =>
+    command<void>("apply_update", { path, name }),
 };

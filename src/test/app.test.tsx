@@ -615,11 +615,16 @@ beforeEach(() => {
   });
 });
 
+function openInstanceMenu() {
+  const buttons = screen.getAllByRole("button", { name: "更多操作" });
+  fireEvent.click(buttons[0]);
+}
+
 describe("SR Launcher UI", () => {
   it("loads the dashboard from the backend without mock data", async () => {
     render(<App />);
     expect(await screen.findByText("生存世界", {}, { timeout: 3000 })).toBeInTheDocument();
-    expect(screen.getByText("SRL")).toBeInTheDocument();
+    expect(screen.getAllByText("SRL").length).toBeGreaterThan(0);
     expect(screen.getByText(/Minecraft 1\.20\.4/)).toBeInTheDocument();
   });
 
@@ -686,16 +691,19 @@ describe("SR Launcher UI", () => {
     await screen.findByText("生存世界", {}, { timeout: 3000 });
     fireEvent.click(screen.getByRole("button", { name: "游戏实例" }));
     expect(await screen.findByRole("button", { name: "导入实例" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "导出实例" }));
+    openInstanceMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "导出实例" }));
     expect(await screen.findByText("导出文件路径")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-    fireEvent.click(screen.getByRole("button", { name: "导出整合包" }));
+    openInstanceMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "导出整合包" }));
     expect(await screen.findByText("整合包版本")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "导出 .mrpack" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "CurseForge ZIP" }));
     expect(screen.getByRole("button", { name: "导出 ZIP" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-    fireEvent.click(screen.getByRole("button", { name: "管理模组" }));
+    openInstanceMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "管理模组" }));
     expect(await screen.findByText("没有模组文件")).toBeInTheDocument();
   });
 
@@ -778,12 +786,14 @@ describe("SR Launcher UI", () => {
     await screen.findByText("生存世界", {}, { timeout: 3000 });
     fireEvent.click(screen.getByRole("button", { name: "游戏实例" }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "地图" }));
+    openInstanceMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "地图" }));
     expect(await screen.findByRole("button", { name: "打开存档文件夹" })).toBeInTheDocument();
     expect(screen.getAllByText("test").length).toBeGreaterThan(0);
     fireEvent.click(screen.getAllByRole("button", { name: "关闭" })[0]);
 
-    fireEvent.click(await screen.findByRole("button", { name: "材质" }));
+    openInstanceMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "材质包" }));
     expect(await screen.findByText("test-pack.zip")).toBeInTheDocument();
     expect(screen.getByText("皮肤自动管理")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "选择 .zip 材质包" })).toBeInTheDocument();
@@ -793,7 +803,8 @@ describe("SR Launcher UI", () => {
     render(<App />);
     await screen.findByText("生存世界", {}, { timeout: 3000 });
     fireEvent.click(screen.getByRole("button", { name: "游戏实例" }));
-    fireEvent.click(await screen.findByRole("button", { name: "光影管理" }));
+    openInstanceMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "光影管理" }));
     expect(await screen.findByText("原版客户端无法加载光影")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "选择 .zip 光影包" })).toBeInTheDocument();
     expect(screen.getByText("拖入 .zip 光影包到这里")).toBeInTheDocument();

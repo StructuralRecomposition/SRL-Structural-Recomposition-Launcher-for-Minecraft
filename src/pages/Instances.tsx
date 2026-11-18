@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { api, ApiError, type ImportCheck, type Instance } from "../lib/api";
 import { formatBytes, formatDate, relativeTime, splitLines } from "../lib/format";
 import { useApp } from "../state/AppContext";
-import { Badge, Button, Card, EmptyState, Field, IconButton } from "../components/ui";
+import { Badge, Button, Card, EmptyState, Field, Menu, MenuItem, MenuSeparator } from "../components/ui";
 import { Modal } from "../components/Modal";
 import { Icon } from "../components/Icon";
 import { ModManager } from "../components/ModManager";
@@ -11,6 +11,7 @@ import { MapManager } from "../components/MapManager";
 import { ResourcePackManager } from "../components/ResourcePackManager";
 import { t } from "../lib/i18n";
 import { JavaInstallPrompt } from "../components/JavaInstallPrompt";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 
 export function InstancesPage() {
@@ -262,18 +263,37 @@ export function InstancesPage() {
     setFormError(null);
   }
 
-  async function checkImport() {
+  async function checkImport(target = importPath) {
+    const path = target.trim();
+    if (!path) return;
     setChecking(true);
     setImportCheck(null);
     setFormError(null);
     try {
-      const check = await api.inspectInstanceArchive(importPath.trim());
+      const check = await api.inspectInstanceArchive(path);
       setImportCheck(check);
       setImportName(check.manifest.name);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
       setChecking(false);
+    }
+  }
+
+  async function pickImportArchive() {
+    setFormError(null);
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        title: t("选择实例归档"),
+        filters: [{ name: t("SRL 实例归档"), extensions: ["zip"] }],
+      });
+      if (typeof selected !== "string") return;
+      setImportPath(selected);
+      await checkImport(selected);
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -346,25 +366,25 @@ export function InstancesPage() {
           />
         </Card>
       ) : (
-        <div className="instance-grid">
+        <div className="instance-list">
           {instances.map((inst) => {
             const isRunning = running.has(inst.id);
             return (
-              <Card key={inst.id} className={`instance-card ${isRunning ? "instance-card--running" : ""}`}>
-                <div className="instance-card__head">
-                  <div className="instance-card__title">
-                    <div className="instance-avatar" aria-hidden="true">
-                      {inst.name.slice(0, 1).toUpperCase()}
-                    </div>
-                    <div>
-                      <h3>{inst.name}</h3>
-                      <span className="mono muted">{inst.id}</span>
-                    </div>
+              <article key={inst.id} className="instance-row">
+                <div className="instance-row__identity">
+                  <div className="instance-avatar" aria-hidden="true">
+                    {inst.name.slice(0, 1).toUpperCase()}
+                  </div>
+                  <div className="instance-row__name">
+                    <h3>{inst.name}</h3>
+                    <span className="mono" title={`${inst.id} · ${t("创建于")}${formatDate(inst.createdAt)}`}>
+                      {inst.id}
+                    </span>
                   </div>
                   <Badge tone={isRunning ? "success" : "neutral"}>{isRunning ? t("运行中") : t("空闲")}</Badge>
                 </div>
 
-                <dl className="instance-meta">
+                <dl className="instance-row__meta">
                   <div>
                     <dt>{t("版本")}</dt>
                     <dd>{inst.versionId}</dd>
@@ -383,7 +403,7 @@ export function InstancesPage() {
                   </div>
                   <div>
                     <dt>Java</dt>
-                    <dd className="ellipsis" title={inst.javaPath ?? t("自动选择")}>
+                    <dd title={inst.javaPath ?? t("自动选择")}>
                       {inst.javaPath ?? t("自动选择")}
                     </dd>
                   </div>
@@ -401,11 +421,11 @@ export function InstancesPage() {
                   </div>
                 </dl>
 
-                <p className="instance-path mono ellipsis" title={inst.gameDir}>
+                <p className="instance-row__path mono ellipsis" title={inst.gameDir}>
                   {inst.gameDir}
                 </p>
 
-                <div className="instance-card__actions">
+                <div className="instance-row__actions">
                   {isRunning ? (
                     <Button size="sm" variant="danger" icon="stop" onClick={() => stop(inst)}>
                       {t("终止")}</Button>
@@ -421,66 +441,54 @@ export function InstancesPage() {
                   )}
                   <Button size="sm" icon="edit" onClick={() => openEdit(inst)}>
                     {t("设置")}</Button>
-                  <IconButton
-                    icon="copy"
-                    label={t("复制实例")}
-                    onClick={() => duplicate(inst)}
-                    disabled={busy === inst.id}
-                  />
-                  <IconButton
-                    icon="map"
-                    label={t("地图")}
-                    onClick={() => setMapsFor(inst)}
-                  />
-                  <IconButton
-                    icon="palette"
-                    label={t("材质")}
-                    onClick={() => setTexturesFor(inst)}
-                  />
-                  <IconButton
-                    icon="plug"
-                    label={t("管理模组")}
-                    onClick={() => setModsFor(inst)}
-                  />
-                  <IconButton
-                    icon="sun"
-                    label={t("光影管理")}
-                    onClick={() => setShadersFor(inst)}
-                  />
-                  <IconButton
-                    icon="download"
-                    label={t("导出实例")}
-                    onClick={() => {
-                      setExporting(inst);
-                      setExportPath(`${inst.name}.zip`);
-                      setOverwrite(false);
-                      setFormError(null);
-                    }}
-                  />
-                  <IconButton
-                    icon="box"
-                    label={t("导出整合包")}
-                    onClick={() => {
-                      setPackFor(inst);
-                      setPackFormat("modrinth");
-                      setPackPath(`${inst.name}.mrpack`);
-                      setPackName(inst.name);
-                      setPackVersion("1.0.0");
-                      setPackOverwrite(false);
-                      setFormError(null);
-                    }}
-                  />
-                  <IconButton
-                    icon="trash"
-                    label={t("删除实例")}
-                    onClick={() => {
-                      setDeleting(inst);
-                      setDeleteFiles(false);
-                    }}
-                  />
+                  <Menu label={t("更多操作")} icon="more">
+                    <MenuItem
+                      icon="copy"
+                      label={t("复制实例")}
+                      onClick={() => duplicate(inst)}
+                      disabled={busy === inst.id}
+                    />
+                    <MenuItem icon="map" label={t("地图")} onClick={() => setMapsFor(inst)} />
+                    <MenuItem icon="palette" label={t("材质包")} onClick={() => setTexturesFor(inst)} />
+                    <MenuItem icon="plug" label={t("管理模组")} onClick={() => setModsFor(inst)} />
+                    <MenuItem icon="sun" label={t("光影管理")} onClick={() => setShadersFor(inst)} />
+                    <MenuSeparator />
+                    <MenuItem
+                      icon="download"
+                      label={t("导出实例")}
+                      onClick={() => {
+                        setExporting(inst);
+                        setExportPath(`${inst.name}.zip`);
+                        setOverwrite(false);
+                        setFormError(null);
+                      }}
+                    />
+                    <MenuItem
+                      icon="box"
+                      label={t("导出整合包")}
+                      onClick={() => {
+                        setPackFor(inst);
+                        setPackFormat("modrinth");
+                        setPackPath(`${inst.name}.mrpack`);
+                        setPackName(inst.name);
+                        setPackVersion("1.0.0");
+                        setPackOverwrite(false);
+                        setFormError(null);
+                      }}
+                    />
+                    <MenuSeparator />
+                    <MenuItem
+                      icon="trash"
+                      label={t("删除实例")}
+                      danger
+                      onClick={() => {
+                        setDeleting(inst);
+                        setDeleteFiles(false);
+                      }}
+                    />
+                  </Menu>
                 </div>
-                <span className="instance-card__created muted">{t("创建于")}{formatDate(inst.createdAt)}</span>
-              </Card>
+              </article>
             );
           })}
         </div>
@@ -813,20 +821,16 @@ export function InstancesPage() {
           </>
         }
       >
-        <div className="inline-form">
-          <Field label={t("实例归档路径")}>
-            <input
-              className="mono"
-              value={importPath}
-              onChange={(e) => {
-                setImportPath(e.target.value);
-                setImportCheck(null);
-              }}
-              placeholder="/Users/you/Desktop/instance.zip"
-            />
-          </Field>
-          <Button onClick={checkImport} loading={checking} disabled={!importPath.trim()}>
-            {t("检查归档")}</Button>
+        <div className="archive-picker">
+          <Button icon="folder" onClick={() => void pickImportArchive()} loading={checking}>
+            {t("选择实例归档")}</Button>
+          <span className={`mono ellipsis ${importPath ? "" : "muted"}`}>
+            {importPath || t("尚未选择归档文件")}
+          </span>
+          {importPath ? (
+            <Button size="sm" variant="ghost" onClick={() => void checkImport()} loading={checking}>
+              {t("重新检查")}</Button>
+          ) : null}
         </div>
         {importCheck ? (
           <>

@@ -17,6 +17,7 @@ import {
   type Bootstrap,
   type LaunchEvent,
   type TaskView,
+  type UpdateInfo,
 } from "../lib/api";
 import type { ToastItem, ToastTone } from "../components/Toast";
 import { t as tr } from "../lib/i18n";
@@ -55,6 +56,11 @@ interface AppContextValue {
   updateBootstrap: (patch: (b: Bootstrap) => Bootstrap) => void;
   refreshTasks: () => Promise<void>;
   setReloadPaused: (paused: boolean) => void;
+  updateInfo: UpdateInfo | null;
+  updateOpen: boolean;
+  updateChecking: boolean;
+  setUpdateOpen: (open: boolean) => void;
+  checkForUpdates: (manual?: boolean) => Promise<UpdateInfo | null>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -89,6 +95,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [page, setPage] = useState<PageId>("home");
   const [theme, setThemeState] = useState<"dark" | "light">("light");
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const autoUpdateChecked = useRef(false);
   const bootstrapTimer = useRef<number | null>(null);
   const reloadPaused = useRef(false);
   const initialized = useRef(false);
@@ -106,6 +116,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  const checkForUpdates = useCallback(
+    async (manual = false) => {
+      if (!isTauri()) return null;
+      setUpdateChecking(true);
+      try {
+        const info = await api.checkUpdate();
+        setUpdateInfo(info);
+        if (info.available) {
+          setUpdateOpen(true);
+        } else if (manual) {
+          pushToast(tr("已更新到最新版本"), "success", `v${info.currentVersion}`);
+        }
+        return info;
+      } catch (e) {
+        if (manual) {
+          pushToast(
+            tr("检查更新失败"),
+            "error",
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+        return null;
+      } finally {
+        setUpdateChecking(false);
+      }
+    },
+    [pushToast],
+  );
 
   const updateBootstrap = useCallback((patch: (b: Bootstrap) => Bootstrap) => {
     setBootstrap((prev) => (prev ? patch(prev) : prev));
@@ -184,6 +223,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     initialized.current = true;
     void reload();
   }, [reload]);
+
+  // Silent update check once per launch; failures never block startup.
+  useEffect(() => {
+    if (!bootstrap || !isTauri() || autoUpdateChecked.current) return;
+    autoUpdateChecked.current = true;
+    void checkForUpdates(false);
+  }, [bootstrap, checkForUpdates]);
 
   const refreshTasks = useCallback(async () => {
     try {
@@ -328,6 +374,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateBootstrap,
       refreshTasks,
       setReloadPaused,
+      updateInfo,
+      updateOpen,
+      updateChecking,
+      setUpdateOpen,
+      checkForUpdates,
     }),
     [
       bootstrap,
@@ -348,6 +399,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateBootstrap,
       refreshTasks,
       setReloadPaused,
+      updateInfo,
+      updateOpen,
+      updateChecking,
+      checkForUpdates,
     ],
   );
 

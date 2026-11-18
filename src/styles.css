@@ -1,5 +1,7 @@
-/* SR Launcher design system
-   Independent visual language: teal/structural, dark-first, restrained motion. */
+/* SR Launcher legacy stylesheet.
+   Page scaffolding and historical rules live here.
+   The active visual language (tokens, shell, components, page refinements)
+   is src/styles/redesign.css, imported after this file in main.tsx. */
 
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",

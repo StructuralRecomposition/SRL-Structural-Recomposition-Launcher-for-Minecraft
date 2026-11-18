@@ -2819,6 +2819,8 @@ pub async fn open_trusted_url(url: String) -> Result<()> {
         "console.curseforge.com",
         "www.52frp.com",
         "52frp.com",
+        "github.com",
+        "www.github.com",
     ];
     if !ALLOWED.contains(&host) {
         return Err(AppError::path_unsafe(format!("不允许打开的站点：{host}")));

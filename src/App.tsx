@@ -3,6 +3,7 @@ import { AppProvider, useApp } from "./state/AppContext";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { ToastHost } from "./components/Toast";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { isTauri } from "./lib/api";
 import { Button, Card } from "./components/ui";
 import { Icon } from "./components/Icon";
@@ -74,6 +75,7 @@ function Shell() {
         </main>
       </div>
       <ToastHost items={toasts} onDismiss={dismissToast} />
+      <UpdateDialog />
     </div>
   );
 }

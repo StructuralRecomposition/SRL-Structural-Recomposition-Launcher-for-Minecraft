@@ -20,15 +20,17 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", default-features = false, features = ["wry", "compression", "dynamic-acl", "x11", "dbus"] }
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["fs", "sync", "time", "process"] }
+tokio = { version = "1", features = ["fs", "io-util", "sync", "time", "process"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 sr-core = { path = "../crates/sr-core" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 percent-encoding = "2"
 tokio-util = { version = "0.7", features = ["rt"] }

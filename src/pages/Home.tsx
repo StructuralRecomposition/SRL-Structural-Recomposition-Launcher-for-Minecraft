@@ -3,7 +3,7 @@ import { api, ApiError, type Instance, type VersionDetail } from "../lib/api";
 import { formatBytes, formatDate, relativeTime } from "../lib/format";
 import { TASK_LABELS, isActive, taskTone } from "../lib/task";
 import { useApp } from "../state/AppContext";
-import { Badge, Button, Card, EmptyState, ProgressBar } from "../components/ui";
+import { Badge, Button, EmptyState, ProgressBar } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { formatSpeed } from "../lib/format";
 import { t as tr } from "../lib/i18n";
@@ -132,57 +132,59 @@ export function HomePage() {
   }
 
   if (instances.length === 0) {
+    const installedCount = bootstrap?.installedVersions.length ?? 0;
+    const javaCount = bootstrap?.java.length ?? 0;
     return (
-      <div className="page">
-        <section className="hero">
-          <div>
-            <span className="eyebrow">{tr("结构重组 · Structural Recomposition")}</span>
-            <h2>{tr("从第一个独立实例开始")}</h2>
-            <p>
-              {tr("安装一个官方 Minecraft 版本，然后创建实例。每个实例拥有独立的游戏目录、Java 与内存配置。")}</p>
-            <div className="hero__actions">
-              <Button variant="primary" icon="layers" onClick={() => setPage("versions")}>
-                {tr("安装游戏版本")}</Button>
-              <Button icon="box" onClick={() => setPage("instances")}>
-                {tr("查看实例")}</Button>
-            </div>
+      <div className="page home-page">
+        <section className="onboarding">
+          <span className="eyebrow">{tr("开始使用")}</span>
+          <h2>{tr("从第一个独立实例开始")}</h2>
+          <p className="onboarding__lead">
+            {tr("安装一个官方 Minecraft 版本，然后创建实例。每个实例拥有独立的游戏目录、Java 与内存配置。")}</p>
+          <div className="onboarding__actions">
+            <Button variant="primary" icon="layers" onClick={() => setPage("versions")}>
+              {tr("安装游戏版本")}</Button>
+            <Button icon="box" onClick={() => setPage("instances")}>
+              {tr("查看实例")}</Button>
           </div>
-          <div className="hero__mark" aria-hidden="true">
-            <div className="hero__tile" />
-            <div className="hero__tile" />
-            <div className="hero__tile" />
-            <div className="hero__tile" />
-          </div>
+
+          <ol className="setup-steps">
+            <li>
+              <span className="setup-steps__num">01</span>
+              <div>
+                <strong>{tr("安装游戏版本")}</strong>
+                <p>{tr("从 Mojang 官方源下载并逐项校验客户端、库与资源文件。")}</p>
+              </div>
+              <span className="setup-steps__state">{installedCount > 0 ? tr("已完成") : tr("未开始")}</span>
+            </li>
+            <li>
+              <span className="setup-steps__num">02</span>
+              <div>
+                <strong>{tr("创建游戏实例")}</strong>
+                <p>{tr("为实例指定内存、Java 与启动参数，不同实例互不影响。")}</p>
+              </div>
+              <span className="setup-steps__state">{tr("等待版本")}</span>
+            </li>
+            <li>
+              <span className="setup-steps__num">03</span>
+              <div>
+                <strong>{tr("添加账号并启动")}</strong>
+                <p>{tr("离线档案可以在本地启动游戏，但不会被当作已验证的正版账号。")}</p>
+              </div>
+              <span className="setup-steps__state">{accounts.length > 0 ? tr("已完成") : tr("未开始")}</span>
+            </li>
+          </ol>
+
+          <p className="onboarding__meta">
+            {tr("已安装版本")} {installedCount} · Java {javaCount} · {tr("账号档案")} {accounts.length}
+          </p>
         </section>
-        <div className="grid-3">
-          <Card>
-            <div className="stat">
-              <span>{tr("已安装版本")}</span>
-              <strong>{bootstrap?.installedVersions.length ?? 0}</strong>
-            </div>
-            <p className="muted">{tr("从 Mojang 官方源下载并校验。")}</p>
-          </Card>
-          <Card>
-            <div className="stat">
-              <span>{tr("Java 环境")}</span>
-              <strong>{bootstrap?.java.length ?? 0}</strong>
-            </div>
-            <p className="muted">{tr("自动发现本机 Java，不修改系统安装。")}</p>
-          </Card>
-          <Card>
-            <div className="stat">
-              <span>{tr("账号档案")}</span>
-              <strong>{accounts.length}</strong>
-            </div>
-            <p className="muted">{tr("离线档案仅用于本地游戏，不冒充正版。")}</p>
-          </Card>
-        </div>
       </div>
     );
   }
 
   return (
-    <div className="page">
+    <div className="page home-page">
       <div className="home-top">
         <div className="instance-switcher">
           <label htmlFor="instance-select">{tr("当前实例")}</label>
@@ -205,17 +207,18 @@ export function HomePage() {
           <Badge tone={isRunning ? "success" : "neutral"}>
             {isRunning ? tr("运行中") : tr("未运行")}
           </Badge>
-          <span className="muted">{tr("上次启动")}{relativeTime(instance?.lastLaunchedAt)}</span>
+          <span className="muted">{tr("上次启动")} {relativeTime(instance?.lastLaunchedAt)}</span>
         </div>
       </div>
 
-      <section className="launch-card">
-        <div className="launch-card__main">
-          <div className="launch-card__version">
-            <span className="eyebrow">{detail?.versionType ?? "Minecraft"}</span>
+      <section className="launch-panel">
+        <div className="launch-panel__head">
+          <div className="launch-panel__identity">
+            <span className="launch-panel__kicker">
+              {detail?.versionType ?? "Minecraft"} · Minecraft {instance?.versionId}
+            </span>
             <h2>{instance?.name}</h2>
-            <div className="launch-card__tags">
-              <Badge tone="info">Minecraft {instance?.versionId}</Badge>
+            <div className="launch-panel__tags">
               {instance?.modLoader ? (
                 <Badge tone="accent">
                   {instance.modLoader.kind} {instance.modLoader.version}
@@ -239,7 +242,7 @@ export function HomePage() {
               ) : null}
             </div>
           </div>
-          <div className="launch-card__actions">
+          <div className="launch-panel__actions">
             {isRunning ? (
               <Button variant="danger" icon="stop" onClick={stop}>
                 {tr("终止游戏")}</Button>
@@ -259,30 +262,30 @@ export function HomePage() {
           </div>
         </div>
 
-        <div className="launch-card__stats">
+        <dl className="launch-panel__meta">
           <div>
-            <span>Java</span>
-            <strong title={instance?.javaPath ?? tr("自动选择")}>
+            <dt>Java</dt>
+            <dd title={instance?.javaPath ?? tr("自动选择")}>
               {instance?.javaPath ? tr("手动指定") : detail?.javaCheck ? `Java ${detail.javaCheck.actualMajor}` : tr("自动")}
-            </strong>
+            </dd>
           </div>
           <div>
-            <span>{tr("游戏目录")}</span>
-            <strong className="mono ellipsis" title={instance?.gameDir}>
+            <dt>{tr("游戏目录")}</dt>
+            <dd className="mono" title={instance?.gameDir}>
               {instance?.gameDir}
-            </strong>
+            </dd>
           </div>
           <div>
-            <span>{tr("文件完整性")}</span>
-            <strong>
+            <dt>{tr("文件完整性")}</dt>
+            <dd>
               {detail ? (detail.installed ? tr("完整") : tr("{0} 项缺失", [detail.issues.length])) : tr("检查中…")}
-            </strong>
+            </dd>
           </div>
           <div>
-            <span>{tr("账号")}</span>
-            <strong>{activeAccount ? activeAccount.username : tr("未选择")}</strong>
+            <dt>{tr("账号")}</dt>
+            <dd>{activeAccount ? activeAccount.username : tr("未选择")}</dd>
           </div>
-        </div>
+        </dl>
 
         {detail && !detail.installed ? (
           <div className="notice notice--warning">
@@ -308,8 +311,8 @@ export function HomePage() {
         ) : null}
       </section>
 
-      <div className="home-grid">
-        <Card className="console-card">
+      <div className="home-workbench">
+        <section className="workbench-section console-section">
           <div className="card-head">
             <div>
               <h3>{tr("启动日志")}</h3>
@@ -347,9 +350,9 @@ export function HomePage() {
               <span>{events.length > 0 ? tr("查看最近 {0} 行输出", [Math.min(events.length, 400)]) : tr("打开日志面板")}</span>
             </button>
           )}
-        </Card>
+        </section>
 
-        <Card>
+        <section className="workbench-section activity-section">
           <div className="card-head">
             <div>
               <h3>{tr("最近活动")}</h3>
@@ -400,7 +403,7 @@ export function HomePage() {
               {activeTasks.length} {tr("个任务进行中 · 并发上限")}{bootstrap?.settings.maxConcurrentDownloads}
             </div>
           ) : null}
-        </Card>
+        </section>
       </div>
       {javaPrompt ? (
         <JavaInstallPrompt

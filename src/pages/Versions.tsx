@@ -272,8 +272,7 @@ export function VersionsPage() {
         <div>
           <h2>{tr("版本管理")}</h2>
           <p className="muted">
-            {tr("下载列表按正式版 / 快照 / 旧版分开；已安装列表直接读取")}{" "}
-            <span className="mono">versions/</span> {tr("目录，可打开文件夹、创建实例或删除。")}</p>
+            {tr("浏览 Mojang 官方版本清单，安装并管理本地版本。")}</p>
         </div>
         <div className="toolbar__actions">
           <label className="inline-check inline-check--chip" title={tr("正式版资源通常 300–600 MB、数千个文件")}>

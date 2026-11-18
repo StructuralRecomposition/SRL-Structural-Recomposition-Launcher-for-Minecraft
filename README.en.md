@@ -19,7 +19,17 @@
 
 > **Microsoft login:** due to current development constraints, SRL cannot yet offer out-of-the-box Microsoft sign-in. You currently need to register your own Azure application, obtain a `client id` and enter it in Settings; the login entry is explicitly disabled until then.
 
-> **Current version: `v0.2.5` (stability, performance and bug-fix release)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.5).
+> **Current version: `v0.2.6` (interface system refresh)** — installers, screenshots and checksums are on [GitHub Releases](https://github.com/StructuralRecomposition/SRL-Structural-Recomposition-Launcher-for-Minecraft/releases/tag/v0.2.6).
+
+### What's new in v0.2.6
+
+- **New interface.** Consistent type, spacing, colour and components; the home screen focuses on one launch action, instances use a list, dialogs and menus behave predictably.
+- **Simpler settings.** One column with collapsible groups; 52FRP, CurseForge and DeepSeek now live under one “API & integrations” section.
+- **Small fixes.** Account avatars render fully, path copy buttons stay inside their card, and instance import uses a native ZIP picker with automatic inspection.
+- **Launcher updates.** Checks the latest GitHub Release on every start, asks before updating, downloads through mirrors, verifies SHA-256, installs and restarts. Manual check is in Settings.
+- **Builds.** macOS universal DMG, Windows x64 portable ZIP, Linux amd64 deb / AppImage.
+
+See [CHANGELOG.md](CHANGELOG.md) for older releases.
 
 ---
 
@@ -99,10 +109,10 @@
 
 | Platform | File |
 |---|---|
-| macOS 10.15+ | `SRL_0.2.5_universal.dmg` (Intel + Apple Silicon, unsigned) |
-| Windows 10/11 x64 | `SRL_0.2.5_windows-x64-portable.zip` |
-| Linux x64 | `SRL_0.2.5_amd64.deb` |
-| Linux x64 | `SRL_0.2.5_amd64.AppImage` |
+| macOS 10.15+ | `SRL_0.2.6_universal.dmg` (Intel + Apple Silicon, unsigned) |
+| Windows 10/11 x64 | `SRL_0.2.6_windows-x64-portable.zip` |
+| Linux x64 | `SRL_0.2.6_amd64.deb` |
+| Linux x64 | `SRL_0.2.6_amd64.AppImage` |
 
 Checksums: `SHA256SUMS` in the release assets.
 
@@ -121,7 +131,7 @@ Extract the whole ZIP and run `Install.cmd` (no administrator rights required), 
 ### Linux
 
 ```bash
-sudo apt install ./SRL_0.2.5_amd64.deb
+sudo apt install ./SRL_0.2.6_amd64.deb
 ```
 
 or run the AppImage. WebKitGTK 4.1 and GTK 3 are required.

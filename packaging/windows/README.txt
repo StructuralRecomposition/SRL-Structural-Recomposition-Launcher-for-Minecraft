@@ -1,4 +1,4 @@
-SRL 0.2.0 - Windows x64 portable build
+SRL 0.2.6 - Windows x64 portable build
 
 This is an unsigned cross-compiled test build. Run Install.cmd (right-click ->
 Run, administrator rights are not required) to copy SRL to %LOCALAPPDATA%\SRL
